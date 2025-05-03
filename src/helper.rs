@@ -1,4 +1,4 @@
-use crate::output_type;
+use crate::output_type::{self};
 use crate::output_type::{ProductionCargo, Vector3};
 use crate::ue_type::{DemandConfig, ObjectPath, ProductionConfig, StorageConfig, UObject};
 use std::num::NonZeroI64;
@@ -291,4 +291,29 @@ pub fn map_demand_configs(
             }
         })
         .collect()
+}
+
+pub fn extract_bus_stop_guid(obj: &UObject) -> (Option<String>, Option<String>) {
+    let bus_stop_guid = obj
+        .properties
+        .as_ref()
+        .and_then(|p| p.bus_stop_guid.clone());
+    let bus_stop_guid_short = bus_stop_guid
+        .as_ref()
+        .and_then(|id| Some(id.replace("-", "").to_lowercase()));
+    (bus_stop_guid, bus_stop_guid_short)
+}
+
+pub fn check_is_terminal(obj: &UObject) -> bool {
+    obj.properties
+        .as_ref()
+        .and_then(|p| Some(p.tags.iter().any(|t| t == "BusTerminal")))
+        .unwrap_or(false)
+}
+
+pub fn extract_additional_destinations(obj: &UObject) -> Vec<ObjectPath> {
+    obj.properties
+        .as_ref()
+        .and_then(|p| p.additional_destinations.clone())
+        .unwrap_or(vec![])
 }

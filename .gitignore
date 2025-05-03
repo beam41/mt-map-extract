@@ -1,3 +1,4 @@
 /target
 /MotorTown
-out.json
+out_*.json
+.vscode/

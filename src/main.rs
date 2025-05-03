@@ -1,8 +1,9 @@
 use helper::{
+    check_is_terminal, extract_additional_destinations, extract_bus_stop_guid,
     extract_delivery_point_guid, extract_max_storage, extract_name, extract_relative_location,
     extract_storage_configs, get_obj_path, map_demand_configs, map_production_configs,
 };
-use output_type::DeliveryPoint;
+use output_type::{BusStopPoint, DeliveryPoint, Guid, Vector3};
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::num::NonZeroI64;
@@ -14,7 +15,7 @@ mod helper;
 mod output_type;
 mod ue_type;
 
-fn main() {
+fn extract_delivery_point() {
     let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
     let reader = BufReader::new(world_file);
     let now = Instant::now();
@@ -140,6 +141,136 @@ fn main() {
     println!("Aggregate data took: {:.2?}", elapsed);
 
     if let Ok(r) = serde_json::to_string_pretty(&output) {
-        fs::write("./out.json", r).unwrap();
+        fs::write("./out_delivery_point.json", r).unwrap();
     }
+}
+
+fn extract_bus_stop() {
+    let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
+    let reader = BufReader::new(world_file);
+    let now = Instant::now();
+    let world = serde_json::from_reader::<_, Vec<UObject>>(reader).unwrap();
+
+    let elapsed = now.elapsed();
+    println!("Parse world JSON took: {:.2?}", elapsed);
+
+    let now = Instant::now();
+    let mut output: Vec<BusStopPoint> = vec![];
+    for world_obj in &world {
+        if !matches!(
+            world_obj.type_field.as_str(),
+            "BusStop_01_C" | "BusStop_02_C" | "BusStop_03_C" | "BusTerminal_01_C"
+        ) {
+            continue;
+        }
+
+        let (_, scene_obj_index) = get_obj_path(
+            world_obj
+                .properties
+                .as_ref()
+                .unwrap()
+                .root_component
+                .as_ref()
+                .unwrap(),
+        );
+
+        let scene_obj = &world[scene_obj_index];
+
+        let (guid, guid_short) = extract_bus_stop_guid(world_obj);
+        let bus_stop_name = world_obj
+            .properties
+            .as_ref()
+            .and_then(|p| p.bus_stop_name.as_ref());
+        let bus_stop_display_name = world_obj
+            .properties
+            .as_ref()
+            .and_then(|p| p.bus_stop_display_name.as_ref())
+            .and_then(|n| n.source_string.as_ref());
+        let name = if bus_stop_name.is_some() {
+            Some(
+                bus_stop_name
+                    .unwrap()
+                    .texts
+                    .iter()
+                    .map(|t| t.source_string.as_deref().unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        } else {
+            bus_stop_display_name.cloned()
+        };
+        let relative_location = extract_relative_location(scene_obj);
+        let terminal = check_is_terminal(world_obj);
+        let additional_destinations = extract_additional_destinations(world_obj);
+
+        output.push(BusStopPoint {
+            type_field: world_obj.type_field.clone(),
+            name,
+            relative_location,
+            guid,
+            guid_short,
+            terminal,
+            additional_destinations_guid: additional_destinations
+                .iter()
+                .map(|ref_obj_path| {
+                    let (_, ref_obj_index) = get_obj_path(ref_obj_path);
+                    let ref_obj = &world[ref_obj_index];
+                    let (guid, guid_short) = extract_bus_stop_guid(ref_obj);
+                    Guid { guid, guid_short }
+                })
+                .collect(),
+        });
+    }
+
+    let elapsed = now.elapsed();
+    println!("Aggregate data took: {:.2?}", elapsed);
+
+    if let Ok(r) = serde_json::to_string_pretty(&output) {
+        fs::write("./out_bus_stop.json", r).unwrap();
+    }
+}
+
+fn extract_ev_charger() {
+    let now = Instant::now();
+    let mut output: Vec<Vector3> = vec![];
+    let generated_dir =
+        fs::read_dir("./MotorTown/Content/Maps/Jeju/Jeju_World/_Generated_").unwrap();
+    for file_result in generated_dir {
+        let file = file_result.unwrap();
+        let point_file = File::open(file.path()).unwrap();
+        let reader = BufReader::new(point_file);
+        let obj_metadata = serde_json::from_reader::<_, Vec<UObject>>(reader).unwrap();
+
+        for obj in &obj_metadata {
+            if obj.type_field.as_str() != "EVCharger_C" {
+                continue;
+            }
+
+            let (_, scene_obj_index) = get_obj_path(
+                obj.properties
+                    .as_ref()
+                    .unwrap()
+                    .root_component
+                    .as_ref()
+                    .unwrap(),
+            );
+
+            let scene_obj = &obj_metadata[scene_obj_index];
+            let relative_location = extract_relative_location(scene_obj);
+
+            output.push(relative_location.unwrap());
+        }
+    }
+    let elapsed = now.elapsed();
+    println!("Aggregate+Parse data took: {:.2?}", elapsed);
+
+    if let Ok(r) = serde_json::to_string_pretty(&output) {
+        fs::write("./out_ev_charger.json", r).unwrap();
+    }
+}
+
+fn main() {
+    extract_delivery_point();
+    extract_bus_stop();
+    extract_ev_charger();
 }

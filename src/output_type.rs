@@ -1,4 +1,4 @@
-use crate::ue_type;
+use crate::ue_type::{self};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
 
@@ -70,4 +70,26 @@ pub struct DeliveryPoint {
     pub production_configs: Vec<ProductionConfig>,
     #[serde(rename = "demandConfigs")]
     pub demand_configs: Vec<DemandConfig>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+pub struct BusStopPoint {
+    #[serde(rename = "type")]
+    pub type_field: String,
+    pub name: Option<String>,
+    #[serde(rename = "relativeLocation")]
+    pub relative_location: Option<Vector3>,
+    pub guid: Option<String>,
+    #[serde(rename = "guidShort")]
+    pub guid_short: Option<String>,
+    #[serde(rename = "additionalDestinationsGuid")]
+    pub additional_destinations_guid: Vec<Guid>,
+    pub terminal: bool,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+pub struct Guid {
+    pub guid: Option<String>,
+    #[serde(rename = "guidShort")]
+    pub guid_short: Option<String>,
 }

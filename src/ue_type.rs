@@ -169,7 +169,7 @@ pub struct Properties {
     #[serde(rename = "DefaultGameMode")]
     pub default_game_mode: Option<ObjectPath>,
     #[serde(rename = "BookmarkArray")]
-    pub bookmark_array: Option<Vec<ObjectPath>>,
+    pub bookmark_array: Option<Vec<Option<ObjectPath>>>,
     #[serde(rename = "UseAlignedGridLevels")]
     pub use_aligned_grid_levels: Option<String>,
     #[serde(rename = "SnapNonAlignedGridLevelsToLowerLevels")]
@@ -848,7 +848,7 @@ pub struct Properties {
     #[serde(rename = "SM_Prop_BusStop_01")]
     pub sm_prop_bus_stop_01: Option<ObjectPath>,
     #[serde(rename = "BusStopName")]
-    pub bus_stop_name: Option<BusStopName>,
+    pub bus_stop_name: Option<PointName>,
     #[serde(rename = "BrushBodySetup")]
     pub brush_body_setup: Option<ObjectPath>,
     #[serde(rename = "PCG")]
@@ -907,6 +907,8 @@ pub struct Properties {
     pub phys_material: Option<ObjectPath>,
     #[serde(rename = "UberGraphFunction")]
     pub uber_graph_function: Option<ObjectPath>,
+    #[serde(rename = "AdditionalDestinations")]
+    pub additional_destinations: Option<Vec<ObjectPath>>,
 }
 
 #[skip_serializing_none]
@@ -1276,7 +1278,7 @@ pub struct RelativeRotation {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SplineParams {
     #[serde(rename = "StartPos")]
-    pub start_pos: Vector3,
+    pub start_pos: Option<Vector3>,
     #[serde(rename = "StartTangent")]
     pub start_tangent: Vector3,
     #[serde(rename = "StartRoll")]
@@ -1389,7 +1391,7 @@ pub struct Point3 {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrimaryComponentTick {
     #[serde(rename = "EndTickGroup")]
-    pub end_tick_group: String,
+    pub end_tick_group: Option<String>,
 }
 
 #[skip_serializing_none]
@@ -1442,7 +1444,7 @@ pub struct SavedSelection {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(rename = "WeightedBlendables")]
-    pub weighted_blendables: WeightedBlendables,
+    pub weighted_blendables: Option<WeightedBlendables>,
 }
 
 #[skip_serializing_none]
@@ -2013,7 +2015,7 @@ pub struct Connections {
     #[serde(rename = "ControlPoint")]
     pub control_point: ObjectPath,
     #[serde(rename = "TangentLen")]
-    pub tangent_len: f64,
+    pub tangent_len: Option<f64>,
 }
 
 #[skip_serializing_none]
@@ -2107,13 +2109,6 @@ pub struct BusStopDisplayName {
     pub source_string: Option<String>,
     #[serde(rename = "LocalizedString")]
     pub localized_string: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BusStopName {
-    #[serde(rename = "Texts")]
-    pub texts: Vec<MapIconName>,
 }
 
 #[skip_serializing_none]
