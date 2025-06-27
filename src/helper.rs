@@ -1,4 +1,4 @@
-use crate::output_type::{self};
+use crate::output_type::{self, AreaVolume, Vector2};
 use crate::output_type::{ProductionCargo, Vector3};
 use crate::ue_type::{DemandConfig, ObjectPath, ProductionConfig, StorageConfig, UObject};
 use std::num::NonZeroI64;
@@ -316,4 +316,44 @@ pub fn extract_additional_destinations(obj: &UObject) -> Vec<ObjectPath> {
         .as_ref()
         .and_then(|p| p.additional_destinations.clone())
         .unwrap_or(vec![])
+}
+
+pub fn extract_housereg_key(obj: &UObject) -> String {
+    obj.properties
+        .as_ref()
+        .and_then(|p| p.houseg_key.clone())
+        .unwrap_or("".to_string())
+}
+
+pub fn extract_area_volume_key(obj: &UObject) -> String {
+    obj.properties
+        .as_ref()
+        .and_then(|p| p.area_name.as_ref())
+        .and_then(|p| Some(p.source_string.clone()))
+        .unwrap_or("".to_string())
+}
+
+pub fn extract_area_flag(obj: &UObject) -> String {
+    obj.properties
+        .as_ref()
+        .and_then(|p| p.area_volume_flags.get(0).map(|f| f.clone()))
+        .unwrap_or("".to_string())
+}
+
+pub fn extract_top_view_lines(obj: &UObject) -> Vec<Vector2> {
+    obj.properties
+        .as_ref()
+        .and_then(|p| {
+            Some(
+                p.top_view_lines
+                    .iter()
+                    .map(|l| Vector2 { x: l.x, y: l.y })
+                    .collect::<Vec<Vector2>>(),
+            )
+        })
+        .unwrap_or(vec![])
+}
+
+pub fn get_enclose_area(point: &Vector2, area: &Vec<AreaVolume>) -> Vec<AreaVolume> {
+    
 }

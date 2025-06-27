@@ -9,6 +9,12 @@ pub struct Vector3 {
     pub z: f64,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Vector2 {
+    pub x: f64,
+    pub y: f64,
+}
+
 impl From<ue_type::Vector3> for Vector3 {
     fn from(value: ue_type::Vector3) -> Self {
         Vector3 {
@@ -19,11 +25,39 @@ impl From<ue_type::Vector3> for Vector3 {
     }
 }
 
+impl From<Vector3> for Vector2 {
+    fn from(value: Vector3) -> Self {
+        Vector2 {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+impl From<ue_type::Vector3> for Vector2 {
+    fn from(value: ue_type::Vector3) -> Self {
+        Vector2 {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+fn is_false(boolean: &bool) -> bool {
+    !*boolean
+}
+
+fn is_zero(num: &f64) -> bool {
+    *num == 0.0
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct ProductionCargo {
-    #[serde(rename = "cargoType")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type")]
     pub cargo_type: Option<String>,
-    #[serde(rename = "cargoKey")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "key")]
     pub cargo_key: Option<String>,
     pub value: i64,
     #[serde(rename = "maxStorage")]
@@ -32,27 +66,32 @@ pub struct ProductionCargo {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct ProductionConfig {
-    #[serde(rename = "inputCargos")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "input")]
     pub input_cargos: Vec<ProductionCargo>,
-    #[serde(rename = "outputCargos")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "output")]
     pub output_cargos: Vec<ProductionCargo>,
-    #[serde(rename = "productionTimeSeconds")]
+    #[serde(rename = "prodTime")]
     pub production_time_seconds: f64,
-    #[serde(rename = "productionSpeedMultiplier")]
+    #[serde(rename = "prodSpeedMul")]
     pub production_speed_multiplier: f64,
-    #[serde(rename = "localFoodSupply")]
+    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(rename = "foodSupply")]
     pub local_food_supply: f64,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct DemandConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "cargoType")]
     pub cargo_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "cargoKey")]
     pub cargo_key: Option<String>,
     #[serde(rename = "maxStorage")]
     pub max_storage: Option<NonZeroI64>,
-    #[serde(rename = "paymentMultiplier")]
+    #[serde(rename = "paymentMul")]
     pub payment_multiplier: f64,
 }
 
@@ -61,14 +100,14 @@ pub struct DeliveryPoint {
     #[serde(rename = "type")]
     pub type_field: String,
     pub name: Option<String>,
-    #[serde(rename = "relativeLocation")]
+    #[serde(rename = "coord")]
     pub relative_location: Option<Vector3>,
     pub guid: Option<String>,
-    #[serde(rename = "guidShort")]
-    pub guid_short: Option<String>,
-    #[serde(rename = "productionConfigs")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "prod")]
     pub production_configs: Vec<ProductionConfig>,
-    #[serde(rename = "demandConfigs")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "demand")]
     pub demand_configs: Vec<DemandConfig>,
 }
 
@@ -77,19 +116,37 @@ pub struct BusStopPoint {
     #[serde(rename = "type")]
     pub type_field: String,
     pub name: Option<String>,
-    #[serde(rename = "relativeLocation")]
+    #[serde(rename = "coord")]
     pub relative_location: Option<Vector3>,
     pub guid: Option<String>,
-    #[serde(rename = "guidShort")]
-    pub guid_short: Option<String>,
-    #[serde(rename = "additionalDestinationsGuid")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "additionalDest")]
     pub additional_destinations_guid: Vec<Guid>,
+    #[serde(skip_serializing_if = "is_false")]
     pub terminal: bool,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct Guid {
     pub guid: Option<String>,
-    #[serde(rename = "guidShort")]
-    pub guid_short: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+pub struct EvChargerPoint {
+    #[serde(rename = "coord")]
+    pub relative_location: Option<Vector3>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+pub struct HousePoint {
+    pub name: String,
+    #[serde(rename = "coord")]
+    pub relative_location: Option<Vector3>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize)]
+pub struct AreaVolume {
+    pub name: String,
+    pub flag: String,
+    pub vertex: Vec<Vector2>,
 }
