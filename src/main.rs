@@ -10,7 +10,10 @@ use std::num::NonZeroI64;
 use std::time::Instant;
 use ue_type::UObject;
 
-use crate::helper::{extract_area_flag, extract_area_volume_key, extract_housereg_key};
+use crate::helper::{
+    area_volumes_to_location, extract_area_flag, extract_area_volume_key, extract_housereg_key,
+    get_enclose_area,
+};
 use crate::output_type::{AreaVolume, EvChargerPoint, HousePoint};
 
 mod deserialize_zero_as_none;
@@ -18,7 +21,7 @@ mod helper;
 mod output_type;
 mod ue_type;
 
-fn extract_delivery_point() {
+fn extract_delivery_point(areas: &[AreaVolume]) {
     let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
     let reader = BufReader::new(world_file);
     let now = Instant::now();
@@ -128,13 +131,23 @@ fn extract_delivery_point() {
                 max_storage,
             );
 
+            let relative_location = extract_relative_location(scene_obj);
+
+            let area = match relative_location {
+                Some(loc) => get_enclose_area(&loc.into(), areas),
+                None => vec![],
+            };
+
+            let location = area_volumes_to_location(&area);
+
             let delivery_point_output = DeliveryPoint {
                 type_field: world_obj.type_field.clone(),
                 name,
                 guid: guid_short,
-                relative_location: extract_relative_location(scene_obj),
+                relative_location,
                 production_configs,
                 demand_configs,
+                location,
             };
             output.push(delivery_point_output);
         }
@@ -147,7 +160,7 @@ fn extract_delivery_point() {
     }
 }
 
-fn extract_bus_stop() {
+fn extract_bus_stop(areas: &[AreaVolume]) {
     let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
     let reader = BufReader::new(world_file);
     let now = Instant::now();
@@ -205,6 +218,13 @@ fn extract_bus_stop() {
         let terminal = check_is_terminal(world_obj);
         let additional_destinations = extract_additional_destinations(world_obj);
 
+        let area = match relative_location {
+            Some(loc) => get_enclose_area(&loc.into(), areas),
+            None => vec![],
+        };
+
+        let location = area_volumes_to_location(&area);
+
         output.push(BusStopPoint {
             type_field: world_obj.type_field.clone(),
             name,
@@ -220,6 +240,7 @@ fn extract_bus_stop() {
                     Guid { guid: guid_short }
                 })
                 .collect(),
+            location,
         });
     }
 
@@ -231,7 +252,7 @@ fn extract_bus_stop() {
     }
 }
 
-fn extract_ev_charger() {
+fn extract_ev_charger(areas: &[AreaVolume]) {
     let now = Instant::now();
     let mut output: Vec<EvChargerPoint> = vec![];
     let generated_dir =
@@ -259,7 +280,17 @@ fn extract_ev_charger() {
             let scene_obj = &obj_metadata[scene_obj_index];
             let relative_location = extract_relative_location(scene_obj);
 
-            output.push(EvChargerPoint { relative_location });
+            let area = match relative_location {
+                Some(loc) => get_enclose_area(&loc.into(), areas),
+                None => vec![],
+            };
+
+            let location = area_volumes_to_location(&area);
+
+            output.push(EvChargerPoint {
+                relative_location,
+                location,
+            });
         }
     }
     let elapsed = now.elapsed();
@@ -270,7 +301,7 @@ fn extract_ev_charger() {
     }
 }
 
-fn extract_house() {
+fn extract_house(areas: &[AreaVolume]) {
     let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
     let reader = BufReader::new(world_file);
     let now = Instant::now();
@@ -299,9 +330,17 @@ fn extract_house() {
         let scene_obj = &world[scene_obj_index];
         let relative_location = extract_relative_location(scene_obj);
 
+        let area = match relative_location {
+            Some(loc) => get_enclose_area(&loc.into(), areas),
+            None => vec![],
+        };
+
+        let location = area_volumes_to_location(&area);
+
         output.push(HousePoint {
             name: extract_housereg_key(world_obj),
             relative_location,
+            location,
         });
     }
 
@@ -313,7 +352,7 @@ fn extract_house() {
     }
 }
 
-fn extract_area_volume() {
+fn extract_area_volume() -> Vec<AreaVolume> {
     let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
     let reader = BufReader::new(world_file);
     let now = Instant::now();
@@ -341,12 +380,14 @@ fn extract_area_volume() {
     if let Ok(r) = serde_json::to_string_pretty(&output) {
         fs::write("./out_area_volume.json", r).unwrap();
     }
+
+    output
 }
 
 fn main() {
-    extract_delivery_point();
-    extract_bus_stop();
-    extract_ev_charger();
-    extract_house();
-    extract_area_volume();
+    let areas = extract_area_volume();
+    extract_delivery_point(&areas);
+    extract_bus_stop(&areas);
+    extract_ev_charger(&areas);
+    extract_house(&areas);
 }

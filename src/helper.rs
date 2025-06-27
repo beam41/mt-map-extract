@@ -1,6 +1,8 @@
 use crate::output_type::{self, AreaVolume, Vector2};
 use crate::output_type::{ProductionCargo, Vector3};
 use crate::ue_type::{DemandConfig, ObjectPath, ProductionConfig, StorageConfig, UObject};
+use itertools::Itertools;
+use std::mem;
 use std::num::NonZeroI64;
 
 pub fn get_obj_path(obj_path: &ObjectPath) -> (&str, usize) {
@@ -348,12 +350,85 @@ pub fn extract_top_view_lines(obj: &UObject) -> Vec<Vector2> {
                 p.top_view_lines
                     .iter()
                     .map(|l| Vector2 { x: l.x, y: l.y })
+                    .unique_by(|v| (unsafe { mem::transmute::<f64, u64>(v.x) }, unsafe { mem::transmute::<f64, u64>(v.y) }))
                     .collect::<Vec<Vector2>>(),
             )
         })
         .unwrap_or(vec![])
 }
 
-pub fn get_enclose_area(point: &Vector2, area: &Vec<AreaVolume>) -> Vec<AreaVolume> {
-    
+pub fn get_enclose_area(point: &Vector2, areas: &[AreaVolume]) -> Vec<AreaVolume> {
+    areas
+        .iter()
+        .filter(|area| point_in_polygon(point, &area.vertex))
+        .cloned()
+        .collect()
+}
+
+/// Check if a point is inside a polygon using the ray casting algorithm
+fn point_in_polygon(point: &Vector2, polygon: &[Vector2]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    let mut inside = false;
+    let mut j = polygon.len() - 1;
+
+    for i in 0..polygon.len() {
+        let vi = &polygon[i];
+        let vj = &polygon[j];
+
+        if ((vi.y > point.y) != (vj.y > point.y))
+            && (point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y) + vi.x)
+        {
+            inside = !inside;
+        }
+        j = i;
+    }
+
+    inside
+}
+
+pub fn area_volumes_to_location(area: &[AreaVolume]) -> String {
+    let racetrack = area
+        .iter()
+        .find(|a| a.flag == "EMTAreaVolumeFlags::RaceTrack")
+        .map(|a| a.name.clone());
+    let small = area
+        .iter()
+        .find(|a| a.flag == "EMTAreaVolumeFlags::SmallArea")
+        .map(|a| a.name.clone());
+    let large = area
+        .iter()
+        .find(|a| a.flag == "EMTAreaVolumeFlags::LargeArea")
+        .map(|a| a.name.clone());
+    let zone = area
+        .iter()
+        .find(|a| a.flag == "EMTAreaVolumeFlags::Zone")
+        .map(|a| a.name.clone());
+
+    let mut result = String::new();
+    if let Some(racetrack) = racetrack {
+        result.push_str(&racetrack);
+    }
+    if let Some(small) = small {
+        if result.len() > 0 {
+            result.push_str(", ");
+        }
+        result.push_str(&small);
+    }
+    if let Some(large) = large {
+        if result.len() > 0 {
+            result.push_str(", ");
+        }
+        result.push_str(&large);
+    }
+    if let Some(zone) = zone {
+        if result.len() > 0 {
+            result.push_str(", ");
+        }
+        result.push_str(&zone);
+    }
+
+    result
 }

@@ -15,6 +15,7 @@ pub struct Vector2 {
     pub y: f64,
 }
 
+
 impl From<ue_type::Vector3> for Vector3 {
     fn from(value: ue_type::Vector3) -> Self {
         Vector3 {
@@ -109,6 +110,7 @@ pub struct DeliveryPoint {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "demand")]
     pub demand_configs: Vec<DemandConfig>,
+    pub location: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
@@ -124,6 +126,7 @@ pub struct BusStopPoint {
     pub additional_destinations_guid: Vec<Guid>,
     #[serde(skip_serializing_if = "is_false")]
     pub terminal: bool,
+    pub location: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
@@ -135,6 +138,7 @@ pub struct Guid {
 pub struct EvChargerPoint {
     #[serde(rename = "coord")]
     pub relative_location: Option<Vector3>,
+    pub location: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
@@ -142,6 +146,7 @@ pub struct HousePoint {
     pub name: String,
     #[serde(rename = "coord")]
     pub relative_location: Option<Vector3>,
+    pub location: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
