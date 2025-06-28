@@ -1,15 +1,20 @@
 use crate::output_type::{self, AreaVolume, Vector2};
 use crate::output_type::{ProductionCargo, Vector3};
-use crate::ue_type::{DemandConfig, ObjectPath, ProductionConfig, StorageConfig, UObject};
-use itertools::Itertools;
-use std::mem;
+use crate::ue_type::{self, DemandConfig, ObjectPath, ProductionConfig, StorageConfig, UObject};
+use std::collections::HashMap;
 use std::num::NonZeroI64;
 
-pub fn get_obj_path(obj_path: &ObjectPath) -> (&str, usize) {
-    let obj_path_parsed = obj_path.object_path.split('.').collect::<Vec<_>>();
-    let obj_path_index_str = obj_path_parsed[1];
+pub fn get_obj_path(obj_path: &ObjectPath) -> (String, usize) {
+    let obj_path_parsed: Vec<String> = obj_path
+        .object_path
+        .clone()
+        .unwrap_or("".to_string())
+        .split('.')
+        .map(|s| s.to_string())
+        .collect();
+    let obj_path_index_str = &obj_path_parsed[1];
     let obj_path_index = obj_path_index_str.parse::<usize>().unwrap();
-    (obj_path_parsed[0], obj_path_index)
+    (obj_path_parsed[0].to_string(), obj_path_index)
 }
 
 pub fn extract_name(obj: &UObject) -> Option<String> {
@@ -29,7 +34,7 @@ pub fn extract_name(obj: &UObject) -> Option<String> {
                 .unwrap()
                 .texts
                 .iter()
-                .map(|t| t.source_string.as_deref().unwrap_or(""))
+                .map(|t| t.localized_string.as_deref().unwrap_or(""))
                 .collect::<Vec<_>>()
                 .join(" "),
         )
@@ -43,7 +48,7 @@ pub fn extract_name(obj: &UObject) -> Option<String> {
 
     let name = if mission_point_name.is_some() {
         let name = mission_point_name.unwrap();
-        match name.source_string.as_ref() {
+        match name.localized_string.as_ref() {
             Some(s) => Some(s.clone()),
             None => name.culture_invariant_string.clone(),
         }
@@ -58,7 +63,7 @@ pub fn extract_name(obj: &UObject) -> Option<String> {
     let name = if delivery_point_name.is_some() {
         let d_point = delivery_point_name.unwrap();
         let name = &d_point.name;
-        let name = match name.source_string.as_ref() {
+        let name = match name.localized_string.as_ref() {
             Some(s) => Some(s.clone()),
             None => name.culture_invariant_string.clone(),
         };
@@ -157,7 +162,7 @@ pub fn map_production_configs(
     storage_configs: &Vec<StorageConfig>,
     demand_configs: &Vec<output_type::DemandConfig>,
     default_max_storage: Option<NonZeroI64>,
-) -> Vec<output_type::ProductionConfig> {
+) -> (Vec<output_type::ProductionConfig>, HashMap<String, NonZeroI64>) {
     let production_configs = match extract_production_configs(world_obj) {
         n if n.len() > 0 => n,
         _ => match extract_production_configs(main_obj) {
@@ -169,7 +174,9 @@ pub fn map_production_configs(
         },
     };
 
-    production_configs
+    let mut storage: HashMap<String, NonZeroI64> = HashMap::new();
+
+    let config = production_configs
         .iter()
         .map(|config| {
             let mut input_cargos: Vec<ProductionCargo> = vec![];
@@ -240,15 +247,78 @@ pub fn map_production_configs(
                 });
             }
 
-            output_type::ProductionConfig {
+            for cargo in &input_cargos {
+                if let Some(key) = &cargo.cargo_key {
+                    if !storage.contains_key(key) {
+                        storage.insert(
+                            key.clone(),
+                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                        );
+                    }
+                } else if let Some(key) = &cargo.cargo_type {
+                    if !storage.contains_key(key) {
+                        storage.insert(
+                            key.clone(),
+                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                        );
+                    }
+                }
+            }
+
+            for cargo in &output_cargos {
+                if let Some(key) = &cargo.cargo_key {
+                    if !storage.contains_key(key) {
+                        storage.insert(
+                            key.clone(),
+                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                        );
+                    }
+                } else if let Some(key) = &cargo.cargo_type {
+                    if !storage.contains_key(key) {
+                        storage.insert(
+                            key.clone(),
+                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                        );
+                    }
+                }
+            }
+
+            let input_cargos: HashMap<String, NonZeroI64> = input_cargos
+                .into_iter()
+                .filter_map(|cargo| {
+                    if let Some(key) = cargo.cargo_key {
+                        Some((key, NonZeroI64::new(cargo.value).unwrap()))
+                    } else if let Some(key) = cargo.cargo_type {
+                        Some((key, NonZeroI64::new(cargo.value).unwrap()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let output_cargos: HashMap<String, NonZeroI64> = output_cargos
+                .into_iter()
+                .filter_map(|cargo| {
+                    if let Some(key) = cargo.cargo_key {
+                        Some((key, NonZeroI64::new(cargo.value).unwrap()))
+                    } else if let Some(key) = cargo.cargo_type {
+                        Some((key, NonZeroI64::new(cargo.value).unwrap()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            (output_type::ProductionConfig {
                 input_cargos,
                 output_cargos,
                 production_time_seconds: config.production_time_seconds,
                 production_speed_multiplier: config.production_speed_multiplier,
                 local_food_supply: config.local_food_supply,
-            }
+            })
         })
-        .collect()
+        .collect();
+    (config, storage)
 }
 
 pub fn map_demand_configs(
@@ -327,11 +397,31 @@ pub fn extract_housereg_key(obj: &UObject) -> String {
         .unwrap_or("".to_string())
 }
 
-pub fn extract_area_volume_key(obj: &UObject) -> String {
-    obj.properties
+pub fn extract_area_name(obj: &UObject) -> String {
+    let name = obj
+        .properties
         .as_ref()
         .and_then(|p| p.area_name.as_ref())
-        .and_then(|p| Some(p.source_string.clone()))
+        .and_then(|p| Some(p.localized_string.clone()))
+        .unwrap_or("".to_string());
+
+    if name.len() > 0 {
+        return name;
+    }
+
+    obj.properties
+        .as_ref()
+        .and_then(|p| p.area_name_texts.as_ref())
+        .and_then(|texts| {
+            Some(
+                texts
+                    .texts
+                    .iter()
+                    .map(|t| t.localized_string.clone())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        })
         .unwrap_or("".to_string())
 }
 
@@ -350,7 +440,6 @@ pub fn extract_top_view_lines(obj: &UObject) -> Vec<Vector2> {
                 p.top_view_lines
                     .iter()
                     .map(|l| Vector2 { x: l.x, y: l.y })
-                    .unique_by(|v| (unsafe { mem::transmute::<f64, u64>(v.x) }, unsafe { mem::transmute::<f64, u64>(v.y) }))
                     .collect::<Vec<Vector2>>(),
             )
         })
@@ -367,26 +456,25 @@ pub fn get_enclose_area(point: &Vector2, areas: &[AreaVolume]) -> Vec<AreaVolume
 
 /// Check if a point is inside a polygon using the ray casting algorithm
 fn point_in_polygon(point: &Vector2, polygon: &[Vector2]) -> bool {
-    if polygon.len() < 3 {
-        return false;
-    }
-
-    let mut inside = false;
-    let mut j = polygon.len() - 1;
-
-    for i in 0..polygon.len() {
-        let vi = &polygon[i];
-        let vj = &polygon[j];
-
-        if ((vi.y > point.y) != (vj.y > point.y))
-            && (point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y) + vi.x)
-        {
-            inside = !inside;
+    let mut line: Vec<(Vector2, Vector2)> = vec![];
+    for i in (0..polygon.len()).step_by(2) {
+        if i + 1 < polygon.len() {
+            line.push((polygon[i], polygon[i + 1]));
         }
-        j = i;
     }
 
-    inside
+    let mut count = 0;
+    for (a, b) in &line {
+        let (y1, y2) = (a.y, b.y);
+        let (x1, x2) = (a.x, b.x);
+        if (y1 > point.y) != (y2 > point.y) {
+            let x_intersect = x1 + (point.y - y1) * (x2 - x1) / (y2 - y1);
+            if x_intersect > point.x {
+                count += 1;
+            }
+        }
+    }
+    count % 2 == 1
 }
 
 pub fn area_volumes_to_location(area: &[AreaVolume]) -> String {
@@ -431,4 +519,15 @@ pub fn area_volumes_to_location(area: &[AreaVolume]) -> String {
     }
 
     result
+}
+
+pub fn extract_area_size(obj: &UObject) -> ue_type::Vector3 {
+    obj.properties
+        .as_ref()
+        .and_then(|p| p.area_size)
+        .unwrap_or(ue_type::Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        })
 }

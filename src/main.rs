@@ -4,6 +4,7 @@ use helper::{
     extract_storage_configs, get_obj_path, map_demand_configs, map_production_configs,
 };
 use output_type::{BusStopPoint, DeliveryPoint, Guid};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::num::NonZeroI64;
@@ -11,10 +12,11 @@ use std::time::Instant;
 use ue_type::UObject;
 
 use crate::helper::{
-    area_volumes_to_location, extract_area_flag, extract_area_volume_key, extract_housereg_key,
-    get_enclose_area,
+    area_volumes_to_location, extract_area_flag, extract_area_name, extract_area_size,
+    extract_housereg_key, extract_top_view_lines, get_enclose_area,
 };
 use crate::output_type::{AreaVolume, EvChargerPoint, HousePoint};
+use crate::ue_type::House;
 
 mod deserialize_zero_as_none;
 mod helper;
@@ -86,7 +88,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                     .properties
                     .as_ref()
                     .unwrap()
-                    .scene_component
+                    .root_component
                     .as_ref()
                     .unwrap(),
             );
@@ -122,7 +124,8 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 storage_configs,
                 max_storage,
             );
-            let production_configs = map_production_configs(
+
+            let (production_configs, mut storage_configs) = map_production_configs(
                 world_obj,
                 main_obj,
                 template_obj.as_ref(),
@@ -140,6 +143,29 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
 
             let location = area_volumes_to_location(&area);
 
+            for cargo in &demand_configs {
+                if let Some(key) = &cargo.cargo_key {
+                    if !storage_configs.contains_key(key) {
+                        storage_configs.insert(
+                            key.clone(),
+                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                        );
+                    }
+                } else if let Some(key) = &cargo.cargo_type {
+                    if !storage_configs.contains_key(key) {
+                        storage_configs.insert(
+                            key.clone(),
+                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                        );
+                    }
+                }
+            }
+
+            let demand_configs: HashMap<String, f64> = demand_configs
+                .iter()
+                .map(|d| (d.cargo_type.clone().unwrap_or_default(), d.payment_multiplier))
+                .collect();
+
             let delivery_point_output = DeliveryPoint {
                 type_field: world_obj.type_field.clone(),
                 name,
@@ -147,7 +173,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 relative_location,
                 production_configs,
                 demand_configs,
-                location,
+                storage_configs, // location,
             };
             output.push(delivery_point_output);
         }
@@ -200,14 +226,14 @@ fn extract_bus_stop(areas: &[AreaVolume]) {
             .properties
             .as_ref()
             .and_then(|p| p.bus_stop_display_name.as_ref())
-            .and_then(|n| n.source_string.as_ref());
+            .and_then(|n| n.localized_string.as_ref());
         let name = if bus_stop_name.is_some() {
             Some(
                 bus_stop_name
                     .unwrap()
                     .texts
                     .iter()
-                    .map(|t| t.source_string.as_deref().unwrap_or(""))
+                    .map(|t| t.localized_string.as_deref().unwrap_or(""))
                     .collect::<Vec<_>>()
                     .join(" "),
             )
@@ -240,7 +266,7 @@ fn extract_bus_stop(areas: &[AreaVolume]) {
                     Guid { guid: guid_short }
                 })
                 .collect(),
-            location,
+            // location,
         });
     }
 
@@ -289,7 +315,7 @@ fn extract_ev_charger(areas: &[AreaVolume]) {
 
             output.push(EvChargerPoint {
                 relative_location,
-                location,
+                // location,
             });
         }
     }
@@ -303,9 +329,15 @@ fn extract_ev_charger(areas: &[AreaVolume]) {
 
 fn extract_house(areas: &[AreaVolume]) {
     let world_file = File::open("./MotorTown/Content/Maps/Jeju/Jeju_World.json").unwrap();
-    let reader = BufReader::new(world_file);
+    let world_reader = BufReader::new(world_file);
+
+    let house_file = File::open("./MotorTown/Content/DataAsset/Houses.json").unwrap();
+    let house_reader = BufReader::new(house_file);
+
     let now = Instant::now();
-    let world = serde_json::from_reader::<_, Vec<UObject>>(reader).unwrap();
+    let world = serde_json::from_reader::<_, Vec<UObject>>(world_reader).unwrap();
+    let house_vec = serde_json::from_reader::<_, Vec<House>>(house_reader).unwrap();
+    let house = &house_vec[0];
 
     let elapsed = now.elapsed();
     println!("Parse world JSON took: {:.2?}", elapsed);
@@ -336,11 +368,29 @@ fn extract_house(areas: &[AreaVolume]) {
         };
 
         let location = area_volumes_to_location(&area);
+        let mut area_size = extract_area_size(&world_obj);
+        let name = extract_housereg_key(world_obj);
+
+        let house_cost = house
+            .rows
+            .get(&name)
+            .and_then(|h| Some(h.cost))
+            .unwrap_or(0);
+
+        if area_size.x == 0.0 && area_size.y == 0.0 {
+            area_size = ue_type::Vector3 {
+                x: 2000.0,
+                y: 2000.0,
+                z: 0.0,
+            };
+        }
 
         output.push(HousePoint {
-            name: extract_housereg_key(world_obj),
+            name,
             relative_location,
-            location,
+            // location,
+            size: area_size.into(),
+            cost: house_cost,
         });
     }
 
@@ -368,9 +418,9 @@ fn extract_area_volume() -> Vec<AreaVolume> {
             continue;
         }
         output.push(AreaVolume {
-            name: extract_area_volume_key(world_obj),
+            name: extract_area_name(world_obj),
             flag: extract_area_flag(world_obj),
-            vertex: helper::extract_top_view_lines(world_obj),
+            vertex: extract_top_view_lines(world_obj),
         });
     }
 

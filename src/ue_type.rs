@@ -3,6 +3,7 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use serde_json::Value;
 use serde_with::skip_serializing_none;
+use std::collections::HashMap;
 use std::num::NonZeroI64;
 
 #[skip_serializing_none]
@@ -125,9 +126,9 @@ pub struct UObject {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ObjectPath {
     #[serde(rename = "ObjectName")]
-    pub object_name: String,
+    pub object_name: Option<String>,
     #[serde(rename = "ObjectPath")]
-    pub object_path: String,
+    pub object_path: Option<String>,
 }
 
 #[skip_serializing_none]
@@ -184,9 +185,6 @@ pub struct Properties {
     pub cell_guid: Option<String>,
     #[serde(rename = "RuntimeCellData")]
     pub runtime_cell_data: Option<ObjectPath>,
-    #[serde(rename = "DataLayers")]
-    #[serde(default)]
-    pub data_layers: Vec<String>,
     #[serde(rename = "bIsAlwaysLoaded")]
     pub b_is_always_loaded: Option<bool>,
     #[serde(rename = "Position")]
@@ -955,8 +953,6 @@ pub struct StreamingGrid {
     pub world_bounds: WorldBounds,
     #[serde(rename = "bClientOnlyVisible")]
     pub b_client_only_visible: bool,
-    #[serde(rename = "HLODLayer")]
-    pub hlodlayer: Value,
 }
 
 #[skip_serializing_none]
@@ -1495,11 +1491,11 @@ pub struct Descriptor {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BodyInstance2 {
     #[serde(rename = "ObjectType")]
-    pub object_type: String,
+    pub object_type: Option<String>,
     #[serde(rename = "CollisionEnabled")]
     pub collision_enabled: Option<String>,
     #[serde(rename = "CollisionProfileName")]
-    pub collision_profile_name: String,
+    pub collision_profile_name: Option<String>,
     #[serde(rename = "CollisionResponses")]
     pub collision_responses: Option<CollisionResponses>,
 }
@@ -2143,9 +2139,9 @@ pub struct ConvexElem {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DefaultInstance {
     #[serde(rename = "ObjectType")]
-    pub object_type: String,
+    pub object_type: Option<String>,
     #[serde(rename = "CollisionProfileName")]
-    pub collision_profile_name: String,
+    pub collision_profile_name: Option<String>,
 }
 
 #[skip_serializing_none]
@@ -2409,7 +2405,7 @@ pub struct ChildProperty {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CookedFormatData {
     #[serde(rename = "PhysXPC")]
-    pub phys_xpc: PhysXpc,
+    pub phys_xpc: Option<PhysXpc>,
 }
 
 #[skip_serializing_none]
@@ -2439,4 +2435,19 @@ pub struct FuncMap {
 pub struct EditorTags {
     #[serde(rename = "BlueprintType")]
     pub blueprint_type: String,
+}
+
+
+#[skip_serializing_none]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct House {
+    #[serde(rename = "Rows")]
+    pub rows: HashMap<String, HouseRow>,
+}
+
+#[skip_serializing_none]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HouseRow {
+    #[serde(rename = "Cost")]
+    pub cost: i64,
 }
