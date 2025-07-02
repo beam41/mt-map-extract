@@ -162,7 +162,7 @@ pub fn map_production_configs(
     storage_configs: &Vec<StorageConfig>,
     demand_configs: &Vec<output_type::DemandConfig>,
     default_max_storage: Option<NonZeroI64>,
-) -> (Vec<output_type::ProductionConfig>, HashMap<String, NonZeroI64>) {
+) -> (Vec<output_type::ProductionConfig>, HashMap<String, Option<NonZeroI64>>) {
     let production_configs = match extract_production_configs(world_obj) {
         n if n.len() > 0 => n,
         _ => match extract_production_configs(main_obj) {
@@ -174,7 +174,7 @@ pub fn map_production_configs(
         },
     };
 
-    let mut storage: HashMap<String, NonZeroI64> = HashMap::new();
+    let mut storage: HashMap<String, Option<NonZeroI64>> = HashMap::new();
 
     let config = production_configs
         .iter()
@@ -249,17 +249,17 @@ pub fn map_production_configs(
 
             for cargo in &input_cargos {
                 if let Some(key) = &cargo.cargo_key {
-                    if !storage.contains_key(key) {
+                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
                         storage.insert(
                             key.clone(),
-                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                            cargo.max_storage,
                         );
                     }
                 } else if let Some(key) = &cargo.cargo_type {
-                    if !storage.contains_key(key) {
+                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
                         storage.insert(
                             key.clone(),
-                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                            cargo.max_storage,
                         );
                     }
                 }
@@ -267,17 +267,17 @@ pub fn map_production_configs(
 
             for cargo in &output_cargos {
                 if let Some(key) = &cargo.cargo_key {
-                    if !storage.contains_key(key) {
+                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
                         storage.insert(
                             key.clone(),
-                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                              cargo.max_storage,
                         );
                     }
                 } else if let Some(key) = &cargo.cargo_type {
-                    if !storage.contains_key(key) {
+                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
                         storage.insert(
                             key.clone(),
-                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
+                             cargo.max_storage,
                         );
                     }
                 }

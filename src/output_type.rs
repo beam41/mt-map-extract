@@ -111,7 +111,10 @@ pub struct DeliveryPoint {
     pub demand_configs: HashMap<String, f64>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     #[serde(rename = "storage")]
-    pub storage_configs: HashMap<String, NonZeroI64>,
+    pub storage_configs: HashMap<String, Option<NonZeroI64>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "dropPoint")]
+    pub drop_point: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]

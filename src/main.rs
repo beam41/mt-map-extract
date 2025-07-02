@@ -145,26 +145,45 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
 
             for cargo in &demand_configs {
                 if let Some(key) = &cargo.cargo_key {
-                    if !storage_configs.contains_key(key) {
-                        storage_configs.insert(
-                            key.clone(),
-                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
-                        );
+                    if !storage_configs.contains_key(key) && cargo.max_storage.is_some() {
+                        storage_configs.insert(key.clone(), cargo.max_storage);
                     }
                 } else if let Some(key) = &cargo.cargo_type {
-                    if !storage_configs.contains_key(key) {
-                        storage_configs.insert(
-                            key.clone(),
-                            cargo.max_storage.unwrap_or(NonZeroI64::new(0).unwrap()),
-                        );
+                    if !storage_configs.contains_key(key) && cargo.max_storage.is_some() {
+                        storage_configs.insert(key.clone(), cargo.max_storage);
                     }
                 }
             }
 
             let demand_configs: HashMap<String, f64> = demand_configs
                 .iter()
-                .map(|d| (d.cargo_type.clone().unwrap_or_default(), d.payment_multiplier))
+                .filter_map(|cargo| {
+                    if let Some(key) = &cargo.cargo_key {
+                        Some((key.clone(), cargo.payment_multiplier))
+                    } else if let Some(key) = &cargo.cargo_type {
+                        Some((key.clone(), cargo.payment_multiplier))
+                    } else {
+                        None
+                    }
+                })
                 .collect();
+
+            let mut drop_point: Vec<String> = vec![];
+
+            if let Some(drop_points) = world_obj
+                .properties
+                .as_ref()
+                .and_then(|p| Some(&p.input_inventory_share))
+            {
+                for drop_point_obj in drop_points {
+                    let (_, drop_point_index) = get_obj_path(&drop_point_obj);
+                    let drop_point_obj = &world[drop_point_index];
+                    let (_, guid_short) = extract_delivery_point_guid(drop_point_obj);
+                    if let Some(guid) = guid_short {
+                        drop_point.push(guid);
+                    }
+                }
+            }
 
             let delivery_point_output = DeliveryPoint {
                 type_field: world_obj.type_field.clone(),
@@ -174,6 +193,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 production_configs,
                 demand_configs,
                 storage_configs, // location,
+                drop_point,
             };
             output.push(delivery_point_output);
         }
