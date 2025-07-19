@@ -115,6 +115,12 @@ pub struct DeliveryPoint {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "dropPoint")]
     pub drop_point: Vec<String>,
+    #[serde(rename = "maxDist")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_delivery_distance: Option<f64>,
+     #[serde(rename = "maxReceiveDist")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_delivery_receive_distance: Option<f64>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]

@@ -185,6 +185,32 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 }
             }
 
+            let max_delivery_distance_world = world_obj
+                .properties
+                .as_ref()
+                .and_then(|p| p.max_delivery_distance);
+
+            let max_delivery_distance = match max_delivery_distance_world {
+                Some(distance) => Some(distance),
+                None => main_obj
+                    .properties
+                    .as_ref()
+                    .and_then(|p| p.max_delivery_distance),
+            };
+
+            let max_delivery_receive_distance_world = world_obj
+                .properties
+                .as_ref()
+                .and_then(|p| p.max_delivery_receive_distance);
+
+            let max_delivery_receive_distance = match max_delivery_receive_distance_world {
+                Some(distance) => Some(distance),
+                None => main_obj
+                    .properties
+                    .as_ref()
+                    .and_then(|p| p.max_delivery_receive_distance),
+            };
+
             let delivery_point_output = DeliveryPoint {
                 type_field: world_obj.type_field.clone(),
                 name,
@@ -194,12 +220,45 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 demand_configs,
                 storage_configs, // location,
                 drop_point,
+                max_delivery_distance,
+                max_delivery_receive_distance,
             };
             output.push(delivery_point_output);
         }
     }
     let elapsed = now.elapsed();
     println!("Aggregate data took: {:.2?}", elapsed);
+
+    // Fix storage inheritance: parent should inherit storage values from dropPoints
+    let mut guid_to_index: HashMap<String, usize> = HashMap::new();
+    for (idx, item) in output.iter().enumerate() {
+        if let Some(guid) = &item.guid {
+            guid_to_index.insert(guid.clone(), idx);
+        }
+    }
+
+    // Update parent storage values to match dropPoint storage
+    for i in 0..output.len() {
+        let drop_point_guids = output[i].drop_point.clone();
+        if !drop_point_guids.is_empty() {
+            let mut updated_storage = output[i].storage_configs.clone();
+
+            for drop_point_guid in &drop_point_guids {
+                if let Some(&drop_point_idx) = guid_to_index.get(drop_point_guid) {
+                    let drop_point = &output[drop_point_idx];
+
+                    // Inherit storage values from dropPoint
+                    for (key, value) in &drop_point.storage_configs {
+                        updated_storage.insert(key.clone(), *value);
+                    }
+                }
+            }
+
+            output[i].storage_configs = updated_storage;
+        }
+    }
+
+    //fix here
 
     if let Ok(r) = serde_json::to_string_pretty(&output) {
         fs::write("./out_delivery_point.json", r).unwrap();

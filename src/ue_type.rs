@@ -248,7 +248,7 @@ pub struct Properties {
     pub max_deliveries: Option<i64>,
     #[serde(rename = "DemandConfigs")]
     #[serde(default)]
-    pub demand_configs: Vec<DemandConfig>,
+    pub demand_configs: Option<Vec<DemandConfig>>,
     #[serde(rename = "PaymentMultiplier")]
     pub payment_multiplier: Option<f64>,
     #[serde(rename = "MaxPassiveDeliveries")]

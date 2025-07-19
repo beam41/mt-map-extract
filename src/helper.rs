@@ -111,12 +111,11 @@ pub fn extract_production_configs(obj: &UObject) -> &Vec<ProductionConfig> {
         .unwrap()
 }
 
-pub fn extract_demand_configs(obj: &UObject) -> &Vec<DemandConfig> {
+pub fn extract_demand_configs(obj: &UObject) -> Option<&Vec<DemandConfig>> {
     obj.properties
         .as_ref()
-        .and_then(|p| Some(&p.demand_configs))
-        .unwrap()
-}
+        .and_then(|p| p.demand_configs.as_ref())
+    }
 
 pub fn extract_storage_configs(obj: &UObject) -> Option<&Vec<StorageConfig>> {
     obj.properties
@@ -329,12 +328,15 @@ pub fn map_demand_configs(
     default_max_storage: Option<NonZeroI64>,
 ) -> Vec<output_type::DemandConfig> {
     let demand_configs = match extract_demand_configs(world_obj) {
-        n if n.len() > 0 => n,
+        Some(n) => n.to_owned(),
         _ => match extract_demand_configs(main_obj) {
-            n if n.len() > 0 => n,
+            Some(n) => n.to_owned(),
             _ => match template_obj.as_ref() {
-                Some(obj) => extract_demand_configs(obj),
-                None => &vec![],
+                Some(obj) => match extract_demand_configs(obj) {
+                    Some(n) => n.to_owned(),
+                    None => vec![],
+                },
+                None => vec![],
             },
         },
     };
