@@ -104,7 +104,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 Some(s) => Some(s),
                 None => main_obj_max_storage,
             };
-            let storage_configs = match extract_storage_configs(world_obj) {
+            let ori_storage_configs = match extract_storage_configs(world_obj) {
                 Some(n) if n.len() > 0 => n,
                 _ => match extract_storage_configs(main_obj) {
                     Some(n) if n.len() > 0 => n,
@@ -117,22 +117,221 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                     },
                 },
             };
+            let flat_map = {
+                let mut map: HashMap<String, Vec<String>> = HashMap::new();
+
+                // EDeliveryCargoType::SmallPackage
+                map.insert(
+                    "EDeliveryCargoType::SmallPackage".to_string(),
+                    vec![
+                        "SmallBox".to_string(),
+                        "CarrotBox".to_string(),
+                        "AppleBox".to_string(),
+                        "OrangeBox".to_string(),
+                        "GlassBottleBox".to_string(),
+                        "Rice".to_string(),
+                        "PumpkinBox".to_string(),
+                        "CornBox".to_string(),
+                        "CheeseBox".to_string(),
+                        "MeatBox".to_string(),
+                        "BreadBox".to_string(),
+                        "SnackBox".to_string(),
+                        "GiftBox_01".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::LargePackage
+                map.insert(
+                    "EDeliveryCargoType::LargePackage".to_string(),
+                    vec![
+                        "BoxPallete_01".to_string(),
+                        "BoxPallete_02".to_string(),
+                        "BoxPallete_03".to_string(),
+                        "PowerBox".to_string(),
+                        "OrangeBoxes".to_string(),
+                        "RicePallet".to_string(),
+                        "PumpkinPallet".to_string(),
+                        "CornPallet".to_string(),
+                        "BeanPallet".to_string(),
+                        "HempPallet".to_string(),
+                        "CabbagePallet".to_string(),
+                        "ChilliPallet".to_string(),
+                        "PotatoPallet".to_string(),
+                        "CheesePallet".to_string(),
+                        "BreadPallet".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::None
+                map.insert(
+                    "EDeliveryCargoType::None".to_string(),
+                    vec![
+                        "PlasticPallete".to_string(),
+                        "QuicklimePallet".to_string(),
+                        "Fuel".to_string(),
+                        "Oil".to_string(),
+                        "CrudeOil".to_string(),
+                        "LiveFish_01".to_string(),
+                        "MilitarySupplyBox_01_Empty".to_string(),
+                        "Milk".to_string(),
+                        "AirlineMealPallet".to_string(),
+                        "FormulaSCM".to_string(),
+                        "PlasticPipes_6m".to_string(),
+                        "lHBeam_6m".to_string(),
+                        "SteelCoil_10t".to_string(),
+                        "Cement".to_string(),
+                        "Terra".to_string(),
+                        "SunflowerSeed".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::FinalProduct
+                map.insert(
+                    "EDeliveryCargoType::FinalProduct".to_string(),
+                    vec!["ToyBoxes".to_string(), "BottlePallete".to_string()],
+                );
+
+                // EDeliveryCargoType::Wood
+                map.insert(
+                    "EDeliveryCargoType::Wood".to_string(),
+                    vec!["WoodPlank_14ft_5t".to_string()],
+                );
+
+                // EDeliveryCargoType::Container
+                map.insert(
+                    "EDeliveryCargoType::Container".to_string(),
+                    vec![
+                        "Container_30ft_5t".to_string(),
+                        "Container_30ft_10t".to_string(),
+                        "Container_30ft_20t".to_string(),
+                        "Container_20ft_01".to_string(),
+                        "Container_40ft_01".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::Log
+                map.insert(
+                    "EDeliveryCargoType::Log".to_string(),
+                    vec![
+                        "Log_30ft_30t".to_string(),
+                        "Log_Oak_12ft".to_string(),
+                        "Log_Oak_24ft".to_string(),
+                        "Log_20ft".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::Sand
+                map.insert(
+                    "EDeliveryCargoType::Sand".to_string(),
+                    vec!["Sand".to_string(), "FineSand".to_string()],
+                );
+
+                // EDeliveryCargoType::Coal
+                map.insert(
+                    "EDeliveryCargoType::Coal".to_string(),
+                    vec!["Coal".to_string()],
+                );
+
+                // EDeliveryCargoType::Stone
+                map.insert(
+                    "EDeliveryCargoType::Stone".to_string(),
+                    vec![
+                        "LimestoneRock".to_string(),
+                        "Limestone".to_string(),
+                        "IronOre".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::Concrete
+                map.insert(
+                    "EDeliveryCargoType::Concrete".to_string(),
+                    vec!["Concrete".to_string()],
+                );
+
+                // EDeliveryCargoType::Garbage
+                map.insert(
+                    "EDeliveryCargoType::Garbage".to_string(),
+                    vec!["TrashBag".to_string(), "Trash_Big".to_string()],
+                );
+
+                // EDeliveryCargoType::Furniture
+                map.insert(
+                    "EDeliveryCargoType::Furniture".to_string(),
+                    vec![
+                        "Sofa_01".to_string(),
+                        "Sofa_02".to_string(),
+                        "Sofa_03".to_string(),
+                        "Sofa_04".to_string(),
+                        "Bed_01".to_string(),
+                        "Bed_02".to_string(),
+                        "Bed_03".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::Food
+                map.insert(
+                    "EDeliveryCargoType::Food".to_string(),
+                    vec![
+                        "Pizza_01".to_string(),
+                        "Pizza_02".to_string(),
+                        "Pizza_03".to_string(),
+                        "Pizza_04".to_string(),
+                        "Pizza_05".to_string(),
+                        "Pizza_01_Premium".to_string(),
+                        "Burger_01".to_string(),
+                        "Burger_01_Signature".to_string(),
+                    ],
+                );
+
+                // EDeliveryCargoType::MilitarySupply
+                map.insert(
+                    "EDeliveryCargoType::MilitarySupply".to_string(),
+                    vec!["MilitarySupplyBox_01".to_string()],
+                );
+
+                map
+            };
+            // Generate flattened version of storage_configs
+            let mut flattened_storage_configs = ori_storage_configs.clone();
+
+            for config in ori_storage_configs {
+                if config.cargo_key == "None" {
+                    if let Some(cargo_items) = flat_map.get(&config.cargo_type) {
+                        // Add all cargo items from flat_map with the same max_storage
+                        for cargo_item in cargo_items {
+                            // Create new storage config for each cargo item
+                            let new_config = ue_type::StorageConfig {
+                                cargo_key: cargo_item.clone(),
+                                cargo_type: config.cargo_type.clone(),
+                                max_storage: config.max_storage,
+                            };
+                            flattened_storage_configs.push(new_config);
+                        }
+                    }
+                }
+            }
+
+            if (world_obj.name.as_str() == "Farm_Corn_C_UAID_005056C000019DCE01_1220230832") {
+                dbg!(&flattened_storage_configs);
+            }
+
             let demand_configs = map_demand_configs(
                 world_obj,
                 main_obj,
                 template_obj.as_ref(),
-                storage_configs,
+                &flattened_storage_configs,
                 max_storage,
             );
 
-            let (production_configs, mut storage_configs) = map_production_configs(
-                world_obj,
-                main_obj,
-                template_obj.as_ref(),
-                storage_configs,
-                &demand_configs,
-                max_storage,
-            );
+            let (production_configs, mut demand_storage_configs, supply_storage_configs) =
+                map_production_configs(
+                    world_obj,
+                    main_obj,
+                    template_obj.as_ref(),
+                    &flattened_storage_configs,
+                    &demand_configs,
+                    max_storage,
+                );
 
             let relative_location = extract_relative_location(scene_obj);
 
@@ -145,12 +344,12 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
 
             for cargo in &demand_configs {
                 if let Some(key) = &cargo.cargo_key {
-                    if !storage_configs.contains_key(key) && cargo.max_storage.is_some() {
-                        storage_configs.insert(key.clone(), cargo.max_storage);
+                    if !demand_storage_configs.contains_key(key) && cargo.max_storage.is_some() {
+                        demand_storage_configs.insert(key.clone(), cargo.max_storage);
                     }
                 } else if let Some(key) = &cargo.cargo_type {
-                    if !storage_configs.contains_key(key) && cargo.max_storage.is_some() {
-                        storage_configs.insert(key.clone(), cargo.max_storage);
+                    if !demand_storage_configs.contains_key(key) && cargo.max_storage.is_some() {
+                        demand_storage_configs.insert(key.clone(), cargo.max_storage);
                     }
                 }
             }
@@ -218,7 +417,8 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 relative_location,
                 production_configs,
                 demand_configs,
-                storage_configs, // location,
+                demand_storage_configs,
+                supply_storage_configs,
                 drop_point,
                 max_delivery_distance,
                 max_delivery_receive_distance,
@@ -241,20 +441,20 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
     for i in 0..output.len() {
         let drop_point_guids = output[i].drop_point.clone();
         if !drop_point_guids.is_empty() {
-            let mut updated_storage = output[i].storage_configs.clone();
+            let mut updated_storage = output[i].demand_storage_configs.clone();
 
             for drop_point_guid in &drop_point_guids {
                 if let Some(&drop_point_idx) = guid_to_index.get(drop_point_guid) {
                     let drop_point = &output[drop_point_idx];
 
                     // Inherit storage values from dropPoint
-                    for (key, value) in &drop_point.storage_configs {
+                    for (key, value) in &drop_point.demand_storage_configs {
                         updated_storage.insert(key.clone(), *value);
                     }
                 }
             }
 
-            output[i].storage_configs = updated_storage;
+            output[i].demand_storage_configs = updated_storage;
         }
     }
 

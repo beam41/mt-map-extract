@@ -115,7 +115,7 @@ pub fn extract_demand_configs(obj: &UObject) -> Option<&Vec<DemandConfig>> {
     obj.properties
         .as_ref()
         .and_then(|p| p.demand_configs.as_ref())
-    }
+}
 
 pub fn extract_storage_configs(obj: &UObject) -> Option<&Vec<StorageConfig>> {
     obj.properties
@@ -161,7 +161,11 @@ pub fn map_production_configs(
     storage_configs: &Vec<StorageConfig>,
     demand_configs: &Vec<output_type::DemandConfig>,
     default_max_storage: Option<NonZeroI64>,
-) -> (Vec<output_type::ProductionConfig>, HashMap<String, Option<NonZeroI64>>) {
+) -> (
+    Vec<output_type::ProductionConfig>,
+    HashMap<String, Option<NonZeroI64>>,
+    HashMap<String, Option<NonZeroI64>>,
+) {
     let production_configs = match extract_production_configs(world_obj) {
         n if n.len() > 0 => n,
         _ => match extract_production_configs(main_obj) {
@@ -173,7 +177,9 @@ pub fn map_production_configs(
         },
     };
 
-    let mut storage: HashMap<String, Option<NonZeroI64>> = HashMap::new();
+    let mut demand_storage: HashMap<String, Option<NonZeroI64>> = HashMap::new();
+
+    let mut supply_storage: HashMap<String, Option<NonZeroI64>> = HashMap::new();
 
     let config = production_configs
         .iter()
@@ -214,11 +220,10 @@ pub fn map_production_configs(
 
             let mut output_cargos: Vec<ProductionCargo> = vec![];
             for cargo in &config.output_cargos {
-                let demand_configs = demand_configs
+                let _demand_configs = demand_configs
                     .iter()
                     .find(|c| c.cargo_key.as_ref() == Some(&cargo.key));
-                let max_storage = map_max_storage_demand_config(
-                    demand_configs,
+                let max_storage = map_max_storage(
                     storage_configs.iter().find(|c| c.cargo_key == cargo.key),
                     default_max_storage,
                 );
@@ -230,12 +235,11 @@ pub fn map_production_configs(
                 });
             }
             for cargo in &config.output_cargo_types {
-                let demand_configs = demand_configs
+                let _demand_configs = demand_configs
                     .iter()
                     .find(|c| c.cargo_type.as_ref() == Some(&cargo.key));
-                let max_storage = map_max_storage_demand_config(
-                    demand_configs,
-                    storage_configs.iter().find(|c| c.cargo_type == cargo.key),
+                let max_storage = map_max_storage(
+                    storage_configs.iter().find(|c| c.cargo_key == cargo.key),
                     default_max_storage,
                 );
                 output_cargos.push(ProductionCargo {
@@ -248,36 +252,24 @@ pub fn map_production_configs(
 
             for cargo in &input_cargos {
                 if let Some(key) = &cargo.cargo_key {
-                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
-                        storage.insert(
-                            key.clone(),
-                            cargo.max_storage,
-                        );
+                    if !demand_storage.contains_key(key) && cargo.max_storage.is_some() {
+                        demand_storage.insert(key.clone(), cargo.max_storage);
                     }
                 } else if let Some(key) = &cargo.cargo_type {
-                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
-                        storage.insert(
-                            key.clone(),
-                            cargo.max_storage,
-                        );
+                    if !demand_storage.contains_key(key) && cargo.max_storage.is_some() {
+                        demand_storage.insert(key.clone(), cargo.max_storage);
                     }
                 }
             }
 
             for cargo in &output_cargos {
                 if let Some(key) = &cargo.cargo_key {
-                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
-                        storage.insert(
-                            key.clone(),
-                              cargo.max_storage,
-                        );
+                    if !supply_storage.contains_key(key) && cargo.max_storage.is_some() {
+                        supply_storage.insert(key.clone(), cargo.max_storage);
                     }
                 } else if let Some(key) = &cargo.cargo_type {
-                    if !storage.contains_key(key) && cargo.max_storage.is_some() {
-                        storage.insert(
-                            key.clone(),
-                             cargo.max_storage,
-                        );
+                    if !supply_storage.contains_key(key) && cargo.max_storage.is_some() {
+                        supply_storage.insert(key.clone(), cargo.max_storage);
                     }
                 }
             }
@@ -308,16 +300,16 @@ pub fn map_production_configs(
                 })
                 .collect();
 
-            (output_type::ProductionConfig {
+            output_type::ProductionConfig {
                 input_cargos,
                 output_cargos,
                 production_time_seconds: config.production_time_seconds,
                 production_speed_multiplier: config.production_speed_multiplier,
                 local_food_supply: config.local_food_supply,
-            })
+            }
         })
         .collect();
-    (config, storage)
+    (config, demand_storage, supply_storage)
 }
 
 pub fn map_demand_configs(
