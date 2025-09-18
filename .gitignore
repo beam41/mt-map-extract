@@ -1,6 +1,6 @@
 /target
 /MotorTown
-out_*.json
+*.json
 .vscode/
-wiki/
-site_wiki/
+wiki*/
+site_wiki*/

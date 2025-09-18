@@ -1126,8 +1126,8 @@ pub struct CargoGameplayTagQuery {
     pub token_stream_version: i64,
     #[serde(rename = "TagDictionary")]
     pub tag_dictionary: Vec<Value>,
-    #[serde(rename = "QueryTokenStream")]
-    pub query_token_stream: Vec<Value>,
+    // #[serde(rename = "QueryTokenStream")]
+    // pub query_token_stream: Vec<Value>,
     #[serde(rename = "UserDescription")]
     pub user_description: String,
     #[serde(rename = "AutoDescription")]
@@ -1171,8 +1171,8 @@ pub struct BaseRotationOffset {
 pub struct VehicleDeliveryVehicleQuery {
     #[serde(rename = "TagDictionary")]
     pub tag_dictionary: Vec<TagDictionary>,
-    #[serde(rename = "QueryTokenStream")]
-    pub query_token_stream: Vec<i64>,
+    // #[serde(rename = "QueryTokenStream")]
+    // pub query_token_stream: Vec<i64>,
     #[serde(rename = "AutoDescription")]
     pub auto_description: String,
 }
@@ -1871,8 +1871,8 @@ pub struct GameplayTagQuery {
     pub token_stream_version: i64,
     #[serde(rename = "TagDictionary")]
     pub tag_dictionary: Vec<TagDictionary>,
-    #[serde(rename = "QueryTokenStream")]
-    pub query_token_stream: Vec<i64>,
+    // #[serde(rename = "QueryTokenStream")]
+    // pub query_token_stream: Vec<i64>,
     #[serde(rename = "UserDescription")]
     pub user_description: String,
     #[serde(rename = "AutoDescription")]
