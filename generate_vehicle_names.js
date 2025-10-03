@@ -12,6 +12,40 @@ const vehiclesPath = path.join(
 );
 const vehiclesData = JSON.parse(fs.readFileSync(vehiclesPath, "utf8"));
 
+const localizationDir = path.join(
+  __dirname,
+  "MotorTown",
+  "Content",
+  "Localization",
+  "Game"
+);
+const languages = fs
+  .readdirSync(localizationDir)
+  .filter((item) =>
+    fs.statSync(path.join(localizationDir, item)).isDirectory()
+  );
+
+const localizations = {};
+languages.forEach((lang) => {
+  try {
+    const langPath = path.join(localizationDir, lang, "Game.json");
+    if (fs.existsSync(langPath)) {
+      localizations[lang] = JSON.parse(fs.readFileSync(langPath, "utf8"));
+    }
+  } catch (error) {
+    console.warn(`Failed to load localization for ${lang}:`, error.message);
+  }
+});
+
+const getVehicleLocales = (key, table) => {
+  return (
+    table.VehicleName[key] ||
+    table.Vehicle[key] ||
+    localizations.en.VehicleName[key] ||
+    localizations.en.Vehicle[key]
+  );
+};
+
 // Extract the Rows object
 const rows = vehiclesData[0].Rows;
 
@@ -19,31 +53,28 @@ const rows = vehiclesData[0].Rows;
 const vehicleNames = {};
 
 for (const [vehicleKey, vehicleData] of Object.entries(rows)) {
-  let vehicleName = "";
+  const names = {};
+  languages.forEach((lang) => {
+    if (localizations[lang]) {
+      const localized =
+        vehicleData.VehicleName2.Texts.map(
+          (t) =>
+            getVehicleLocales(t.Key, localizations[lang] || {}) ||
+            t.LocalizedString ||
+            t.CultureInvariantString
+        ).join(" ") ||
+        getVehicleLocales(
+          vehicleData.VehicleName.Key,
+          localizations[lang] || {}
+        ) ||
+        vehicleData.VehicleName.CultureInvariantString;
 
-  // Check if VehicleName2 exists and has content
-  if (
-    vehicleData.VehicleName2 &&
-    vehicleData.VehicleName2.Texts &&
-    vehicleData.VehicleName2.Texts.length > 0
-  ) {
-    // Join the LocalizedString or CultureInvariantString from VehicleName2.Texts
-    const nameArray = vehicleData.VehicleName2.Texts.map((text) => {
-      return text.LocalizedString || text.CultureInvariantString || "";
-    }).filter((name) => name !== ""); // Remove empty strings
+      names[lang] = localized;
+    }
+  });
 
-    vehicleName = nameArray.join(" ");
-  } else if (vehicleData.VehicleName) {
-    // Use VehicleName if VehicleName2 is empty
-    vehicleName =
-      vehicleData.VehicleName.LocalizedString ||
-      vehicleData.VehicleName.CultureInvariantString ||
-      "";
-  }
-
-  // Only add if we have a valid name
-  if (vehicleName) {
-    vehicleNames[vehicleKey] = vehicleName;
+  if (names) {
+    vehicleNames[vehicleKey] = names;
   }
 }
 

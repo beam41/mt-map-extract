@@ -61,12 +61,13 @@ const result = JSON.stringify(
   Object.entries(data).map(([key, data]) => {
     // Get vehicle name in English for readable_key
     const enVehicleName =
-      getVehicleLocales(data.VehicleName.Key, localizations.en || {}) ||
       data.VehicleName2.Texts.map(
         (t) =>
           getVehicleLocales(t.Key, localizations.en || {}) ||
+          t.LocalizedString ||
           t.CultureInvariantString
       ).join(" ") ||
+      getVehicleLocales(data.VehicleName.Key, localizations.en || {}) ||
       data.VehicleName.CultureInvariantString;
 
     // Get vehicle names in all available languages
@@ -74,12 +75,13 @@ const result = JSON.stringify(
     languages.forEach((lang) => {
       if (localizations[lang]) {
         const localized =
-          getVehicleLocales(data.VehicleName.Key, localizations[lang]) ||
           data.VehicleName2.Texts.map(
             (t) =>
-              getVehicleLocales(t.Key, localizations[lang]) ||
+              getVehicleLocales(t.Key, localizations[lang] || {}) ||
+              t.LocalizedString ||
               t.CultureInvariantString
           ).join(" ") ||
+          getVehicleLocales(data.VehicleName.Key, localizations[lang] || {}) ||
           data.VehicleName.CultureInvariantString;
 
         names[lang] = localized;

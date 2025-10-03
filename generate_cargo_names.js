@@ -11,6 +11,40 @@ const cargosPath = path.join(
 );
 const cargosData = JSON.parse(fs.readFileSync(cargosPath, "utf8"));
 
+// Load all available localizations
+const localizationDir = path.join(
+  __dirname,
+  "MotorTown",
+  "Content",
+  "Localization",
+  "Game"
+);
+const languages = fs
+  .readdirSync(localizationDir)
+  .filter((item) =>
+    fs.statSync(path.join(localizationDir, item)).isDirectory()
+  );
+
+const localizations = {};
+languages.forEach((lang) => {
+  try {
+    const langPath = path.join(localizationDir, lang, "Game.json");
+    if (fs.existsSync(langPath)) {
+      localizations[lang] = JSON.parse(fs.readFileSync(langPath, "utf8"));
+    }
+  } catch (error) {
+    console.warn(`Failed to load localization for ${lang}:`, error.message);
+  }
+});
+
+const getLocales = (namespace, key, table) => {
+  return table[namespace]?.[key] || localizations.en[namespace]?.[key];
+};
+
+const getNamespace = (name) => {
+  return name.Namespace || name.TableId?.split(".")[1] || '';
+};
+
 // Extract the Rows object
 const rows = cargosData[0].Rows;
 
@@ -18,31 +52,33 @@ const rows = cargosData[0].Rows;
 const cargoNames = {};
 
 for (const [cargoKey, cargoData] of Object.entries(rows)) {
-  let cargoName = "";
+  const names = {};
+  languages.forEach((lang) => {
+    if (localizations[lang]) {
+      const localized =
+        cargoData.Name2.Texts.map(
+          (t) =>
+            getLocales(
+              getNamespace(t),
+              t.Key,
+              localizations[lang] || {}
+            ) ||
+            t.LocalizedString ||
+            t.CultureInvariantString
+        ).join(" ") ||
+        getLocales(
+          getNamespace(cargoData.Name),
+          cargoData.Name.Key,
+          localizations[lang] || {}
+        ) ||
+        cargoData.Name.CultureInvariantString;
 
-  // Check if Name2 exists and has content
-  if (
-    cargoData.Name2 &&
-    cargoData.Name2.Texts &&
-    cargoData.Name2.Texts.length > 0
-  ) {
-    // Join the LocalizedString or CultureInvariantString from Name2.Texts
-    const nameArray = cargoData.Name2.Texts.map((text) => {
-      return text.LocalizedString || text.CultureInvariantString || "";
-    }).filter((name) => name !== ""); // Remove empty strings
+      names[lang] = localized;
+    }
+  });
 
-    cargoName = nameArray.join(" ");
-  } else if (cargoData.Name) {
-    // Use Name if Name2 is empty
-    cargoName =
-      cargoData.Name.LocalizedString ||
-      cargoData.Name.CultureInvariantString ||
-      "";
-  }
-
-  // Only add if we have a valid name
-  if (cargoName) {
-    cargoNames[cargoKey] = cargoName;
+  if (names) {
+    cargoNames[cargoKey] = names;
   }
 }
 

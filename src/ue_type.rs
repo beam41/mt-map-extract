@@ -243,7 +243,7 @@ pub struct Properties {
     #[serde(rename = "DeliveryPointGuid")]
     pub delivery_point_guid: Option<String>,
     #[serde(rename = "MissionPointName")]
-    pub mission_point_name: Option<MissionPointName>,
+    pub mission_point_name: Option<Text>,
     #[serde(rename = "MaxDeliveries")]
     pub max_deliveries: Option<i64>,
     #[serde(rename = "DemandConfigs")]
@@ -1090,21 +1090,6 @@ pub struct Vector2 {
 
 #[skip_serializing_none]
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MissionPointName {
-    #[serde(rename = "TableId")]
-    pub table_id: Option<String>,
-    #[serde(rename = "Key")]
-    pub key: Option<String>,
-    #[serde(rename = "SourceString")]
-    pub source_string: Option<String>,
-    #[serde(rename = "LocalizedString")]
-    pub localized_string: Option<String>,
-    #[serde(rename = "CultureInvariantString")]
-    pub culture_invariant_string: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DemandConfig {
     #[serde(rename = "CargoType")]
     pub cargo_type: String,
@@ -1559,24 +1544,9 @@ pub struct ContainerTypes {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeliveryPointName {
     #[serde(rename = "Name")]
-    pub name: Name,
+    pub name: Text,
     #[serde(rename = "Number")]
     pub number: Option<i64>,
-}
-
-#[skip_serializing_none]
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Name {
-    #[serde(rename = "CultureInvariantString")]
-    pub culture_invariant_string: Option<String>,
-    #[serde(rename = "TableId")]
-    pub table_id: Option<String>,
-    #[serde(rename = "Key")]
-    pub key: Option<String>,
-    #[serde(rename = "SourceString")]
-    pub source_string: Option<String>,
-    #[serde(rename = "LocalizedString")]
-    pub localized_string: Option<String>,
 }
 
 #[skip_serializing_none]

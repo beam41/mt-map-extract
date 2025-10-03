@@ -1,4 +1,4 @@
-use crate::ue_type::{self};
+use crate::ue_type::{self, MapIconName, Text};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, num::NonZeroI64};
 
@@ -99,7 +99,7 @@ pub struct DemandConfig {
 pub struct DeliveryPoint {
     #[serde(rename = "type")]
     pub type_field: String,
-    pub name: Option<String>,
+    pub name: Option<Vec<Text>>,
     #[serde(rename = "coord")]
     pub relative_location: Option<Vector3>,
     pub guid: Option<String>,
@@ -162,7 +162,7 @@ pub struct HousePoint {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct AreaVolume {
-    pub name: String,
+    pub name: Vec<MapIconName>,
     pub flag: String,
     pub vertex: Vec<Vector2>,
 }

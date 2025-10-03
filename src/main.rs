@@ -12,7 +12,7 @@ use std::time::Instant;
 use ue_type::UObject;
 
 use crate::helper::{
-    area_volumes_to_location, extract_area_flag, extract_area_name, extract_area_size,
+    extract_area_flag, extract_area_name, extract_area_size,
     extract_housereg_key, extract_top_view_lines, get_enclose_area,
 };
 use crate::output_type::{AreaVolume, EvChargerPoint, HousePoint};
@@ -340,8 +340,6 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 None => vec![],
             };
 
-            let location = area_volumes_to_location(&area);
-
             for cargo in &demand_configs {
                 if let Some(key) = &cargo.cargo_key {
                     if !demand_storage_configs.contains_key(key) && cargo.max_storage.is_some() {
@@ -461,7 +459,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
     //fix here
 
     if let Ok(r) = serde_json::to_string_pretty(&output) {
-        fs::write("./out_delivery_point.json", r).unwrap();
+        fs::write("./out_delivery_point_raw.json", r).unwrap();
     }
 }
 
@@ -528,8 +526,6 @@ fn extract_bus_stop(areas: &[AreaVolume]) {
             None => vec![],
         };
 
-        let location = area_volumes_to_location(&area);
-
         output.push(BusStopPoint {
             type_field: world_obj.type_field.clone(),
             name,
@@ -590,8 +586,6 @@ fn extract_ev_charger(areas: &[AreaVolume]) {
                 None => vec![],
             };
 
-            let location = area_volumes_to_location(&area);
-
             output.push(EvChargerPoint {
                 relative_location,
                 // location,
@@ -646,7 +640,6 @@ fn extract_house(areas: &[AreaVolume]) {
             None => vec![],
         };
 
-        let location = area_volumes_to_location(&area);
         let mut area_size = extract_area_size(&world_obj);
         let name = extract_housereg_key(world_obj);
 
@@ -707,7 +700,7 @@ fn extract_area_volume() -> Vec<AreaVolume> {
     println!("Aggregate data took: {:.2?}", elapsed);
 
     if let Ok(r) = serde_json::to_string_pretty(&output) {
-        fs::write("./out_area_volume.json", r).unwrap();
+        fs::write("./out_area_volume_raw.json", r).unwrap();
     }
 
     output

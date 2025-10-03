@@ -1,8 +1,11 @@
 use crate::output_type::{self, AreaVolume, Vector2};
 use crate::output_type::{ProductionCargo, Vector3};
-use crate::ue_type::{self, DemandConfig, ObjectPath, ProductionConfig, StorageConfig, UObject};
+use crate::ue_type::{
+    self, DemandConfig, MapIconName, ObjectPath, ProductionConfig, StorageConfig, Text, UObject
+};
 use std::collections::HashMap;
 use std::num::NonZeroI64;
+use std::vec;
 
 pub fn get_obj_path(obj_path: &ObjectPath) -> (String, usize) {
     let obj_path_parsed: Vec<String> = obj_path
@@ -17,7 +20,7 @@ pub fn get_obj_path(obj_path: &ObjectPath) -> (String, usize) {
     (obj_path_parsed[0].to_string(), obj_path_index)
 }
 
-pub fn extract_name(obj: &UObject) -> Option<String> {
+pub fn extract_name(obj: &UObject) -> Option<Vec<Text>> {
     let mission_point_name = obj
         .properties
         .as_ref()
@@ -34,9 +37,8 @@ pub fn extract_name(obj: &UObject) -> Option<String> {
                 .unwrap()
                 .texts
                 .iter()
-                .map(|t| t.localized_string.as_deref().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join(" "),
+                .cloned()
+                .collect::<Vec<_>>(),
         )
     } else {
         None
@@ -47,11 +49,7 @@ pub fn extract_name(obj: &UObject) -> Option<String> {
     }
 
     let name = if mission_point_name.is_some() {
-        let name = mission_point_name.unwrap();
-        match name.localized_string.as_ref() {
-            Some(s) => Some(s.clone()),
-            None => name.culture_invariant_string.clone(),
-        }
+        Some(vec![mission_point_name.unwrap().clone()])
     } else {
         None
     };
@@ -61,17 +59,7 @@ pub fn extract_name(obj: &UObject) -> Option<String> {
     }
 
     let name = if delivery_point_name.is_some() {
-        let d_point = delivery_point_name.unwrap();
-        let name = &d_point.name;
-        let name = match name.localized_string.as_ref() {
-            Some(s) => Some(s.clone()),
-            None => name.culture_invariant_string.clone(),
-        };
-        if name.is_some() && d_point.number.is_some() {
-            Some(format!("{} {}", name.unwrap(), d_point.number.unwrap()))
-        } else {
-            name.clone()
-        }
+        Some(vec![delivery_point_name.unwrap().name.clone()])
     } else {
         None
     };
@@ -391,16 +379,14 @@ pub fn extract_housereg_key(obj: &UObject) -> String {
         .unwrap_or("".to_string())
 }
 
-pub fn extract_area_name(obj: &UObject) -> String {
+pub fn extract_area_name(obj: &UObject) -> Vec<MapIconName> {
     let name = obj
         .properties
         .as_ref()
-        .and_then(|p| p.area_name.as_ref())
-        .and_then(|p| Some(p.localized_string.clone()))
-        .unwrap_or("".to_string());
+        .and_then(|p| p.area_name.as_ref());
 
-    if name.len() > 0 {
-        return name;
+    if name.is_some() {
+        return vec![name.unwrap().clone()];
     }
 
     obj.properties
@@ -409,14 +395,9 @@ pub fn extract_area_name(obj: &UObject) -> String {
         .and_then(|texts| {
             Some(
                 texts
-                    .texts
-                    .iter()
-                    .map(|t| t.localized_string.clone())
-                    .collect::<Vec<_>>()
-                    .join(" "),
+                    .texts.clone()
             )
-        })
-        .unwrap_or("".to_string())
+        }).unwrap()
 }
 
 pub fn extract_area_flag(obj: &UObject) -> String {
@@ -469,50 +450,6 @@ fn point_in_polygon(point: &Vector2, polygon: &[Vector2]) -> bool {
         }
     }
     count % 2 == 1
-}
-
-pub fn area_volumes_to_location(area: &[AreaVolume]) -> String {
-    let racetrack = area
-        .iter()
-        .find(|a| a.flag == "EMTAreaVolumeFlags::RaceTrack")
-        .map(|a| a.name.clone());
-    let small = area
-        .iter()
-        .find(|a| a.flag == "EMTAreaVolumeFlags::SmallArea")
-        .map(|a| a.name.clone());
-    let large = area
-        .iter()
-        .find(|a| a.flag == "EMTAreaVolumeFlags::LargeArea")
-        .map(|a| a.name.clone());
-    let zone = area
-        .iter()
-        .find(|a| a.flag == "EMTAreaVolumeFlags::Zone")
-        .map(|a| a.name.clone());
-
-    let mut result = String::new();
-    if let Some(racetrack) = racetrack {
-        result.push_str(&racetrack);
-    }
-    if let Some(small) = small {
-        if result.len() > 0 {
-            result.push_str(", ");
-        }
-        result.push_str(&small);
-    }
-    if let Some(large) = large {
-        if result.len() > 0 {
-            result.push_str(", ");
-        }
-        result.push_str(&large);
-    }
-    if let Some(zone) = zone {
-        if result.len() > 0 {
-            result.push_str(", ");
-        }
-        result.push_str(&zone);
-    }
-
-    result
 }
 
 pub fn extract_area_size(obj: &UObject) -> ue_type::Vector3 {

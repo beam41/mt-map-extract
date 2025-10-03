@@ -100,6 +100,7 @@ function getLanguageName(langCode) {
     uk: "Ukrainian",
     "zh-Hans": "Chinese (Simplified)",
     "zh-Hant": "Chinese (Traditional)",
+    vi: "Vietnamese",
   };
 
   return languageMap[langCode] || langCode;
