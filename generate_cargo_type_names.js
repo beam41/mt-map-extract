@@ -105,7 +105,7 @@ const generateCargoTypeNames = () => {
   });
 
   // Write the result to cargo_type_names.json
-  const outputPath = path.join(__dirname, "cargo_type_names.json");
+  const outputPath = path.join(__dirname, "out_cargo_type_names.json");
   fs.writeFileSync(outputPath, JSON.stringify(cargoTypeNames, null, 2));
 
   console.log(

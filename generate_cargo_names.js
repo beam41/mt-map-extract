@@ -82,8 +82,8 @@ for (const [cargoKey, cargoData] of Object.entries(rows)) {
   }
 }
 
-// Write the result to cargo_name.json
-const outputPath = path.join(__dirname, "cargo_name.json");
+// Write the result to out_cargo_name.json
+const outputPath = path.join(__dirname, "out_cargo_name.json");
 fs.writeFileSync(outputPath, JSON.stringify(cargoNames, null, 2));
 
 console.log(

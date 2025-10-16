@@ -1,0 +1,7 @@
+cargo run --release
+node .\convert_raw_to_localized.js
+node .\generate_cargo_maps.js   
+node .\generate_cargo_names.js
+node .\generate_cargo_type_names.js
+node .\generate_vehicle_names.js  
+node .\remove_duplicates.js

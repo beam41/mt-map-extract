@@ -78,12 +78,12 @@ for (const [vehicleKey, vehicleData] of Object.entries(rows)) {
   }
 }
 
-// Write the result to vehicles_name.json
-const outputPath = path.join(__dirname, "vehicles_name.json");
+// Write the result to out_vehicles_name.json
+const outputPath = path.join(__dirname, "out_vehicles_name.json");
 fs.writeFileSync(outputPath, JSON.stringify(vehicleNames, null, 2));
 
 console.log(
-  `Generated vehicles_name.json with ${
+  `Generated out_vehicles_name.json with ${
     Object.keys(vehicleNames).length
   } entries`
 );

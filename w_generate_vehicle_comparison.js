@@ -90,9 +90,7 @@ vehiclesData.forEach((vehicle) => {
   // Special case for display names
   let displayName = vehicle.name.en;
   if (vehicle.slug === "bongo_bus") {
-    displayName = "Bongo Bus";
-  } else if (vehicle.slug === "nimo_taxi") {
-    displayName = "Nimo Taxi";
+    displayName = "Bongo (Bus)";
   }
 
   const name = `[[:vehicles:${vehicle.slug}|${displayName}]]`;
