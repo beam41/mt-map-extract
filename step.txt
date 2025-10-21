@@ -1,4 +1,5 @@
 cargo run --release
+node .\ara_d1_quick_fix.js
 node .\convert_raw_to_localized.js
 node .\generate_cargo_maps.js   
 node .\generate_cargo_names.js

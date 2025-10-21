@@ -1,7 +1,7 @@
 use crate::output_type::{self, AreaVolume, Vector2};
 use crate::output_type::{ProductionCargo, Vector3};
 use crate::ue_type::{
-    self, DemandConfig, MapIconName, ObjectPath, ProductionConfig, StorageConfig, Text, UObject
+    self, DemandConfig, MapIconName, ObjectPath, ProductionConfig, StorageConfig, Text, UObject,
 };
 use std::collections::HashMap;
 use std::num::NonZeroI64;
@@ -48,8 +48,22 @@ pub fn extract_name(obj: &UObject) -> Option<Vec<Text>> {
         return name;
     }
 
-    let name = if mission_point_name.is_some() {
-        Some(vec![mission_point_name.unwrap().clone()])
+    let name = if delivery_point_name.is_some() {
+        let number = delivery_point_name.unwrap().number;
+        if number.is_some() {
+            Some(vec![
+                delivery_point_name.unwrap().name.clone(),
+                Text {
+                    culture_invariant_string: Some(number.unwrap().to_string()),
+                    table_id: None,
+                    key: None,
+                    source_string: None,
+                    localized_string: None,
+                },
+            ])
+        } else {
+            Some(vec![delivery_point_name.unwrap().name.clone()])
+        }
     } else {
         None
     };
@@ -58,8 +72,8 @@ pub fn extract_name(obj: &UObject) -> Option<Vec<Text>> {
         return name;
     }
 
-    let name = if delivery_point_name.is_some() {
-        Some(vec![delivery_point_name.unwrap().name.clone()])
+    let name = if mission_point_name.is_some() {
+        Some(vec![mission_point_name.unwrap().clone()])
     } else {
         None
     };
@@ -380,10 +394,7 @@ pub fn extract_housereg_key(obj: &UObject) -> String {
 }
 
 pub fn extract_area_name(obj: &UObject) -> Vec<MapIconName> {
-    let name = obj
-        .properties
-        .as_ref()
-        .and_then(|p| p.area_name.as_ref());
+    let name = obj.properties.as_ref().and_then(|p| p.area_name.as_ref());
 
     if name.is_some() {
         return vec![name.unwrap().clone()];
@@ -392,12 +403,8 @@ pub fn extract_area_name(obj: &UObject) -> Vec<MapIconName> {
     obj.properties
         .as_ref()
         .and_then(|p| p.area_name_texts.as_ref())
-        .and_then(|texts| {
-            Some(
-                texts
-                    .texts.clone()
-            )
-        }).unwrap()
+        .and_then(|texts| Some(texts.texts.clone()))
+        .unwrap()
 }
 
 pub fn extract_area_flag(obj: &UObject) -> String {
