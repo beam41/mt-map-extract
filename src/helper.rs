@@ -3,7 +3,7 @@ use crate::output_type::{ProductionCargo, Vector3};
 use crate::ue_type::{
     self, DemandConfig, MapIconName, ObjectPath, ProductionConfig, StorageConfig, Text, UObject,
 };
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::num::NonZeroI64;
 use std::vec;
 
@@ -165,8 +165,8 @@ pub fn map_production_configs(
     default_max_storage: Option<NonZeroI64>,
 ) -> (
     Vec<output_type::ProductionConfig>,
-    HashMap<String, Option<NonZeroI64>>,
-    HashMap<String, Option<NonZeroI64>>,
+    IndexMap<String, Option<NonZeroI64>>,
+    IndexMap<String, Option<NonZeroI64>>,
 ) {
     let production_configs = match extract_production_configs(world_obj) {
         n if n.len() > 0 => n,
@@ -179,9 +179,9 @@ pub fn map_production_configs(
         },
     };
 
-    let mut demand_storage: HashMap<String, Option<NonZeroI64>> = HashMap::new();
+    let mut demand_storage: IndexMap<String, Option<NonZeroI64>> = IndexMap::new();
 
-    let mut supply_storage: HashMap<String, Option<NonZeroI64>> = HashMap::new();
+    let mut supply_storage: IndexMap<String, Option<NonZeroI64>> = IndexMap::new();
 
     let config = production_configs
         .iter()
@@ -276,7 +276,7 @@ pub fn map_production_configs(
                 }
             }
 
-            let input_cargos: HashMap<String, NonZeroI64> = input_cargos
+            let input_cargos: IndexMap<String, NonZeroI64> = input_cargos
                 .into_iter()
                 .filter_map(|cargo| {
                     if let Some(key) = cargo.cargo_key {
@@ -289,7 +289,7 @@ pub fn map_production_configs(
                 })
                 .collect();
 
-            let output_cargos: HashMap<String, NonZeroI64> = output_cargos
+            let output_cargos: IndexMap<String, NonZeroI64> = output_cargos
                 .into_iter()
                 .filter_map(|cargo| {
                     if let Some(key) = cargo.cargo_key {

@@ -1,9 +1,9 @@
 use crate::deserialize_zero_as_none::deserialize_zero_as_none;
+use indexmap::IndexMap;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use serde_json::Value;
 use serde_with::skip_serializing_none;
-use std::collections::HashMap;
 use std::num::NonZeroI64;
 
 #[skip_serializing_none]
@@ -2407,12 +2407,11 @@ pub struct EditorTags {
     pub blueprint_type: String,
 }
 
-
 #[skip_serializing_none]
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct House {
     #[serde(rename = "Rows")]
-    pub rows: HashMap<String, HouseRow>,
+    pub rows: IndexMap<String, HouseRow>,
 }
 
 #[skip_serializing_none]

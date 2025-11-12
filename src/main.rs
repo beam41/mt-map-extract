@@ -3,8 +3,8 @@ use helper::{
     extract_delivery_point_guid, extract_max_storage, extract_name, extract_relative_location,
     extract_storage_configs, get_obj_path, map_demand_configs, map_production_configs,
 };
+use indexmap::IndexMap;
 use output_type::{BusStopPoint, DeliveryPoint, Guid};
-use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::num::NonZeroI64;
@@ -12,8 +12,8 @@ use std::time::Instant;
 use ue_type::UObject;
 
 use crate::helper::{
-    extract_area_flag, extract_area_name, extract_area_size,
-    extract_housereg_key, extract_top_view_lines, get_enclose_area,
+    extract_area_flag, extract_area_name, extract_area_size, extract_housereg_key,
+    extract_top_view_lines, get_enclose_area,
 };
 use crate::output_type::{AreaVolume, EvChargerPoint, HousePoint};
 use crate::ue_type::House;
@@ -118,7 +118,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 },
             };
             let flat_map = {
-                let mut map: HashMap<String, Vec<String>> = HashMap::new();
+                let mut map: IndexMap<String, Vec<String>> = IndexMap::new();
 
                 // EDeliveryCargoType::SmallPackage
                 map.insert(
@@ -352,7 +352,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
                 }
             }
 
-            let demand_configs: HashMap<String, f64> = demand_configs
+            let demand_configs: IndexMap<String, f64> = demand_configs
                 .iter()
                 .filter_map(|cargo| {
                     if let Some(key) = &cargo.cargo_key {
@@ -428,7 +428,7 @@ fn extract_delivery_point(areas: &[AreaVolume]) {
     println!("Aggregate data took: {:.2?}", elapsed);
 
     // Fix storage inheritance: parent should inherit storage values from dropPoints
-    let mut guid_to_index: HashMap<String, usize> = HashMap::new();
+    let mut guid_to_index: IndexMap<String, usize> = IndexMap::new();
     for (idx, item) in output.iter().enumerate() {
         if let Some(guid) = &item.guid {
             guid_to_index.insert(guid.clone(), idx);

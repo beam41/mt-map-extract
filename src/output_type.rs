@@ -1,6 +1,7 @@
 use crate::ue_type::{self, MapIconName, Text};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, num::NonZeroI64};
+use std::num::NonZeroI64;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Vector3 {
@@ -66,12 +67,12 @@ pub struct ProductionCargo {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize)]
 pub struct ProductionConfig {
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
     #[serde(rename = "input")]
-    pub input_cargos: HashMap<String, NonZeroI64>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub input_cargos: IndexMap<String, NonZeroI64>,
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
     #[serde(rename = "output")]
-    pub output_cargos: HashMap<String, NonZeroI64>,
+    pub output_cargos: IndexMap<String, NonZeroI64>,
     #[serde(rename = "prodTime")]
     pub production_time_seconds: f64,
     #[serde(rename = "prodSpeedMul")]
@@ -106,14 +107,14 @@ pub struct DeliveryPoint {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "prod")]
     pub production_configs: Vec<ProductionConfig>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
     #[serde(rename = "demand")]
-    pub demand_configs: HashMap<String, f64>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub demand_configs: IndexMap<String, f64>,
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
     #[serde(rename = "demandStorage")]
-    pub demand_storage_configs: HashMap<String, Option<NonZeroI64>>,
+    pub demand_storage_configs: IndexMap<String, Option<NonZeroI64>>,
     #[serde(rename = "supplyStorage")]
-    pub supply_storage_configs: HashMap<String, Option<NonZeroI64>>,
+    pub supply_storage_configs: IndexMap<String, Option<NonZeroI64>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "dropPoint")]
     pub drop_point: Vec<String>,
