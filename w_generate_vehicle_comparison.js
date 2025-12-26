@@ -89,9 +89,6 @@ let table =
 vehiclesData.forEach((vehicle) => {
   // Special case for display names
   let displayName = vehicle.name.en;
-  if (vehicle.slug === "bongo_bus") {
-    displayName = "Bongo (Bus)";
-  }
 
   const name = `[[:vehicles:${vehicle.slug}|${displayName}]]`;
   const type = formatTypes(vehicle.type);
