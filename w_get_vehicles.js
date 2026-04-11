@@ -68,7 +68,8 @@ const result = JSON.stringify(
           t.CultureInvariantString
       ).join(" ") ||
       getVehicleLocales(data.VehicleName.Key, localizations.en || {}) ||
-      data.VehicleName.CultureInvariantString;
+      data.VehicleName.CultureInvariantString ||
+      key;
 
     // Get vehicle names in all available languages
     const names = {};
@@ -166,7 +167,7 @@ const result = JSON.stringify(
       slug:
         key === "Bongo_Bus" || key === "Nimo_Taxi"
           ? key.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_")
-          : (names.en || enVehicleName)
+          : (names.en || enVehicleName || key)
               .toLowerCase()
               .replace(/\s+/g, "_")
               .replace(/-/g, "_"),

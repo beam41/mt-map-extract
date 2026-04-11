@@ -562,6 +562,7 @@ fn extract_ev_charger(areas: &[AreaVolume]) {
         let file = file_result.unwrap();
         let point_file = File::open(file.path()).unwrap();
         let reader = BufReader::new(point_file);
+        print!("Processing file: {:?}... ", file.path());
         let obj_metadata = serde_json::from_reader::<_, Vec<UObject>>(reader).unwrap();
 
         for obj in &obj_metadata {
@@ -710,6 +711,6 @@ fn main() {
     let areas = extract_area_volume();
     extract_delivery_point(&areas);
     extract_bus_stop(&areas);
-    extract_ev_charger(&areas);
+    // extract_ev_charger(&areas);
     extract_house(&areas);
 }

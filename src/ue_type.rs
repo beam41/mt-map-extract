@@ -16,7 +16,7 @@ pub struct UObject {
     #[serde(rename = "Outer")]
     pub outer: Option<String>,
     #[serde(rename = "Class")]
-    pub class: String,
+    pub class: Option<String>,
     #[serde(rename = "Template")]
     pub template: Option<ObjectPath>,
     #[serde(rename = "Flags")]
@@ -1127,9 +1127,9 @@ pub struct MapIconName {
     #[serde(rename = "Key")]
     pub key: String,
     #[serde(rename = "SourceString")]
-    pub source_string: String,
+    pub source_string: Option<String>,
     #[serde(rename = "LocalizedString")]
-    pub localized_string: String,
+    pub localized_string: Option<String>,
 }
 
 #[skip_serializing_none]
@@ -2257,7 +2257,7 @@ pub struct LightmassSetting {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CachedData {
     #[serde(rename = "ParentLayerIndexRemap")]
-    pub parent_layer_index_remap: Vec<Value>,
+    pub parent_layer_index_remap: Option<Vec<Value>>,
 }
 
 #[skip_serializing_none]

@@ -1,11 +1,11 @@
 cargo run --release
-node .\ara_d1_quick_fix.js
-node .\convert_raw_to_localized.js
-node .\generate_cargo_maps.js   
-node .\generate_cargo_names.js
-node .\generate_cargo_type_names.js
-node .\generate_vehicle_names.js  
-node .\remove_duplicates.js
-node .\w_get_vehicles.js
-node .\w_generate_vehicle_wiki.js
-node .\w_generate_vehicle_comparison.js
+node ./convert_raw_to_localized.js
+node ./generate_cargo_maps.js   
+node ./generate_cargo_names.js
+node ./generate_cargo_type_names.js
+node ./generate_vehicle_names.js  
+node ./remove_duplicates.js
+node ./w_get_vehicles.js
+node ./w_generate_vehicle_wiki.js
+node ./w_generate_vehicle_comparison.js
+node ./w_generate_vehicle_list.js
