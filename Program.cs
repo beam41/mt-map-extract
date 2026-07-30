@@ -66,13 +66,8 @@ internal static class Program
 
             Step("Reading world", () =>
             {
-                var areas = world.AreaVolumes();
-                Write("out_area_volume_raw.json", areas, "areas");
-                Write("out_area_volume.json", tables.LocalizeNames(areas), "areas");
-
-                var points = world.DeliveryPoints();
-                Write("out_delivery_point_raw.json", points, "delivery points");
-                Write("out_delivery_point.json", tables.LocalizeNames(points), "delivery points");
+                Write("out_area_volume.json", tables.LocalizeNames(world.AreaVolumes()), "areas");
+                Write("out_delivery_point.json", tables.LocalizeNames(world.DeliveryPoints()), "delivery points");
 
                 Write("out_bus_stop.json", world.BusStops(), "bus stops");
                 Write("out_house.json", world.Houses(), "houses");

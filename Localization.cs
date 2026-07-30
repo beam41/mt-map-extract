@@ -166,8 +166,16 @@ internal static class Output
         {
             case JObject obj:
             {
+                // Every one of the 223 residents is called "Resident" in 23 languages; the AMC
+                // map labels them itself, so the name is dead weight there.
+                var drop = ((string?)obj["type"])?.StartsWith("Resident", StringComparison.Ordinal) == true;
+
                 var renamed = new JObject();
-                foreach (var property in obj.Properties()) renamed[AmcName(property.Name)] = AmcNames(property.Value);
+                foreach (var property in obj.Properties())
+                {
+                    if (drop && property.Name == "name") continue;
+                    renamed[AmcName(property.Name)] = AmcNames(property.Value);
+                }
                 return renamed;
             }
             case JArray array:

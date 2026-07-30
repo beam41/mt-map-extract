@@ -39,14 +39,19 @@ Symptoms of a mismatch:
 
 | File | From |
 | --- | --- |
-| `out_area_volume_raw.json` / `out_area_volume.json` | `MTAreaVolume` actors in `Jeju_World`, raw texts and localized |
-| `out_delivery_point_raw.json` / `out_delivery_point.json` | every `DeliveryPoint` blueprint matched against the world, with its production/demand/storage configs |
+| `out_area_volume.json` | `MTAreaVolume` actors in `Jeju_World`, names localized |
+| `out_delivery_point.json` | every `DeliveryPoint` blueprint matched against the world, with its production/demand/storage configs |
 | `out_bus_stop.json` | `BusStop_0*_C` / `BusTerminal_01_C` actors |
 | `out_house.json` | `House_C` actors joined with the `Houses` data table |
 | `out_cargo_key.json` / `out_cargo_metadata.json` | the `Cargos` data table (plus `Cargos_ScheduleI` when the game still ships it) |
 | `out_cargo_name.json`, `out_cargo_type_name.json`, `out_vehicles_name.json` | data tables joined with `Game.locres` for all 23 cultures |
 | `map.png` | the world map `Texture2D`, decoded from DXT1 |
 | `tiles/{z}_{x}_{y}.avif` | tiles cut from that same decoded image, zoom 0 through 5 |
+
+Cargo keys are folded onto the spelling the `Cargos` data table uses. They are FNames, which
+the game matches case-insensitively while storing whatever was typed, so the raw assets contain
+both `Terra` and `terra` - sometimes in the same file. Note the canonical form is not plain
+PascalCase: `lHBeam_6m` really does start lowercase.
 
 Name maps drop languages that match English and list `en` first, as the old
 `remove_duplicates.js` pass did. By default every enum keeps the game's own spelling
@@ -123,6 +128,10 @@ dotnet run -c Release -- --dump MotorTown  # full asset dump
 | `EMTAreaVolumeFlags::LargeArea` | `LargeArea` |
 | `EDeliveryCargoType::Log` | `_TLog` |
 | `EDeliveryCargoType::SmallPackage2` | `_TSmallPackage` |
+
+It also drops the `name` off `Resident_C` delivery points - all 223 of them are just
+"Resident" in 23 languages, and the AMC map labels those itself. That alone takes
+`out_delivery_point.json` from 512 KB to 347 KB.
 
 `--dump <dir>` additionally writes every package under `MotorTown/` as FModel-style JSON
 (~22k files, ~5 GB) - the old `MotorTown/` folder. The pipeline itself never needs it.

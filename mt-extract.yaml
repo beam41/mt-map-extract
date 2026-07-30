@@ -19,7 +19,8 @@ skip-map: false      # out/map.png
 skip-tiles: true     # out/tiles/
 
 # Enum spelling: false keeps the game's own names (EDeliveryCargoType::Log),
-# true switches to the AMC map's (_TLog, LargeArea, _TSmallPackage).
+# true switches to the AMC map's (_TLog, LargeArea, _TSmallPackage) and drops the
+# name off Resident_C points.
 amc: true
 
 # Tiles: {z}_{x}_{y}.{ext}, zoom 0 up to and including `zoom`.

@@ -61,6 +61,8 @@ internal sealed class WorldExtractor(AssetSource assets)
         ["EDeliveryCargoType::MilitarySupply"] = ["MilitarySupplyBox_01"],
     };
 
+    private readonly CargoKeys _cargoKeys = new(assets);
+
     private PackageJson World => assets.RequirePackage(WorldPath);
 
     // ---------------------------------------------------------------- area volumes
@@ -255,7 +257,7 @@ internal sealed class WorldExtractor(AssetSource assets)
         return flattened;
     }
 
-    private static List<DemandConfig> MapDemandConfigs(
+    private List<DemandConfig> MapDemandConfigs(
         JObject worldObj, JObject main, JObject? template, List<StorageConfig> storageConfigs, long? defaultMaxStorage)
     {
         var configs = DemandConfigs(worldObj)
@@ -276,7 +278,7 @@ internal sealed class WorldExtractor(AssetSource assets)
         }).ToList();
     }
 
-    private static (JArray Production, JObject DemandStorage, JObject SupplyStorage) MapProductionConfigs(
+    private (JArray Production, JObject DemandStorage, JObject SupplyStorage) MapProductionConfigs(
         JObject worldObj, JObject main, JObject? template, List<StorageConfig> storageConfigs,
         List<DemandConfig> demandConfigs, long? defaultMaxStorage)
     {
@@ -533,26 +535,26 @@ internal sealed class WorldExtractor(AssetSource assets)
     /// <summary>Floats are passed through as-is so they print exactly like the source data.</summary>
     private static JToken Number(JToken? token) => token?.DeepClone() ?? new JValue(0.0);
 
-    private static List<StorageConfig> StorageConfigs(JObject obj) =>
+    private List<StorageConfig> StorageConfigs(JObject obj) =>
         (Props(obj)?["StorageConfigs"] as JArray ?? []).Select(c => new StorageConfig(
             (string?)c["CargoType"] ?? "",
-            (string?)c["CargoKey"] ?? "",
+            _cargoKeys.Canonical((string?)c["CargoKey"] ?? ""),
             NonZero(c["MaxStorage"]))).ToList();
 
-    private static List<UeDemandConfig>? DemandConfigs(JObject obj) =>
+    private List<UeDemandConfig>? DemandConfigs(JObject obj) =>
         Props(obj)?["DemandConfigs"] is not JArray configs
             ? null
             : configs.Select(c => new UeDemandConfig(
                 (string?)c["CargoType"] ?? "",
-                (string?)c["CargoKey"] ?? "",
+                _cargoKeys.Canonical((string?)c["CargoKey"] ?? ""),
                 NonZero(c["MaxStorage"]),
                 Number(c["PaymentMultiplier"]))).ToList();
 
     private static List<JToken> ProductionConfigs(JObject obj) =>
         (Props(obj)?["ProductionConfigs"] as JArray ?? []).ToList();
 
-    private static IEnumerable<(string Key, long Value)> CargoAmounts(JToken? cargos) =>
-        (cargos as JArray ?? []).Select(c => ((string?)c["Key"] ?? "", (long?)c["Value"] ?? 0));
+    private IEnumerable<(string Key, long Value)> CargoAmounts(JToken? cargos) =>
+        (cargos as JArray ?? []).Select(c => (_cargoKeys.Canonical((string?)c["Key"] ?? ""), (long?)c["Value"] ?? 0));
 
     private static List<T> FirstNonEmpty<T>(params List<T>[] candidates) =>
         candidates.FirstOrDefault(c => c.Count > 0) ?? [];
