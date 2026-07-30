@@ -1,7 +1,13 @@
-/target
 /MotorTown
+/MotorTown-old
+/out
+/out_map
 *.json
 .vscode/
 wiki*/
 site_wiki*/
 to_be_update/
+resource/
+map.png
+bin/
+obj/

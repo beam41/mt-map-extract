@@ -1,0 +1,33 @@
+# Picked up automatically when the extractor runs in this directory.
+# Keys are the long option names from --help (dashes or underscores); flags on the command
+# line win over anything set here.
+
+# Inputs - see README.md for what belongs in resource/
+# pak: resource/MotorTown-Windows.pak
+# aes: resource/aes
+# usmap: resource/Mappings.usmap
+# game: GAME_UE5_5
+
+# Outputs - map-out and tiles-out follow `out` unless set here
+out: out
+# map-out: out/map.png
+# tiles-out: out/tiles
+
+# Stages - set any to true to leave that output alone
+skip-json: false     # out/out_*.json
+skip-map: false      # out/map.png
+skip-tiles: true     # out/tiles/
+
+# Enum spelling: false keeps the game's own names (EDeliveryCargoType::Log),
+# true switches to the AMC map's (_TLog, LargeArea, _TSmallPackage).
+amc: true
+
+# Tiles: {z}_{x}_{y}.{ext}, zoom 0 up to and including `zoom`.
+# The map is 4096px, so zoom 4 is native and 5 upscales one level.
+zoom: 5
+tile-size: 256
+format: avif
+quality: 65
+effort: 9
+upscale: nearest
+downscale: lanczos3
