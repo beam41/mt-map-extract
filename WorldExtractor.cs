@@ -175,7 +175,9 @@ internal sealed class WorldExtractor(AssetSource assets)
                     ["type"] = ExportType(worldObj),
                     ["name"] = NameJson(Name(worldObj) ?? mainName),
                     ["coord"] = Coord(World.Json(sceneIndex.Value)),
-                    ["guid"] = DeliveryPointGuid(worldObj),
+                    // A placed actor that kept the blueprint's guid never serializes one of its
+                    // own, so fall back to the class default the way the game does.
+                    ["guid"] = DeliveryPointGuid(worldObj) ?? DeliveryPointGuid(main),
                     ["supplyStorage"] = supplyStorage,
                 };
 
