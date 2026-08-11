@@ -59,13 +59,6 @@ internal sealed class Localization(SortedDictionary<string, Dictionary<string, D
 /// <summary>Helpers for the FText shape CUE4Parse emits.</summary>
 internal static class Text
 {
-    /// <summary>Fields the Rust/JS pipeline kept when it re-serialized a text.</summary>
-    private static readonly string[] TextFields =
-        ["TableId", "Key", "SourceString", "LocalizedString", "CultureInvariantString"];
-
-    private static readonly string[] MapIconNameFields =
-        ["TableId", "Key", "SourceString", "LocalizedString"];
-
     /// <summary>
     /// Texts authored in the editor carry no namespace at all and land in the locres under the
     /// empty one, so that - not null - is the fallback.
@@ -88,21 +81,6 @@ internal static class Text
 
     public static string? Localized(JObject text) =>
         (string?)text["LocalizedString"] ?? (string?)text["CultureInvariantString"];
-
-    public static JObject Project(JObject text) => Project(text, TextFields);
-
-    public static JObject ProjectMapIconName(JObject text) => Project(text, MapIconNameFields);
-
-    private static JObject Project(JObject text, string[] fields)
-    {
-        var projected = new JObject();
-        foreach (var field in fields)
-        {
-            var value = text[field];
-            if (value is not null && value.Type != JTokenType.Null) projected[field] = value.DeepClone();
-        }
-        return projected;
-    }
 
     /// <summary>A text carrying nothing but a culture-invariant string, e.g. a point number.</summary>
     public static JObject Invariant(string value) => new() { ["CultureInvariantString"] = value };

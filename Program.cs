@@ -58,7 +58,7 @@ internal static class Program
             var localization = Step("Loading localization", assets.LoadLocalization);
             Console.WriteLine($"  {localization.Languages.Count} languages: {string.Join(", ", localization.Languages)}");
 
-            var world = new WorldExtractor(assets);
+            var world = new WorldExtractor(assets, localization);
             var tables = new TableExtractor(assets, localization);
 
             void Write(string fileName, JToken json, string label) =>
@@ -66,8 +66,8 @@ internal static class Program
 
             Step("Reading world", () =>
             {
-                Write("out_area_volume.json", tables.LocalizeNames(world.AreaVolumes()), "areas");
-                Write("out_delivery_point.json", tables.LocalizeNames(world.DeliveryPoints()), "delivery points");
+                Write("out_area_volume.json", world.AreaVolumes(), "areas");
+                Write("out_delivery_point.json", world.DeliveryPoints(), "delivery points");
 
                 Write("out_bus_stop.json", world.BusStops(), "bus stops");
                 Write("out_house.json", world.Houses(), "houses");

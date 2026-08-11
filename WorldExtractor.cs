@@ -6,7 +6,7 @@ namespace MtExtract;
 /// The world-data half of the pipeline: area volumes, delivery points, bus stops and houses,
 /// read straight out of the pak instead of a JSON dump.
 /// </summary>
-internal sealed class WorldExtractor(AssetSource assets)
+internal sealed class WorldExtractor(AssetSource assets, Localization localization)
 {
     private const string WorldPath = "MotorTown/Content/Maps/Jeju/Jeju_World";
     private const string DeliveryPointDir = "MotorTown/Content/Objects/Mission/Delivery/DeliveryPoint/";
@@ -67,7 +67,7 @@ internal sealed class WorldExtractor(AssetSource assets)
 
     // ---------------------------------------------------------------- area volumes
 
-    /// <summary>Named areas with their top-view outline. Emitted as out_area_volume_raw.json.</summary>
+    /// <summary>Named areas with their top-view outline. Emitted as out_area_volume.json.</summary>
     public JArray AreaVolumes()
     {
         var output = new JArray();
@@ -76,28 +76,19 @@ internal sealed class WorldExtractor(AssetSource assets)
             var obj = World.Json(index);
             output.Add(new JObject
             {
-                ["name"] = AreaName(obj),
+                ["name"] = LocalizedName(AreaName(obj)),
                 ["flag"] = AreaFlag(obj),
                 ["vertex"] = TopViewLines(obj),
             });
         }
-        return output;
+        return (JArray)Output.JsNumbers(output);
     }
 
-    private static JArray AreaName(JObject obj)
+    private static List<JObject> AreaName(JObject obj)
     {
-        var names = new JArray();
-        if (Props(obj)?["AreaName"] is JObject single)
-        {
-            names.Add(Text.ProjectMapIconName(single));
-            return names;
-        }
+        if (Props(obj)?["AreaName"] is JObject single) return [single];
 
-        foreach (var text in Props(obj)?["AreaNameTexts"]?["Texts"] as JArray ?? [])
-        {
-            if (text is JObject entry) names.Add(Text.ProjectMapIconName(entry));
-        }
-        return names;
+        return (Props(obj)?["AreaNameTexts"]?["Texts"] as JArray ?? []).OfType<JObject>().ToList();
     }
 
     private static string AreaFlag(JObject obj) =>
@@ -115,7 +106,7 @@ internal sealed class WorldExtractor(AssetSource assets)
 
     // ------------------------------------------------------------- delivery points
 
-    /// <summary>Emitted as out_delivery_point_raw.json.</summary>
+    /// <summary>Emitted as out_delivery_point.json.</summary>
     public JArray DeliveryPoints()
     {
         var points = new List<JObject>();
@@ -173,7 +164,7 @@ internal sealed class WorldExtractor(AssetSource assets)
                 var point = new JObject
                 {
                     ["type"] = ExportType(worldObj),
-                    ["name"] = NameJson(Name(worldObj) ?? mainName),
+                    ["name"] = LocalizedName(Name(worldObj) ?? mainName),
                     ["coord"] = Coord(World.Json(sceneIndex.Value)),
                     // A placed actor that kept the blueprint's guid never serializes one of its
                     // own, so fall back to the class default the way the game does.
@@ -201,7 +192,7 @@ internal sealed class WorldExtractor(AssetSource assets)
 
         var output = new JArray();
         foreach (var point in points) output.Add(Reorder(point));
-        return output;
+        return (JArray)Output.JsNumbers(output);
     }
 
     /// <summary>Field order the Rust struct serialized in, kept so the files diff cleanly.</summary>
@@ -561,13 +552,24 @@ internal sealed class WorldExtractor(AssetSource assets)
     private static List<T> FirstNonEmpty<T>(params List<T>[] candidates) =>
         candidates.FirstOrDefault(c => c.Count > 0) ?? [];
 
-    private static JToken NameJson(List<JObject>? texts)
+    /// <summary>
+    /// A name as {culture: string}: each part looked up in the locres, joined, and stripped of
+    /// the languages that match English.
+    /// </summary>
+    private JToken LocalizedName(List<JObject>? texts)
     {
         if (texts is null) return JValue.CreateNull();
+        if (texts.Count == 0) return new JArray();
 
-        var array = new JArray();
-        foreach (var text in texts) array.Add(Text.Project(text));
-        return array;
+        var names = new JObject();
+        foreach (var language in localization.Languages)
+        {
+            names[language] = string.Join(" ", texts.Select(text =>
+                localization.LookupOrEnglish(language, Text.Namespace(text), Text.Key(text))
+                ?? Text.Localized(text)
+                ?? ""));
+        }
+        return Output.Dedupe(names);
     }
 
     private record StorageConfig(string CargoType, string CargoKey, long? MaxStorage);

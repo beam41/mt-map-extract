@@ -45,6 +45,7 @@ Symptoms of a mismatch:
 | `out_house.json` | `House_C` actors joined with the `Houses` data table |
 | `out_cargo_key.json` / `out_cargo_metadata.json` | the `Cargos` data table (plus `Cargos_ScheduleI` when the game still ships it) |
 | `out_cargo_name.json`, `out_cargo_type_name.json`, `out_vehicles_name.json` | data tables joined with `Game.locres` for all 23 cultures |
+| | `out_cargo_type_name.json` has an entry per type in the cargo table, so its keys line up with `out_cargo_key.json` |
 | `map.png` | the world map `Texture2D`, decoded from DXT1 |
 | `tiles/{z}_{x}_{y}.avif` | tiles cut from that same decoded image, zoom 0 through 5 |
 
@@ -128,6 +129,9 @@ dotnet run -c Release -- --dump MotorTown  # full asset dump
 | `EMTAreaVolumeFlags::LargeArea` | `LargeArea` |
 | `EDeliveryCargoType::Log` | `_TLog` |
 | `EDeliveryCargoType::SmallPackage2` | `_TSmallPackage` |
+
+(The locres calls the SmallPackage type "SmallPackage2"; that alias is resolved when the names
+are built, so the rename above is only a safety net.)
 
 It also drops the `name` off `Resident_C` delivery points - all 223 of them are just
 "Resident" in 23 languages, and the AMC map labels those itself. That alone takes

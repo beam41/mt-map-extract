@@ -16,6 +16,12 @@ internal sealed class TableExtractor(AssetSource assets, Localization localizati
     /// <summary>Cargo type keys stay as the game spells them, e.g. EDeliveryCargoType::Log.</summary>
     private const string CargoTypePrefix = "EDeliveryCargoType::";
 
+    /// <summary>Types whose display string sits under a different key in the locres.</summary>
+    private static readonly Dictionary<string, string> CargoTypeNameKeys = new(StringComparer.Ordinal)
+    {
+        ["SmallPackage"] = "SmallPackage2", // renamed to "Box" at some point
+    };
+
     /// <summary>out_cargo_key.json (type -> keys) and out_cargo_metadata.json (key -> type/distances).</summary>
     public (JObject Keys, JObject Metadata) CargoMaps()
     {
@@ -86,20 +92,38 @@ internal sealed class TableExtractor(AssetSource assets, Localization localizati
     /// <summary>out_cargo_type_name.json, keyed by the raw enum value.</summary>
     public JObject CargoTypeNames()
     {
+        // Names come from the CargoType namespace, but the enum is what the rest of the output
+        // is keyed by, so the list of types comes from the cargo table.
         var keys = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var (_, row) in CargoRows())
+        {
+            var type = (string?)row?["CargoType"] ?? "";
+            if (type.StartsWith(CargoTypePrefix, StringComparison.Ordinal))
+                keys.Add(type[CargoTypePrefix.Length..]);
+        }
+
         foreach (var language in localization.Languages)
         {
-            if (localization.Table(language).TryGetValue(CargoTypeNamespace, out var entries))
-                keys.UnionWith(entries.Keys);
+            if (!localization.Table(language).TryGetValue(CargoTypeNamespace, out var entries)) continue;
+            keys.UnionWith(entries.Keys.Where(key => !CargoTypeNameKeys.ContainsValue(key)));
         }
+
+        // Coal, Garbage, None and Stone have no CargoType entry at all; the words are translated
+        // elsewhere in the same locres, so match them by their English text.
+        var englishIndex = localization.IndexByEnglish(CargoTypeNamespace, "Cargo", "MapIcon", "Item", "Common", "");
 
         var output = new JObject();
         foreach (var key in keys)
         {
+            var nameKey = CargoTypeNameKeys.GetValueOrDefault(key, key);
+            var byEnglish = englishIndex.TryGetValue(key, out var match) ? match : default((string, string)?);
+
             var names = new JObject();
             foreach (var language in localization.Languages)
             {
-                names[language] = localization.LookupOrEnglish(language, CargoTypeNamespace, key) ?? key;
+                names[language] = localization.LookupOrEnglish(language, CargoTypeNamespace, nameKey)
+                                  ?? (byEnglish is { } m ? localization.Lookup(language, m.Item1, m.Item2) : null)
+                                  ?? key;
             }
             output[CargoTypePrefix + key] = Output.Dedupe(names);
         }
@@ -160,35 +184,6 @@ internal sealed class TableExtractor(AssetSource assets, Localization localizati
             return bySource;
 
         return (string?)text["LocalizedString"] ?? source;
-    }
-
-    /// <summary>
-    /// Replaces each raw name (an array of texts) with a language map, the old
-    /// convert_raw_to_localized.js pass.
-    /// </summary>
-    public JArray LocalizeNames(JArray raw)
-    {
-        var output = new JArray();
-
-        foreach (var item in raw.OfType<JObject>())
-        {
-            var localized = (JObject)item.DeepClone();
-            if (item["name"] is JArray texts && texts.Count > 0)
-            {
-                var names = new JObject();
-                foreach (var language in localization.Languages)
-                {
-                    names[language] = string.Join(" ", texts.OfType<JObject>().Select(text =>
-                        localization.LookupOrEnglish(language, Text.Namespace(text), Text.Key(text))
-                        ?? Text.Localized(text)
-                        ?? ""));
-                }
-                localized["name"] = Output.Dedupe(names);
-            }
-            output.Add(localized);
-        }
-
-        return (JArray)Output.JsNumbers(output);
     }
 
     /// <summary>Cargos plus the Schedule I table, which the game may or may not still ship.</summary>
