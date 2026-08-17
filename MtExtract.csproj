@@ -11,8 +11,25 @@
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="CUE4Parse" Version="1.2.2.202607" />
+      <!-- richtags/, tools/ and parts/ are standalone projects with their own csprojs; keep their
+           sources and generated obj/bin out of this project's default compile glob. -->
+      <ItemGroup>
+        <Compile Remove="richtags/**" />
+        <Compile Remove="tools/**" />
+        <Compile Remove="parts/**" />
+        <EmbeddedResource Remove="richtags/**" />
+        <EmbeddedResource Remove="tools/**" />
+        <EmbeddedResource Remove="parts/**" />
+        <None Remove="richtags/**" />
+        <None Remove="tools/**" />
+        <None Remove="parts/**" />
+        <Content Remove="richtags/**" />
+        <Content Remove="tools/**" />
+        <Content Remove="parts/**" />
+      </ItemGroup>
+
+      <ItemGroup>
+        <PackageReference Include="CUE4Parse" Version="1.2.2.202607" />
     <PackageReference Include="CUE4Parse-Conversion" Version="1.2.2.202607" />
     <!-- SkiaSharp encodes the map png, libvips slices it into tiles (heifsave gives us AVIF).
          SkiaSharp carries its own Windows/macOS binaries but needs the Linux ones added;

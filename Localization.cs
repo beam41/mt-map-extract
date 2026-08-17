@@ -84,6 +84,29 @@ internal static class Text
 
     /// <summary>A text carrying nothing but a culture-invariant string, e.g. a point number.</summary>
     public static JObject Invariant(string value) => new() { ["CultureInvariantString"] = value };
+
+    /// <summary>
+    /// A vehicle text localizes the same way as the name tables: its own namespace, the
+    /// VehicleName/Vehicle fallbacks, then the English source string matched against the
+    /// index. Shared by the main extractor and the standalone parts tool.
+    /// </summary>
+    public static string? LocalizeVehicleText(
+        JObject text, string language, Localization localization,
+        Dictionary<string, (string Namespace, string Key)> englishIndex)
+    {
+        var key = Key(text);
+
+        if (localization.Lookup(language, Namespace(text), key) is { } direct) return direct;
+        if (localization.Lookup(language, "VehicleName", key) is { } byName) return byName;
+        if (localization.Lookup(language, "Vehicle", key) is { } byVehicle) return byVehicle;
+
+        var source = Source(text);
+        if (source is not null && englishIndex.TryGetValue(source, out var match)
+            && localization.Lookup(language, match.Namespace, match.Key) is { } bySource)
+            return bySource;
+
+        return Localized(text) ?? source;
+    }
 }
 
 internal static class Output

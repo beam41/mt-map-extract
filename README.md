@@ -62,6 +62,30 @@ Two orderings differ from the old pipeline, contents are unchanged: delivery poi
 sorted by blueprint path (the Rust used raw directory order) and `out_vehicles_name.json`
 follows the data table's row order (JSON.stringify used to hoist the numeric keys `1`-`4`).
 
+## Vehicle parts
+
+Vehicle parts and their restrictions live in two master data tables - `VehicleParts` (768
+rows) and `Vehicles` (171 rows) - the per-type files next to them (`Engines`, `Wheels`,
+`AeroParts`, `Vehicles_Truck`, ...) are curated subsets of the same rows. The parts extractor
+is a standalone tool in `parts/` (like `richtags/`), run from the repo root:
+
+```bash
+dotnet run -c Release --project parts
+```
+
+It shares the main extractor's `resource/` and `--out` conventions and writes
+`out_vehicle_part.json` (every part with its per-type stats and restrictions),
+`out_vehicle_part_type_name.json` (localized part-type names), `out_vehicle.json` (every
+vehicle with its restriction fields and default parts per slot) and the per-part wiki pages
+`out/wiki/parts/<key>.json` - the same data with only the part `type` translated to plain
+English. See `docs/vehicle-parts.md` for the full map of the data: every part type's stat
+fields (engine torque curves, gear ratios, tire physics, brake/suspension/aero
+multipliers, ...), the part-side restriction fields (`VehicleTypes`, `TruckClasses`,
+`VehicleKeys`, `OverrideAllowedVehicleKeys`, `VehicleRowGameplayTagQuery`) and the
+vehicle-side ones (`NotSupportedPartTypes`, `OptionalPartTypes`, `SlotSupportedPartsQueries`,
+...), plus how they combine. Engine/transmission/tire/LSD stats are resolved through the soft
+refs into the actual gameplay assets (`MHEngineDataAsset`, `MTTransmissionDataAsset`, ...).
+
 ## Tiles
 
 The tile half is a port of the old `tilegen` (same libvips pipeline, so the output is

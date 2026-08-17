@@ -153,9 +153,9 @@ internal sealed class TableExtractor(AssetSource assets, Localization localizati
             {
                 var localized = texts.Count > 0
                     ? string.Join(" ", texts
-                        .Select(text => LocalizeVehicleText(text, language, englishIndex))
+                        .Select(text => Text.LocalizeVehicleText(text, language, localization, englishIndex))
                         .Where(part => !Blank(part)))
-                    : name is null ? null : LocalizeVehicleText(name, language, englishIndex);
+                    : name is null ? null : Text.LocalizeVehicleText(name, language, localization, englishIndex);
 
                 if (!Blank(localized)) names[language] = localized;
             }
@@ -167,23 +167,6 @@ internal sealed class TableExtractor(AssetSource assets, Localization localizati
         }
 
         return output;
-    }
-
-    private string? LocalizeVehicleText(
-        JObject text, string language, Dictionary<string, (string Namespace, string Key)> englishIndex)
-    {
-        var key = Text.Key(text);
-
-        if (localization.Lookup(language, Text.Namespace(text), key) is { } direct) return direct;
-        if (localization.Lookup(language, "VehicleName", key) is { } byName) return byName;
-        if (localization.Lookup(language, "Vehicle", key) is { } byVehicle) return byVehicle;
-
-        var source = Text.Source(text);
-        if (source is not null && englishIndex.TryGetValue(source, out var match)
-            && localization.Lookup(language, match.Namespace, match.Key) is { } bySource)
-            return bySource;
-
-        return (string?)text["LocalizedString"] ?? source;
     }
 
     /// <summary>Cargos plus the Schedule I table, which the game may or may not still ship.</summary>
