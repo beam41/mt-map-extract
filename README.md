@@ -90,7 +90,8 @@ refs into the actual gameplay assets (`MHEngineDataAsset`, `MTTransmissionDataAs
 
 Aero body parts carry `AeroLift` (whole-vehicle) and/or `FrontAeroLift` / `RearAeroLift`
 (per axle) coefficients; negative = downforce, positive = lift. Downforce force at speed:
-`force_kg = 7.098e-10 × v_kmh² × coef`.
+`force_kg = 7.098e-7 × v_kmh² × coef`. In-game drag display: `(AirDragMultiplier − 1) × 100` %,
+×1.5 when the part has any lift coefficient.
 
 ## Tiles
 
