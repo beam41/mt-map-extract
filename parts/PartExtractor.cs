@@ -32,6 +32,20 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
         "Tire", "TrailerHitch", "Turbocharger", "Wheel", "WheelSpacer", "Winch",
     ];
 
+    /// <summary>
+    /// Structs that are the part type's own statistics: emitted even when every field equals the
+    /// editor default, because the default IS the stat (Basic brake pad's 400 °C fade temperature,
+    /// the bike taxi license's Normal type, the cargo-bed attachment's Flatbed space type).
+    /// </summary>
+    private static readonly Dictionary<string, string> PartTypeOwnedStructs = new(StringComparer.Ordinal)
+    {
+        ["EMTVehiclePartType::BrakePad"] = "BrakePad",
+        ["EMTVehiclePartType::CoolantRadiator"] = "CoolantRadiator",
+        ["EMTVehiclePartType::TaxiLicense"] = "Taxi",
+        ["EMTVehiclePartType::CargoBed"] = "CargoBed",
+        ["EMTVehiclePartType::CargoBedAttachment"] = "CargoBed",
+    };
+
     /// <summary>Scalar stat columns whose default is 1 rather than 0.</summary>
     private static readonly string[] OneDefaultScalars =
         ["AirDragMultiplier", "TrailerAirDragMultiplier", "FrontDamageMultiplier"];
@@ -220,6 +234,13 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
             stats[structName] = value.DeepClone();
         }
 
+        // The part type's own stat struct is meaningful even at the editor default.
+        if (PartTypeOwnedStructs.TryGetValue((string?)row["PartType"] ?? "", out var owned)
+            && row[owned] is JObject ownedValue)
+        {
+            stats[owned] = ownedValue.DeepClone();
+        }
+
         if (AssetPath(row["EngineAsset"]) is { } enginePath && ResolveEngine(enginePath) is { } engine)
             stats["engine"] = engine;
         if (AssetPath(row["TransmissionAsset"]) is { } transmissionPath && ResolveTransmission(transmissionPath) is { } transmission)
@@ -244,8 +265,12 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
 
         var engine = new JObject();
         CopyNumbers(properties, engine,
-            "Inertia", "StarterTorque", "MaxTorque", "MaxRPM", "FrictionViscosityCoeff",
-            "IdleThrottle", "FuelConsumption", "CoolingEfficiency", "BlipThrottle", "AfterFireProbability");
+            "Inertia", "StarterTorque", "StarterRPM", "MaxTorque", "MaxRPM",
+            "FrictionCoulombCoeff", "FrictionViscosityCoeff", "IdleThrottle", "FuelConsumption",
+            "CoolingEfficiency", "HeatingPower", "BlipThrottle", "BlipDurationSeconds",
+            "IntakeSpeedEfficency", "AfterFireProbability", "MaxJakeBrakeStep",
+            "MaxRegenTorqueRatio", "MotorMaxPower", "MotorMaxVoltage");
+        CopyEnums(properties, engine, "FuelType", "EngineType");
 
         var curvePath = AssetPath(properties["TorqueCurve"]);
         if (curvePath is not null && TorqueCurve(curvePath) is { } curve) engine["TorqueCurve"] = curve;
@@ -259,9 +284,22 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
 
         var transmission = new JObject();
         CopyNumbers(properties, transmission,
-            "ShiftTimeSeconds", "TorqueConvertorStallRPM", "TorqueConvertorStallRatioPower",
-            "TorqueConvertorTorqueRate");
+            "ShiftTimeSeconds", "AutoShiftComportRPM", "TorqueConvertorStallRPM",
+            "TorqueConvertorStallRatioPower", "TorqueConvertorTorqueRate");
+        CopyEnums(properties, transmission, "ClutchType", "Type");
+        foreach (var field in new[] { "CVT_ClutchCurvePow" })
+        {
+            if (properties[field] is JValue value && Convert.ToDouble(value.Value) != 0)
+                transmission[field] = value.DeepClone();
+        }
+        foreach (var field in new[] { "CVT_InputRPMRange", "CVT_GearRatios" })
+        {
+            if (properties[field] is JObject vector) transmission[field] = vector.DeepClone();
+        }
         if ((long?)properties["DefaultGearIndex"] is { } defaultGear) transmission["DefaultGearIndex"] = defaultGear;
+        // DevComment ("Citroen 2CV 6", "769D", ...) sits on the asset root, next to TransmissionProperty.
+        if (AssetProperties(assetPath)?["DevComment"] is JValue { Type: JTokenType.String } comment)
+            transmission["DevComment"] = comment.DeepClone();
 
         if (properties["Gears"] is JArray gears)
         {
@@ -287,8 +325,10 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
 
         var tire = new JObject();
         CopyNumbers(properties, tire,
-            "PatchLengthCoefficient", "StaticMu", "SlidingMu", "SpringX", "SpringY",
-            "DampingX", "DampingY", "MaxWeightKg");
+            "PatchLengthCoefficient", "StaticMu", "SlidingMu", "OffroadFriction",
+            "SpringX", "SpringY", "DampingX", "DampingY", "MaxWeightKg",
+            "WearRate", "SmokeRate", "CoolDownSpeed", "WarmUpSpeed",
+            "RollingResistanceCoeff");
         return tire.Count > 0 ? tire : null;
     }
 
@@ -298,7 +338,11 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
         if (properties is null) return null;
 
         var type = (string?)properties["LSDType"];
-        return string.IsNullOrEmpty(type) ? null : new JObject { ["LSDType"] = type };
+        if (string.IsNullOrEmpty(type)) return null;
+
+        var lsd = new JObject { ["LSDType"] = type };
+        CopyNumbers(properties, lsd, "ClutchPackAccel", "ClutchPackBrake");
+        return lsd;
     }
 
     /// <summary>Loads a data asset package and returns the first export's Properties.</summary>
@@ -578,6 +622,16 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
         foreach (var field in fields)
         {
             if (source[field] is JValue value && Convert.ToDouble(value.Value) != 0)
+                target[field] = value.DeepClone();
+        }
+    }
+
+    /// <summary>Enum-valued string fields (e.g. "EMTFuelType::Diesel"), copied verbatim.</summary>
+    private static void CopyEnums(JObject source, JObject target, params string[] fields)
+    {
+        foreach (var field in fields)
+        {
+            if (source[field] is JValue { Type: JTokenType.String } value && !string.IsNullOrEmpty((string?)value))
                 target[field] = value.DeepClone();
         }
     }

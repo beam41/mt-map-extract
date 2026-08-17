@@ -113,15 +113,18 @@ observed gameplay.
 
 `stats` holds only what the row actually uses: struct columns are emitted when any field
 differs from the value most rows carry (the editor default), aero scalars when non-default,
-and the engine/transmission/tire/LSD asset stats are resolved through the soft refs. The
-"Basic"/default parts therefore come out with no stats block.
+and the engine/transmission/tire/LSD asset stats are resolved through the soft refs. Two
+exceptions always emit: the part type's own stat struct (BrakePad, CoolantRadiator, Taxi,
+CargoBed — so a Basic brake pad still carries its 400 °C fade temperature and the bike taxi
+license its Normal type), and the resolved asset stats. The purely-default parts
+(DefaultBody, DefaultAttachment, ...) still come out with no stats block.
 
 | Part type | Rows | Stat fields |
 | --- | ---: | --- |
-| Engine | 36 | `engine`: `MaxTorque`, `MaxRPM`, `Inertia`, `StarterTorque`, `FuelConsumption`, `CoolingEfficiency`, `FrictionViscosityCoeff`, `IdleThrottle`, `BlipThrottle`, `AfterFireProbability`, `TorqueCurve` (`[{Time, Value}]`, normalized). Plus inline `Intake` (`Slope`, `BaseRPMRatio`, `IntakeSpeedEfficencyMultiplier`) and `Turbocharger` where fitted. Power ≈ `MaxTorque × curve(RPM/MaxRPM)`. |
-| Transmission | 23 | `transmission`: `Gears` (`[{Name, GearRatio, Inertia}]`, incl. R/N), `DefaultGearIndex`, `ShiftTimeSeconds`, `TorqueConvertorStallRPM`, `TorqueConvertorStallRatioPower`, `TorqueConvertorTorqueRate` |
-| Tire | 12 | `Tire` (asset ref + `bIsDualRearWheel`) + `tire`: `StaticMu`, `SlidingMu`, `SpringX/Y`, `DampingX/Y`, `MaxWeightKg`, `PatchLengthCoefficient` |
-| LSD | 6 | `lsd`: `LSDType` (`Locked`, `ClutchPackLSD`, ...) |
+| Engine | 36 | `engine`: `MaxTorque`, `MaxRPM`, `Inertia`, `StarterTorque`, `StarterRPM`, `FuelConsumption`, `CoolingEfficiency`, `HeatingPower`, `FrictionCoulombCoeff`, `FrictionViscosityCoeff`, `IdleThrottle` (fraction, ×100 = %), `BlipThrottle`, `BlipDurationSeconds`, `IntakeSpeedEfficency`, `AfterFireProbability`, `TorqueCurve` (`[{Time, Value}]`, normalized), `FuelType`, `EngineType` (enums), EV/truck extras (`MaxRegenTorqueRatio`, `MotorMaxPower`, `MotorMaxVoltage`, `MaxJakeBrakeStep`). Plus inline `Intake` (`Slope`, `BaseRPMRatio`, `IntakeSpeedEfficencyMultiplier`) and `Turbocharger` where fitted. Power ≈ `MaxTorque × curve(RPM/MaxRPM)`. |
+| Transmission | 23 | `transmission`: `Gears` (`[{Name, GearRatio, Inertia}]`, incl. R/N), `DefaultGearIndex`, `ShiftTimeSeconds`, `AutoShiftComportRPM`, `ClutchType` (enum), `Type` (enum: EatonFuller13/18/CVT; present on some), `TorqueConvertorStallRPM`, `TorqueConvertorStallRatioPower`, `TorqueConvertorTorqueRate`, `DevComment` (dev note, e.g. "Citroen 2CV 6"); CVT-only: `CVT_InputRPMRange` (vector), `CVT_GearRatios` (vector), `CVT_ClutchCurvePow` |
+| Tire | 12 | `Tire` (asset ref + `bIsDualRearWheel`) + `tire`: `StaticMu`, `SlidingMu`, `OffroadFriction`, `SpringX/Y`, `DampingX/Y`, `MaxWeightKg`, `PatchLengthCoefficient`, `WearRate`, `SmokeRate`, `CoolDownSpeed`, `WarmUpSpeed`, `RollingResistanceCoeff` (`RollingResistanceCoeffV1` exists in the pak but is unused — not emitted) |
+| LSD | 6 | `lsd`: `LSDType` (`Locked`, `ClutchPackLSD`, ...), `ClutchPackAccel`, `ClutchPackBrake` (clutch-pack LSDs only) |
 | Turbocharger | 5 | `Turbocharger`: `bIsValid`, `BaseTorqueMultiplier`, `TorqueMultiplier`, `TurbineAspectRatio`, `IntakePressureMultiplier`, `HeatingMultiplier`, `FuelConsumptionMultiplier`, `TurbineWeight` |
 | Intake | 2 | `Intake`: `Slope`, `BaseRPMRatio`, `IntakeSpeedEfficencyMultiplier` |
 | CoolantRadiator | 5 | `CoolantRadiator`: `CoolingPower`, `CoolantWaterInLiter` |
