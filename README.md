@@ -86,6 +86,12 @@ vehicle-side ones (`NotSupportedPartTypes`, `OptionalPartTypes`, `SlotSupportedP
 ...), plus how they combine. Engine/transmission/tire/LSD stats are resolved through the soft
 refs into the actual gameplay assets (`MHEngineDataAsset`, `MTTransmissionDataAsset`, ...).
 
+### Aero stats
+
+Aero body parts carry `AeroLift` (whole-vehicle) and/or `FrontAeroLift` / `RearAeroLift`
+(per axle) coefficients; negative = downforce, positive = lift. Downforce force at speed:
+`force_kg = 7.098e-10 × v_kmh² × coef`.
+
 ## Tiles
 
 The tile half is a port of the old `tilegen` (same libvips pipeline, so the output is
