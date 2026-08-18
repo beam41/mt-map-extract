@@ -33,7 +33,6 @@ not in the assertions file.
 | `wiki/out/out_vehicle_data.json` | gathered per-vehicle stats: weight, axles, drag, fuel, seats (gather mode output) |
 | `wiki/out/validation.json` | machine-readable list of every incorrect claim found |
 | `wiki/out/review.md` | hand-written review for the wiki generator agent (see "Writing the review") |
-| `wiki/out/review-extra.md` | record of validator-blind findings that were later automated (kept as history) |
 | `wiki/out/pages/` | cached fetched wiki pages (raw exports) |
 
 `out/` is the MAIN extractor's output (map data, tiles). Do not write wiki validation
@@ -115,12 +114,15 @@ the pak, or the validator. Rules:
   so they can match rows, but the review must make sense without it.
 - Write numbered fix tasks: what's wrong → the correct value → where it goes → how to
   verify (which claim rows should disappear, or a page-level check).
-- Add a section for findings the automated checks do **not** cover. The validator now
-  catches most things (empty Stats sections, Total Weight formula, comparison Type,
-  infobox Comfort/Fuel/Seats/Drivetrain/Level, reverse-direction missing rows — see
-  `review-extra.md` for the mapping), so this section is for genuinely manual checks
-  (multi-level vehicles, broken-asset drivetrains, page structure not covered by a
-  claim). Do not re-list automated findings as manual tasks.
+- Add the extra notices you found by direct inspection that the automated checks do
+  **not** cover. The validator catches most things (empty Stats sections, Total Weight
+  formula, comparison Type, infobox Comfort/Fuel/Seats/Drivetrain/Level,
+  reverse-direction missing rows), so this is only for genuinely manual items
+  (multi-level vehicles, broken-asset drivetrains, page structures without a claim).
+  Do not re-list automated findings as manual tasks.
+- Keep the review single-file and per-round: each round is `validation.json` (claims) +
+  `review.md` (your fixes + this round's extra notices). Do not create a separate
+  extra-findings file — there is no persistent "extras" artifact.
 - Include an "already correct" section: surfaces verified against the pak that must not
   change, with the exact pak-confirmed values.
 - Include a data-conventions section (key casing, absent-field policy, chassis-weight
