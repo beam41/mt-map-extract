@@ -4,7 +4,7 @@ description: |
   Validate the ASEAN Motor Club wiki (https://wiki.aseanmotorclub.com) against the
   Motor Town pak data in this repo. Triggers: "validate wiki", "check wiki",
   "missing vehicle", "wrong weight", "verify part", "wiki review", "wiki validation",
-  "compare wiki to game data", "installable parts check".
+  "compare wiki to game data", "installable parts check", "fix wiki".
   Run `dotnet run -c Release --project wiki/validate` first to gather pak data, then
   `-- --validate` to fetch wiki pages and produce wiki/out/validation.json.
 ---
@@ -15,6 +15,10 @@ This repo extracts Motor Town game data from `resource/MotorTown-Windows.pak` an
 validate the AMC wiki against it. Use this skill whenever asked to check, verify, fix,
 or review anything on the wiki (parts, vehicles, comparison tables, weights, costs,
 names, installable parts).
+
+Durable ground truth (pak sources, display rules, known exceptions, generator bugs,
+current fix list) lives in `.agents/knowledge/wiki-base-assertions.md` — read it before
+interpreting results.
 
 ## The pipeline (everything lives under `wiki/`, NOT `out/`)
 
@@ -27,11 +31,12 @@ names, installable parts).
 | `wiki/out/parts/<key>.json` | one human-readable page per part, `type` translated (gather mode output) |
 | `wiki/out/out_vehicle_data.json` | gathered per-vehicle stats: weight, axles, drag, fuel, seats (gather mode output) |
 | `wiki/out/validation.json` | machine-readable list of every incorrect claim found |
-| `wiki/out/review.md` | hand-written human review (NOT auto-generated — you write it) |
+| `wiki/out/review.md` | fix work order for the wiki generator agent (hand-written, see below) |
 | `wiki/out/pages/` | cached fetched wiki pages (raw exports) |
 
 `out/` is the MAIN extractor's output (map data, tiles). Do not write wiki validation
-output there.
+output there. There is no separate `parts/` project — extraction is gather mode of the
+wiki pipeline.
 
 ## Commands
 
@@ -60,9 +65,11 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
   table (engine, transmission, tire, LSD, aero, brakes, suspension, intake, radiator,
   turbo, wheel spacer, winch, cargo bed, fuel tank, taxis). Value formatting matches
   the wiki generator: `±%` multipliers, `G`/`N/m`/`N·s/m` units, aero lift
-  `coef (kg @ 200 km/h)`, gear ratios as `F2` with trailing zeros stripped,
-  `Default Gear` as the raw `DefaultGearIndex`. Zero-valued engine rows the pak omits
-  are not expected (EV pages render them — cosmetic, flag as wiki-only).
+  `coef (kg @ 200 km/h)` (kind word only on the whole-vehicle row), Air Drag omitted at
+  multiplier 1.0, gear ratios as `F2` with trailing zeros stripped, `Default Gear` as
+  the raw `DefaultGearIndex`, vector axes within ±0.01 → `0`. EV engine zero rows
+  (`Starter Torque 0 N·m`, ...) are expected — the wiki renders the full engine schema,
+  the pak omits zeros; do not flag.
 - **`list_of_vehicles`** — every vehicle: English name + existence in pak.
 - **`vehicle_comparison`** — cost, drivetrain, chassis weight, drag for all rows.
 - **Per-vehicle pages** — infobox (`Weight`, `Drag coefficient`),
@@ -83,17 +90,25 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
 | Part name | `Name`/`Name2` localized; `#N` names get ` (Vehicle / Vehicle)` appended from `VehicleKeys` |
 | Part cost/mass | `Cost`, `MassKg` on the VehicleParts row |
 
-## Writing the review
+## Writing the review / work order
 
-`wiki/out/review.md` is hand-written by you, not generated. Base it on
-`validation.json` but add judgment:
+`wiki/out/review.md` is hand-written by you, not auto-generated. It is the handoff to
+the wiki generator agent, with `wiki/out/validation.json` as the co-review:
 
-- Group claims by surface (comparison table, infobox, specs, installable parts).
-- Distinguish real errors from known-good cases (e.g. Zero genuinely 0 kg;
-  Bongo Bus/Nimo Taxi are broken unused assets — their gaps are acceptable).
-- Check review-notes from earlier passes (review*.md in the repo root) for
-  known-fixed / still-broken items.
+- Write numbered fix tasks, each with: what's wrong → exact data source (file + field +
+  key) → render rule → a `jq` filter over `validation.json` that proves the task done.
+- Include an "already correct" section: surfaces verified against the pak that must not
+  change (with the exact pak-confirmed values).
+- Include a data-conventions section (key casing, absent-field policy, chassis-weight
+  source, what `(missing row)` / `(wiki only)` / `(blank)` mean) so an agent with no
+  repo history can act.
+- Distinguish real errors from known-good cases (e.g. Zero genuinely 0 kg; Bongo
+  Bus/Nimo Taxi are broken unused assets — their gaps are acceptable).
 - Do NOT fetch or compare against other sites unless explicitly asked.
+
+The current work order is already written from the last live run; update it only when
+the wiki changes or a task is completed. Do not paste the raw `validation.json` rows
+into `review.md` — point at the file instead.
 
 ## Gotchas
 
@@ -106,3 +121,5 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
   known wiki generator bug — flag them, don't silently match.
 - The wiki may name parts with the vehicle augmented (`#1 (Dory / Dory Wrecker)`)
   — the extractor replicates this; both sides must agree.
+- `wiki/validate/` links `AssetSource.cs`/`Options.cs`/`Localization.cs`/`CargoKeys.cs`
+  from the repo root via `<Compile Include="../../…">` — shared code changes affect it.
