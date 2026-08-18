@@ -60,7 +60,13 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
 ## What the validator checks
 
 - **`list_of_parts`** — every part: name (English, incl. the `#1 → "#1 (Vehicle)"`
-  augmentation), cost, mass. All 768 parts.
+  augmentation), cost, mass. All 768 parts. Plus the reverse direction: every non-hidden
+  pak part must appear in the list (`(not listed)` claims).
+- **`list_of_vehicles`** — every vehicle: English name + existence in pak. Plus the
+  reverse direction: every pak vehicle must appear in the list.
+- **`vehicle_comparison`** — cost, type, drivetrain, chassis weight, **total weight**
+  (must equal `weightKg + Σ default part masses` — the wiki's `+2×parts+6` formula is a
+  bug), drag for all rows.
 - **Per-part pages (`parts:<slug>`)** — every one of the 768 part detail pages:
   infobox (`name`, `Part Type`, `Cost`, `Mass`), `Specifications`, and every `Stats`
   table (engine, transmission, tire, LSD, aero, brakes, suspension, intake, radiator,
@@ -70,13 +76,14 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
   multiplier 1.0, gear ratios as `F2` with trailing zeros stripped, `Default Gear` as
   the raw `DefaultGearIndex`, vector axes within ±0.01 → `0`. EV engine zero rows
   (`Starter Torque 0 N·m`, ...) are expected — the wiki renders the full engine schema,
-  the pak omits zeros; do not flag.
-- **`list_of_vehicles`** — every vehicle: English name + existence in pak.
-- **`vehicle_comparison`** — cost, drivetrain, chassis weight, drag for all rows.
-- **Per-vehicle pages** — infobox (`Weight`, `Drag coefficient`),
-  `Specifications` (`Engine`, `Transmission`, `Drivetrain`, `Chassis Weight`),
-  `Capabilities` (Taxi/Bus/Limo/Race Car), `Default Parts` (slot → part set),
-  `Installable Parts` (fit rule vs pak restrictions).
+  the pak omits zeros; do not flag. A `===== Stats =====` heading with zero rows on a
+  no-stat part is flagged (`empty stats section`).
+- **Per-vehicle pages** — infobox (`Weight`, `Drag coefficient`, `Type` in sentence
+  case + truck class, `Comfort` as stars, `Fuel` `{n}L ({Type})`, `Seats`, `Drivetrain`
+  spelled or abbreviated, `Level requirement` `Driver: 2`), `Specifications` (`Engine`,
+  `Transmission`, `Drivetrain`, `Chassis Weight`), `Capabilities` (Taxi/Bus/Limo/Race
+  Car), `Default Parts` (slot → part set), `Installable Parts` (fit rule vs pak
+  restrictions).
 
 ## Known field sources (pak ground truth)
 

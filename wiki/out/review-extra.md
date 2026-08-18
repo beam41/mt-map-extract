@@ -1,73 +1,26 @@
 # Wiki review — additional findings (validator-blind)
 
-Companion to the main review (the one with Tasks 1–7). These findings are **not** in the
-claim list: automated checks only cover name/cost/mass/drag/drivetrain/weight/slots/
-capabilities, so the following were found by direct page inspection. All values come from
-the game pak (2026-08-18). Apply these alongside the main review.
+Companion to the main review (Tasks 1–7). **Update (2026-08-18): all six findings below
+are now automated validator checks** — the next `validation.json` run covers them, so
+they no longer need manual inspection. This file is kept as the record of what was added
+and how each maps to claim rows.
 
-## Extra 1 — Empty Stats sections (146 part pages)
+| Finding | Now a validator check | Claim fields in validation.json |
+|---|---|---|
+| Empty Stats sections (146 part pages) | `ValidatePartPage`: `===== Stats =====` heading with zero rows on parts that have no pak stats | `parts:<slug> Stats` → `field: "empty stats section"` |
+| Total Weight column formula | `ValidateComparison`: `Total Weight` must equal `weightKg + Σ default part masses` (wiki's `+2×parts+6` is wrong) | `vehicle_comparison` → `field: "totalWeight"` |
+| Comparison-table Type column | `ValidateComparison`: cell must match humanized pak `EMTVehicleType` ("Heavy Machinery", "Semi Tractor", "Racecar") | `vehicle_comparison` → `field: "type"` |
+| Vehicle infobox Comfort / Fuel / Seats / Drivetrain / Level requirement | `ValidateVehiclePage` infobox: presence + value (stars for Comfort, `{n}L ({Type})` for Fuel, `{n}` for Seats, drivetrain spelling or abbreviation, `Driver: 2` level) | `vehicles:<slug> infobox` → fields `Comfort`, `Fuel`, `Seats`, `Drivetrain`, `Level requirement` |
+| Infobox Type (type + truck class, sentence case) | `ValidateVehiclePage` infobox: `Type` = "Semi trailer, Heavy duty" etc. | `vehicles:<slug> infobox` → `field: "Type"` |
+| Reverse direction: pak rows missing from wiki lists | `ValidatePartList` / `ValidateVehicleList`: every non-hidden pak part (768) and every pak vehicle must appear in the wiki list | `list_of_parts` / `list_of_vehicles` → `field: "part"` / `"vehicle"` with `wiki: "(not listed)"` |
 
-**What's wrong:** 146 part pages render `===== Stats =====` with **zero rows**. These
-parts have no numeric stats in the pak (cosmetic-only parts), so nothing is flagged, but
-the empty section is noise.
+Current live run (2026-08-18, fresh fetch): **1362 claims** total. New claim counts from
+these checks: totalWeight 163, empty stats section 146, Comfort 133, Level requirement
+123, Seats 119, Fuel 95, Drivetrain (infobox) 71, type 1, vehicle-not-listed 9.
 
-**Fix:** omit the Stats section entirely when the part has no stat rows. Affected types
-and counts: Wheel 93, Bonnet 33, Headlight 6, Rear Window Louvers 4, Front Window Sun
-Visor 3, Utility 3, Front Window Sticker 2, Cargo Bed Attachment 1, Trunk 1.
-Examples: `parts:atlas`, `parts:corawheel_02`, `parts:cora_headlight_01`,
-`parts:bongo_sparetire`, `parts:dory_bonnet_01`.
+Remaining manual caveats (still not checkable):
 
-**Verify:** no `parts:<slug>` page has a `===== Stats =====` heading with an empty table.
-
-## Extra 2 — Total Weight column formula
-
-**What's wrong:** every comparison-table `Total Weight` value equals
-`Chassis Weight + 2 × (default parts mass) + 6 kg` — parts are double-counted and the +6
-is unexplained (e.g. Hana: 1,500 + 2×413 + 6 = 2,332).
-
-**Fix:** total should be `Chassis Weight + Σ default parts mass` (recompute all rows, not
-just the 12 from main-review Task 3).
-
-**Verify:** spot-check that `Total − Chassis` equals the sum of the listed default parts
-for a few rows.
-
-## Extra 3 — Comparison-table Type column
-
-**What's wrong:** the `Type` column is never checked against the pak.
-
-**Fix:** verify every row's Type matches the pak vehicle type (Small, Pickup, Truck,
-Bus, Semi Trailer, ...). Known pak types: Kart → `Kart`, Hana → `Pickup`, the 30-foot
-trailers → `Semi trailer, Heavy duty`, Trophy Air → `Small`.
-
-**Verify:** Type column matches the pak for all 168 rows.
-
-## Extra 4 — Vehicle infobox: Comfort / Fuel / Seats / Drivetrain
-
-**What's wrong:** the infobox is only checked for `Weight` and `Drag coefficient`.
-Comfort, Fuel, Seats, Drivetrain presence is unverified on all 168 vehicle pages.
-
-**Fix:** every vehicle infobox must include `Comfort` (stars), `Fuel` (`{n}L
-({Type})`), `Seats` (`{n}`), `Drivetrain`. Reference layout:
-`vehicles:dabo?rev=1756720156`.
-
-**Verify:** every `vehicles:<slug>` page has all four fields in the infobox.
-
-## Extra 5 — Reverse direction: pak rows missing from wiki lists
-
-**What's wrong:** the claim list only flags wiki rows that do not exist in the pak — it
-never flags **pak vehicles/parts that are missing from the wiki lists entirely**.
-Earlier this is how 9 vehicles (Goliath-4/6/10, Elisa 2/Police, Civo, Longhorn Semi DC
-4x2, Jemusi Flatbed, Atlas 6x2 Garbage) went missing.
-
-**Fix:** confirm every pak vehicle (171) appears in `list_of_vehicles` and every pak part
-(768) appears in `list_of_parts`; add any missing row with the pak English name.
-
-**Verify:** counts match (168+ listed vehicles, 768 listed parts) and no pak key is
-absent.
-
-## Extra 6 — Level requirement
-
-**What's wrong:** the `Level requirement` field is never checked anywhere.
-
-**Fix:** spot-check it renders the pak career-level gate (`CL_Driver`, `CL_Truck`,
-`CL_Racer`, `CL_Wrecker`, ...) where present.
+- Multi-level vehicles (e.g. `Taxi_01` with both `CL_Taxi` and `CL_Driver`) — value is
+  compared only when exactly one level exists; presence is always checked.
+- `Drivetrain` on the 5 broken assets (Bongo Bus, Nimo Taxi, Nuke Taxi, Townie Bus,
+  Elisa 2 Police) shows RWD with no pak drivetrain — known-good, leave as-is.

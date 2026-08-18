@@ -46,7 +46,7 @@ internal sealed class Validator
         var vehicleList = Fetch("list_of_vehicles?do=export_raw", "list_of_vehicles.txt");
         var comparison = Fetch("vehicle_comparison?do=export_raw", "vehicle_comparison.txt");
         ValidateVehicleList(vehicleList, vehicleData);
-        ValidateComparison(comparison, vehicleData);
+        ValidateComparison(comparison, vehicleData, parts);
 
         // ---- per-vehicle pages: infobox, Specifications, Capabilities, Default Parts ----
         foreach (var (slug, _) in VehicleEntries(vehicleList))
@@ -86,6 +86,7 @@ internal sealed class Validator
         var lc = parts.Properties().ToDictionary(p => p.Name.ToLowerInvariant(), p => p.Name);
         var rows = Regex.Matches(raw, @"^\| \[\[parts:([^|]+)\|([^\]]+)\]\] \| ([\d,]+) \| (.*?) \|$", RegexOptions.Multiline);
 
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match m in rows)
         {
             var slug = m.Groups[1].Value;
@@ -94,6 +95,7 @@ internal sealed class Validator
             var mass = m.Groups[4].Value.Trim();
             var key = ResolvePart(slug, lc, parts);
             if (key is null) { Claim("list_of_parts", slug, "part", disp, "not found in pak"); continue; }
+            seen.Add(key);
 
             var part = (JObject)parts[key]!;
             var en = (string?)(part["name"] as JObject)?["en"] ?? "";
@@ -107,6 +109,15 @@ internal sealed class Validator
             double wikiMass = mass == "—" ? 0 : (double.TryParse(mass.Replace("kg", "").Trim(), out var wm) ? wm : double.NaN);
             if (!double.IsNaN(wikiMass) && Math.Abs(wikiMass - pakMass) > 1e-9)
                 Claim("list_of_parts", slug, "mass", mass, pakMass.ToString());
+        }
+
+        // Reverse direction: pak parts missing from the wiki list entirely (hidden parts
+        // are legitimately unlisted).
+        foreach (var p in parts.Properties())
+        {
+            if ((bool?)p.Value?["hidden"] == true) continue;
+            if (!seen.Contains(p.Name))
+                Claim("list_of_parts", p.Name, "part", "(not listed)", (string?)p.Value?["name"]?["en"] ?? p.Name);
         }
     }
 
@@ -169,6 +180,17 @@ internal sealed class Validator
         // Stats: build the expected rows from the pak and compare values.
         var expectedStats = ExpectedStats(part);
         var statsSection = Section(raw, "Stats");
+        // Empty Stats section: the wiki renders "===== Stats =====" with zero rows for
+        // cosmetic-only parts (wheels, bonnets, headlights, ...) that have no pak stats.
+        // The section should be omitted entirely. Only flag when the pak has nothing to
+        // show either — a part with stats but an empty wiki section is already caught
+        // per-row by the "(missing row)" claims below.
+        if (expectedStats.Count == 0
+            && raw.Contains("===== Stats =====", StringComparison.Ordinal)
+            && !Regex.IsMatch(statsSection, @"^\| ", RegexOptions.Multiline))
+        {
+            Claim($"parts:{slug} Stats", slug, "empty stats section", "(empty section)", "(part has no stats)");
+        }
         foreach (var (label, expected) in expectedStats)
         {
             var m = Regex.Match(statsSection, @"^\| " + Regex.Escape(label) + @" \| (.+?) \|$", RegexOptions.Multiline);
@@ -459,6 +481,7 @@ internal sealed class Validator
     private void ValidateVehicleList(string raw, JObject vehicleData)
     {
         var nameKeys = NameToKeys(vehicleData);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (slug, disp) in VehicleEntries(raw))
         {
             var key = ResolveVehicle(slug, nameKeys, vehicleData);
@@ -467,13 +490,22 @@ internal sealed class Validator
                 Claim("list_of_vehicles", slug, "vehicle", disp, "not found in pak");
                 continue;
             }
+            seen.Add(key);
             var en = (string?)(vehicleData[key]!["name"] as JObject)?["en"] ?? "";
             if (en != disp && !(slug == "kuda_" && disp == "Kuda Flatbed"))
                 Claim("list_of_vehicles", slug, "name", disp, en);
         }
+
+        // Reverse direction: pak vehicles missing from the wiki list entirely (Goliath-4/6/10,
+        // Civo, Elisa 2/Police, ... went missing this way once).
+        foreach (var kv in vehicleData.Properties())
+        {
+            if (seen.Contains(kv.Name)) continue;
+            Claim("list_of_vehicles", kv.Name, "vehicle", "(not listed)", (string?)kv.Value?["name"]?["en"] ?? kv.Name);
+        }
     }
 
-    private void ValidateComparison(string raw, JObject vehicleData)
+    private void ValidateComparison(string raw, JObject vehicleData, JObject parts)
     {
         var nameKeys = NameToKeys(vehicleData);
         foreach (var line in raw.Split('\n'))
@@ -487,6 +519,12 @@ internal sealed class Validator
             var key = ResolveVehicle(slug, nameKeys, vehicleData);
             if (key is null) continue;
             var v = (JObject)vehicleData[key]!;
+
+            // type: wiki renders the humanized EMTVehicleType tail ("Heavy Machinery",
+            // "Semi Tractor", "Racecar"); truck class is not part of the comparison cell.
+            if (cells.Length > 0 && cells[0] != ""
+                && HumanizeType((string?)v["type"]) is { } pakType && cells[0] != pakType)
+                Claim("vehicle_comparison", slug, "type", cells[0], pakType);
 
             // cost
             if (cells.Length > 1 && long.TryParse(cells[1].Replace(",", "").Replace("$", ""), out var wikiCost)
@@ -509,11 +547,53 @@ internal sealed class Validator
             if (cells.Length > 3 && TryKg(cells[3], out var wikiW) && Math.Abs(wikiW - (double?)v["weightKg"] ?? 0) > 1e-9)
                 Claim("vehicle_comparison", slug, "chassisWeight", cells[3], v["weightKg"]!.ToString());
 
+            // total weight: chassis + sum of default part masses (the wiki's
+            // "chassis + 2×parts + 6" formula double-counts parts and adds an unexplained +6)
+            if (cells.Length > 4 && cells[4] != "" && TryKg(cells[4], out var wikiTotal)
+                && v["weightKg"] is JValue wk && v["defaultParts"] is JObject dp)
+            {
+                var sum = Convert.ToDouble(wk.Value);
+                foreach (var p in dp.Properties())
+                {
+                    if (parts[p.Value?.ToString() ?? ""]?["massKg"] is JValue pm)
+                        sum += Convert.ToDouble(pm.Value);
+                }
+                if (Math.Abs(wikiTotal - sum) > 1e-9)
+                    Claim("vehicle_comparison", slug, "totalWeight", cells[4], $"{sum:0} kg");
+            }
+
             // drag
             if (cells.Length > 5 && double.TryParse(cells[5], out var wikiDrag)
                 && v["dragCoeff"] is JValue d && Math.Abs(wikiDrag - Convert.ToDouble(d.Value)) > 1e-6)
                 Claim("vehicle_comparison", slug, "drag", cells[5], d.Value!.ToString());
         }
+    }
+
+    /// <summary>EMTVehicleType::HeavyMachinery -> "Heavy Machinery", SemiTractor ->
+    /// "Semi Tractor", Racecar -> "Racecar" (the wiki's comparison-table spelling).</summary>
+    private static string? HumanizeType(string? pakType)
+    {
+        if (pakType is null) return null;
+        var tail = pakType.Split("::").Last();
+        var spaced = Regex.Replace(tail, @"([a-z0-9])([A-Z])", "$1 $2");
+        return spaced == "Racecar" ? "Racecar" : spaced;
+    }
+
+    /// <summary>The infobox renders type + truck class in sentence case — "Semi trailer,
+    /// Heavy duty", "Pickup, Light duty", "Kart". Truck class omitted when None.</summary>
+    private static string? InfoboxType(string? pakType, string? truckClass)
+    {
+        if (pakType is null) return null;
+        var tail = pakType.Split("::").Last();
+        var words = Regex.Replace(tail, @"([a-z0-9])([A-Z])", "$1 $2").Split(' ');
+        var type = string.Join(" ", words.Select((w, i) => i == 0 ? w : w.ToLowerInvariant()));
+        var tc = (truckClass ?? "").Split("::").Last() switch
+        {
+            "None" or "" => null,
+            var t => string.Join(" ", Regex.Replace(t, @"([a-z0-9])([A-Z])", "$1 $2").Split(' ')
+                .Select((w, i) => i == 0 ? w : w.ToLowerInvariant())),
+        };
+        return tc is null ? type : $"{type}, {tc}";
     }
 
     // ------------------------------------------------------------------ vehicle page
@@ -533,12 +613,88 @@ internal sealed class Validator
             var fields = new Dictionary<string, string>();
             foreach (Match fm in Regex.Matches(infobox.Groups[1].Value, @"^(\S[^=]*?) = (.*)$", RegexOptions.Multiline))
                 fields[fm.Groups[1].Value.Trim()] = fm.Groups[2].Value.Trim();
+
+            // Type: the infobox combines the humanized type with the truck class in
+            // sentence case — "Semi trailer, Heavy duty", "Pickup, Light duty", "Kart".
+            if (fields.TryGetValue("Type", out var wikiType))
+            {
+                var pakType = InfoboxType((string?)v["type"], (string?)v["truckClass"]);
+                if (pakType is not null && wikiType != pakType)
+                    Claim($"vehicles:{slug} infobox", slug, "Type", wikiType, pakType);
+            }
+
             if (fields.TryGetValue("Weight", out var wikiW) && TryKg(wikiW, out var ww)
                 && Math.Abs(ww - (double?)v["weightKg"] ?? 0) > 1e-9)
                 Claim($"vehicles:{slug} infobox", slug, "Weight", wikiW, v["weightKg"]!.ToString());
             if (fields.TryGetValue("Drag coefficient", out var wikiD) && double.TryParse(wikiD, out var wd)
                 && v["dragCoeff"] is JValue d && Math.Abs(wd - Convert.ToDouble(d.Value)) > 1e-6)
                 Claim($"vehicles:{slug} infobox", slug, "Drag coefficient", wikiD, d.Value!.ToString());
+
+            // Comfort: stars for the pak Comport (0 -> "No comfort").
+            var comfort = (double?)v["comfort"] ?? 0;
+            var pakComfort = comfort <= 0 ? "No comfort" : new string('⭐', (int)Math.Round(comfort));
+            if (fields.TryGetValue("Comfort", out var wikiC) && wikiC != pakComfort)
+                Claim($"vehicles:{slug} infobox", slug, "Comfort", wikiC, pakComfort);
+            else if (!fields.ContainsKey("Comfort") && comfort > 0)
+                Claim($"vehicles:{slug} infobox", slug, "Comfort", "(missing row)", pakComfort);
+
+            // Fuel: "{n}L ({Type})" from the pak CDO; trailers have none, so skip those.
+            if (v["fuelTankL"] is JValue ft && Convert.ToDouble(ft.Value) > 0)
+            {
+                var pakFuel = $"{Num(Convert.ToDouble(ft.Value))}L ({v["fuelType"] ?? "Gasoline"})";
+                if (fields.TryGetValue("Fuel", out var wikiF) && wikiF != pakFuel)
+                    Claim($"vehicles:{slug} infobox", slug, "Fuel", wikiF, pakFuel);
+                else if (!fields.ContainsKey("Fuel"))
+                    Claim($"vehicles:{slug} infobox", slug, "Fuel", "(missing row)", pakFuel);
+            }
+
+            // Seats: MTSeatComponent count; trailers have none, so skip those.
+            if (v["seats"] is JValue st && (long?)st.Value is > 0)
+            {
+                var pakSeats = ((long?)st.Value)!.ToString();
+                if (fields.TryGetValue("Seats", out var wikiS) && wikiS != pakSeats)
+                    Claim($"vehicles:{slug} infobox", slug, "Seats", wikiS, pakSeats);
+                else if (!fields.ContainsKey("Seats"))
+                    Claim($"vehicles:{slug} infobox", slug, "Seats", "(missing row)", pakSeats);
+            }
+
+            // Drivetrain in the infobox (same rendering as Specifications). The wiki may
+            // spell it out ("Rear-wheel drive") or abbreviate ("RWD") — normalize both.
+            var pakDrive = PakDrive(v);
+            if (pakDrive != "")
+            {
+                var humanized = pakDrive switch { "FWD" => "Front-wheel drive", "RWD" => "Rear-wheel drive", "AWD" => "All-wheel drive", _ => pakDrive };
+                if (fields.TryGetValue("Drivetrain", out var wikiDr))
+                {
+                    var norm = wikiDr switch
+                    {
+                        "Rear-wheel drive" or "RWD" => "RWD",
+                        "Front-wheel drive" or "FWD" => "FWD",
+                        "All-wheel drive" or "AWD" => "AWD",
+                        _ => wikiDr,
+                    };
+                    if (norm != pakDrive)
+                        Claim($"vehicles:{slug} infobox", slug, "Drivetrain", wikiDr, humanized);
+                }
+                else
+                {
+                    Claim($"vehicles:{slug} infobox", slug, "Drivetrain", "(missing row)", humanized);
+                }
+            }
+
+            // Level requirement: pak career levels -> "Driver: 2" (CL_ prefix stripped).
+            // Levels come from out_vehicle.json (the vehicles param); only compared when the
+            // vehicle has exactly one level (multi-level rows have no canonical wiki
+            // ordering); presence is checked whenever the pak has any.
+            if (vehicles[key]?["level"] is JObject lv && lv.Count > 0)
+            {
+                var levels = lv.Properties().Select(p => $"{p.Name.Replace("CL_", "")}: {p.Value}").ToList();
+                var pakLevel = levels.Count == 1 ? levels[0] : string.Join(", ", levels);
+                if (fields.TryGetValue("Level requirement", out var wikiL) && levels.Count == 1 && wikiL != pakLevel)
+                    Claim($"vehicles:{slug} infobox", slug, "Level requirement", wikiL, pakLevel);
+                else if (!fields.ContainsKey("Level requirement"))
+                    Claim($"vehicles:{slug} infobox", slug, "Level requirement", "(missing row)", pakLevel);
+            }
         }
 
         // Specifications
