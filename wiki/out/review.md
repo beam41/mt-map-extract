@@ -132,11 +132,17 @@ Match the section structure of a healthy page (e.g. `vehicles:goliath_4`).
 **What's wrong:** `13 Speed` and `18 Speed` sit before `4 Speed Mini Bus`.
 
 **Rule:** numeric-name sort (name parses as number → numeric compare; else alpha with
-embedded digit runs numeric). Correct order starts: `4 Speed Mini Bus, 4 Speed Muscle,
-4 Speed Sports, 5 Speed Sports, 5 Speed Truck, 6 Speed Bus, 6 Speed Light Bus, 6 Speed
-Sports, 6 Speed Truck, 6 Speed Truck Mk1, 13 Speed, 18 Speed, Bike 6 Speed, …`.
+embedded digit runs numeric). Applies to **every** row, including late-added ones —
+a row added after the table was first generated must be interleaved at its sorted
+position, never appended at the end of its block. Correct order starts:
+`4 Speed Mini Bus, 4 Speed Muscle, 4 Speed Sports, 5 Speed Sports, 5 Speed Truck,
+6 Speed Bus, 6 Speed Light Bus, 6 Speed Sports, 6 Speed Truck, 6 Speed Truck Mk1,
+13 Speed, 18 Speed, Bike 6 Speed, …`.
 
-**Verify:** re-run the sort check; 0 inversions.
+**Verify:** re-run the sort check on the Transmission table (and spot-check the other
+per-type tables for appended-at-end rows, e.g. Bonnet/Fender/Front Bumper/Roof/Side
+Skirt/Wheel, which had late-added Elisa 2 / Trophy2 / Longhorn Semi DC 4x2 variants);
+0 inversions everywhere.
 
 ---
 

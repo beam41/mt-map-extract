@@ -66,9 +66,11 @@ displayed part name.
   `4–6 Speed` block but before `Bike 6 Speed`; `2 Way Clutch Pack LSD (100)` sorts
   before `Lockable`; `1 Way` < `1.5 Way` < `2 Way` < `Lockable` < `Locked Differential`.
 
-This is the ordering the wiki's own tables are expected to use; a row appended at the end
-of its block (e.g. late-added vehicle variants) is still unsorted even if its neighbors
-are in order.
+This is the ordering the wiki's own tables are expected to use. Every row is subject to
+it, including rows added after a table was first generated: a late-added row must be
+interleaved at its sorted position, never appended at the end of its block. Appending
+(e.g. new vehicle variants like Elisa 2 or Longhorn Semi DC 4x2 dumped after the existing
+block) is the classic violation — the row is unsorted even though its neighbors are.
 
 ## 3. Data facts (pak-side, not wiki-side)
 
