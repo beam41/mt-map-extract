@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 namespace MtExtract;
@@ -504,7 +505,9 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
         return true;
     }
 
-    /// <summary>The part's display name: Name2 texts joined, else Name, localized.</summary>
+    /// <summary>The part's display name: Name2 texts joined, else Name, localized. A generic
+    /// "#N" name gets the owning vehicles appended - "#1" + VehicleKeys [Dory, Dory_Wrecker]
+    /// -> "#1 (Dory / Dory Wrecker)" - the same augmentation the wiki applies.</summary>
     private JToken PartName(JObject row, string key)
     {
         var texts = (row["Name2"]?["Texts"] as JArray ?? []).OfType<JObject>().ToList();
@@ -536,7 +539,49 @@ internal sealed class PartExtractor(AssetSource assets, Localization localizatio
             names[Localization.English] = fallback ?? key;
         }
 
+        // Generic "#N" names are ambiguous on their own; append the vehicles that use the part.
+        if (Regex.IsMatch((string?)names[Localization.English] ?? "", @"^#\d+$")
+            && VehicleKeys(row) is { Count: > 0 } keys)
+        {
+            var vehicleKeys = keys;
+            var vehicles = VehicleNamesByKey();
+            foreach (var language in localization.Languages)
+            {
+                if (names[language] is not JValue value) continue;
+                var suffix = string.Join(" / ", vehicleKeys
+                    .Where(vk => vk != "None")
+                    .Select(vk => (string?)vehicles.GetValueOrDefault(vk)?[language] ?? vk)
+                    .Where(v => !Blank(v)));
+                if (!Blank(suffix)) names[language] = new JValue($"{value} ({suffix})");
+            }
+        }
+
         return Output.Dedupe(names);
+    }
+
+    /// <summary>The part's VehicleKeys list, or null when empty.</summary>
+    private static List<string>? VehicleKeys(JObject row)
+    {
+        if (row["VehicleKeys"] is not JArray array || array.Count == 0) return null;
+        return array.OfType<JValue>().Select(v => (string?)v.Value ?? "").Where(k => k.Length > 0).ToList();
+    }
+
+    /// <summary>Vehicle key -> localized display names, resolved once from the Vehicles table.</summary>
+    private Dictionary<string, JObject>? _vehicleNames;
+
+    private Dictionary<string, JObject> VehicleNamesByKey()
+    {
+        if (_vehicleNames is not null) return _vehicleNames;
+
+        var rows = assets.RequirePackage(VehiclesPath).First()["Rows"] as JObject ?? [];
+        var englishIndex = localization.IndexByEnglish("VehicleName", "Vehicle", "Brand", "Common", "");
+        var map = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (vk, row) in rows)
+        {
+            if (row is JObject obj) map[vk] = (JObject)VehicleName(obj, englishIndex);
+        }
+        _vehicleNames = map;
+        return map;
     }
 
     /// <summary>The vehicle's display name, same resolution order as out_vehicles_name.json.</summary>
