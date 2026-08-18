@@ -32,7 +32,7 @@ not in the assertions file.
 | `wiki/out/parts/<key>.json` | one human-readable page per part, `type` translated (gather mode output) |
 | `wiki/out/out_vehicle_data.json` | gathered per-vehicle stats: weight, axles, drag, fuel, seats (gather mode output) |
 | `wiki/out/validation.json` | machine-readable list of every incorrect claim found |
-| `wiki/out/review.md` | fix work order for the wiki generator agent (hand-written, see below) |
+| `wiki/out/review.md` | hand-written review for the wiki generator agent (see "Writing the review") |
 | `wiki/out/pages/` | cached fetched wiki pages (raw exports) |
 
 `out/` is the MAIN extractor's output (map data, tiles). Do not write wiki validation
@@ -91,15 +91,27 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
 | Part name | `Name`/`Name2` localized; `#N` names get ` (Vehicle / Vehicle)` appended from `VehicleKeys` |
 | Part cost/mass | `Cost`, `MassKg` on the VehicleParts row |
 
-## Writing the review / work order
+## Writing the review
 
-`wiki/out/review.md` is hand-written by you, not auto-generated. It is the handoff to
-the wiki generator agent, with `wiki/out/validation.json` as the co-review:
+`wiki/out/review.md` is hand-written by you, not auto-generated. It is a **review**, not
+a change log: your job is to review and report, the wiki generator agent does the fix.
+Never assume you also fix the wiki or run its tooling.
 
-- Write numbered fix tasks, each with: what's wrong → exact data source (file + field +
-  key) → render rule → a `jq` filter over `validation.json` that proves the task done.
+The review must be **self-contained** — the wiki generator agent does not have this repo,
+the pak, or the validator. Rules:
+
+- **Inline every correct value** (page slug, field, exact value). Do not point at repo
+  files (`wiki/out/…`), pak keys, or commands (`dotnet …`, `jq` over repo files).
+- The only external artifact is the **co-review claim list** (`validation.json`, data,
+  not a path you tell them to run): reference claim fields (`source`/`vehicle`/`field`)
+  so they can match rows, but the review must make sense without it.
+- Write numbered fix tasks: what's wrong → the correct value → where it goes → how to
+  verify (which claim rows should disappear, or a page-level check).
+- Add a section for findings the automated checks do **not** cover (empty tables,
+  formula bugs, unvalidated columns, reverse-direction missing rows) — the validator
+  only proves what it compares; review the rest by direct inspection.
 - Include an "already correct" section: surfaces verified against the pak that must not
-  change (with the exact pak-confirmed values).
+  change, with the exact pak-confirmed values.
 - Include a data-conventions section (key casing, absent-field policy, chassis-weight
   source, what `(missing row)` / `(wiki only)` / `(blank)` mean) so an agent with no
   repo history can act.
@@ -107,9 +119,8 @@ the wiki generator agent, with `wiki/out/validation.json` as the co-review:
   Bus/Nimo Taxi are broken unused assets — their gaps are acceptable).
 - Do NOT fetch or compare against other sites unless explicitly asked.
 
-The current work order is already written from the last live run; update it only when
-the wiki changes or a task is completed. Do not paste the raw `validation.json` rows
-into `review.md` — point at the file instead.
+Update the review only when the wiki or the validation results change; do not paste the
+raw `validation.json` rows into it — point at the claim list instead.
 
 ## Gotchas
 
