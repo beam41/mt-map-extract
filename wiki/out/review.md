@@ -89,10 +89,11 @@ Remaining part-page claims: **63**, all in two groups:
   comparison table shows `1.0` for 138 vehicles where the pak has a real value
   (0.22–0.9); the infobox shows `1.0` for 133 vehicles. Examples: `micky` 0.34,
   `raton` 0.22, `zydro` 0.23, `duke` 0.35, `spider` 0.25, `neo` 0.33. A few vehicles are
-  correct — the four 30-foot trailers (0.8) and `trophy_air` (0) in the infobox, and the
-  24 vehicles whose pak `AirDragCoeff` is exactly 1.0. Notably the comparison table shows
-  `1.0` even for the trailers whose infobox correctly says 0.8. This is the biggest single
-  defect.
+  correct — the four 30-foot trailers (0.8) and `trophy_air` (0) in the infobox. The
+  remaining 30 comparison rows are unclaimed only because the gathered pak data has no
+  `dragCoeff` for them (CDO not exported) or it is exactly 1.0 — not because they were
+  verified. Notably the comparison table shows `1.0` even for the trailers whose infobox
+  correctly says 0.8. This is the biggest single defect.
 - **Drivetrain: 60 blank + 3 wrong in the comparison table.** Blank: `gunthoo`,
   `scooty`, `zero`, `civo`, `vulcan`, … (pak says RWD/FWD/AWD). Wrong: `hana`, `ranchy`,
   `voltex` show `Rear-wheel drive`, pak says `AWD`. (The 4 user-confirmed broken assets
