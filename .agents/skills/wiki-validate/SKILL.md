@@ -16,9 +16,10 @@ validate the AMC wiki against it. Use this skill whenever asked to check, verify
 or review anything on the wiki (parts, vehicles, comparison tables, weights, costs,
 names, installable parts).
 
-Durable ground truth (pak sources, display rules, known exceptions, generator bugs,
-current fix list) lives in `.agents/knowledge/wiki-base-assertions.md` — read it before
-interpreting results.
+Durable ground truth (pak data sources, game-UI display rules, pak-side data facts)
+lives in `.agents/knowledge/wiki-base-assertions.md` — read it before interpreting
+results. Current wiki state is in `wiki/out/validation.json` + `wiki/out/review.md`,
+not in the assertions file.
 
 ## The pipeline (everything lives under `wiki/`, NOT `out/`)
 
