@@ -55,6 +55,21 @@ enums humanized from tail (`EMTLSDType::ClutchPackLSD` → `Clutch Pack LSD`,
 `EMTTransmissionClutchType::MultiPlateClutch` → `Multi Plate Clutch`).
 `+−x%` sign typos must never render.
 
+**Table sort rule** (applies to every `list_of_parts` per-type table): sort rows by the
+displayed part name.
+
+- A name that parses entirely as a number (`50%`, `+5`, `1.8`, `-10cm`) compares
+  numerically.
+- Any other name compares alphabetically, but embedded digit runs compare as integers:
+  `F50` < `F60` < `F110`, `KM1-65` < `KM2-45`, `Bike 6 Speed` > `6 Speed Truck Mk1`.
+- Digits sort before letters at the same position: `13 Speed`/`18 Speed` come after the
+  `4–6 Speed` block but before `Bike 6 Speed`; `2 Way Clutch Pack LSD (100)` sorts
+  before `Lockable`; `1 Way` < `1.5 Way` < `2 Way` < `Lockable` < `Locked Differential`.
+
+This is the ordering the wiki's own tables are expected to use; a row appended at the end
+of its block (e.g. late-added vehicle variants) is still unsorted even if its neighbors
+are in order.
+
 ## 3. Data facts (pak-side, not wiki-side)
 
 - **Zero** genuinely has 0 kg chassis weight (no `MassInKgOverride` on its blueprint).
