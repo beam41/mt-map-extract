@@ -66,19 +66,22 @@ follows the data table's row order (JSON.stringify used to hoist the numeric key
 
 Vehicle parts and their restrictions live in two master data tables - `VehicleParts` (768
 rows) and `Vehicles` (171 rows) - the per-type files next to them (`Engines`, `Wheels`,
-`AeroParts`, `Vehicles_Truck`, ...) are curated subsets of the same rows. The parts extractor
-is a standalone tool in `parts/` (like `richtags/`), run from the repo root:
+`AeroParts`, `Vehicles_Truck`, ...) are curated subsets of the same rows. The wiki pipeline
+(`wiki/validate/`, one project: part extraction + wiki validation) gathers them from the
+repo root:
 
 ```bash
-dotnet run -c Release --project parts
+dotnet run -c Release --project wiki/validate
 ```
 
 It shares the main extractor's `resource/` and `--out` conventions and writes
-`out_vehicle_part.json` (every part with its per-type stats and restrictions),
-`out_vehicle_part_type_name.json` (localized part-type names), `out_vehicle.json` (every
-vehicle with its restriction fields and default parts per slot) and the per-part wiki pages
-`out/wiki/parts/<key>.json` - the same data with only the part `type` translated to plain
-English. See `docs/vehicle-parts.md` for the full map of the data: every part type's stat
+`wiki/out/out_vehicle_part.json` (every part with its per-type stats and restrictions),
+`wiki/out/out_vehicle_part_type_name.json` (localized part-type names),
+`wiki/out/out_vehicle.json` (every vehicle with its restriction fields and default parts
+per slot) and the per-part wiki pages `wiki/out/parts/<key>.json` - the same data with
+only the part `type` translated to plain English. `-- --validate` additionally fetches the
+wiki and checks it (see `.agents/skills/wiki-validate/SKILL.md`). See
+`docs/vehicle-parts.md` for the full map of the data: every part type's stat
 fields (engine torque curves, gear ratios, tire physics, brake/suspension/aero
 multipliers, ...), the part-side restriction fields (`VehicleTypes`, `TruckClasses`,
 `VehicleKeys`, `OverrideAllowedVehicleKeys`, `VehicleRowGameplayTagQuery`) and the

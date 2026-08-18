@@ -140,22 +140,42 @@ Sports, 6 Speed Truck, 6 Speed Truck Mk1, 13 Speed, 18 Speed, Bike 6 Speed, …`
 
 ---
 
-## Do NOT touch (verified correct)
+## Already correct — verify, then do not change
 
-- `parts:anglekit_5` and all Angle Kit pages; aero display (`+22.5%`, lift kg,
-  `-2.25%`); tire `G`/`N/m`/`N·s/m`; brake `±%`; LSD labels; sign typos (already fixed).
-- EV engine pages' zero rows (`Starter Torque 0 N·m` etc.) — wiki renders the full
-  engine schema; pak omits zeros. Cosmetic, both sides fine.
-- Capabilities label spell-outs (`Limousine` vs pak `Limo`; `Can haul trailer`;
-  `Has fuel pump`) — display choices, not errors.
-- The 22/23 already-sorted list tables; cost on all vehicles except `kuda_`.
+The following surfaces were checked against the pak on 2026-08-18 and match. If your
+regeneration touches them, the values below are what the pak says — keep them as-is:
 
-## Handoff notes
+| Surface | What it should show (pak-confirmed) |
+|---|---|
+| `parts:anglekit_5` and all Angle Kit pages | infobox `+5` / Cost `10,000` / Mass `5 kg`; Stats → `Angle Increase 5 deg` |
+| Aero display on aero parts | multipliers as `±%` (`+22.5%` when raw `1.15` ×1.5 lift rule; `-2.25%` on `elisa2_rearspoiler_02`); lift as `coef (kg @ 200 km/h)` |
+| Tire stats | grip `0.97 G / 0.87 G`, springs `N/m`, damping `N·s/m`, `Dual Rear Yes/No` |
+| Brake stats | `±%` (`+30%`, `±0%`, `-30%`), Fade Temperature `400 °C` |
+| LSD pages | `Clutch Pack LSD` type label |
+| Negative percentages | never a `+-` sign prefix — plain `-1.5%`, `-2%` |
+| `list_of_parts` | all tables except Transmission (Task 7) are correctly sorted |
+| `vehicle_comparison` cost | matches pak for every vehicle except `kuda_` (Task 6) |
+| Capabilities | wiki may spell out `Limousine`, `Can haul trailer`, `Has fuel pump` — these are display wording, not data errors |
+| EV engine pages | zero-value rows (`Starter Torque 0 N·m`, `Idle Throttle 0%`, `Blip Throttle 0`, `Starter RPM 0 rpm`) are intentional — the wiki renders the full engine schema, the pak omits zeros |
 
-- Pak keys are PascalCase (`AngleKit_5`), wiki slugs lowercase (`anglekit_5`) — match
-  case-insensitively.
-- A pak field absent = editor default; never fabricate rows the pak lacks.
-- Engine pages already render the review2 fields correctly — copy their field order and
-  units when adding the transmission rows.
-- Chassis weights must come from `weightKg` (BodyInstance.MassInKgOverride sum), never
-  from the Vehicles table `CurbWeight` (0 everywhere) or a parts sum.
+## Data conventions (read before editing any page)
+
+- **Key casing:** pak keys are PascalCase (`AngleKit_5`, `RideHeight_+1`, `FD_1.33`),
+  wiki slugs are lowercase (`anglekit_5`, `rideheight_p1`, `fd_1_33`). Match keys
+  case-insensitively; do not treat a casing difference as a missing part.
+- **Absent fields:** a pak field absent from an asset means the part uses the game's
+  default value. Never invent rows the pak does not have.
+- **Engine pages** already render the review2 field set correctly (Starter RPM, Fuel
+  Type, Engine Type, Heating Power, ...). When adding the transmission rows (Task 2),
+  copy the engine pages' field order and units.
+- **Chassis weights** must come from `weightKg` in `out_vehicle_data.json` (sum of
+  `BodyInstance.MassInKgOverride` across the vehicle's blueprint). Never use the
+  Vehicles table `CurbWeight` (0 on every row) or a sum of part masses.
+- **Wiki-only data:** `wiki/out/validation.json` records each mismatch as
+  `{source, vehicle, field, wiki, pak}`. A row with `wiki: "(missing row)"` means the
+  wiki lacks a row the pak has; `"(wiki only)"` means the wiki shows a row the pak
+  lacks. `"(blank)"` / `"(none)"` mean an empty cell/section.
+- **Verification loop:** after each task, re-run
+  `dotnet run -c Release --project wiki/validate -- --validate` (deleting
+  `wiki/out/pages/` first forces a fresh wiki fetch) and confirm the task's `jq` filter
+  returns no rows.

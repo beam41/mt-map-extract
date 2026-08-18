@@ -11,21 +11,21 @@
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
 
-      <!-- richtags/, tools/ and parts/ are standalone projects with their own csprojs; keep their
+      <!-- richtags/, tools/ and wiki/ are standalone projects with their own csprojs; keep their
            sources and generated obj/bin out of this project's default compile glob. -->
       <ItemGroup>
         <Compile Remove="richtags/**" />
         <Compile Remove="tools/**" />
-        <Compile Remove="parts/**" />
+        <Compile Remove="wiki/**" />
         <EmbeddedResource Remove="richtags/**" />
         <EmbeddedResource Remove="tools/**" />
-        <EmbeddedResource Remove="parts/**" />
+        <EmbeddedResource Remove="wiki/**" />
         <None Remove="richtags/**" />
         <None Remove="tools/**" />
-        <None Remove="parts/**" />
+        <None Remove="wiki/**" />
         <Content Remove="richtags/**" />
         <Content Remove="tools/**" />
-        <Content Remove="parts/**" />
+        <Content Remove="wiki/**" />
       </ItemGroup>
 
       <ItemGroup>

@@ -20,8 +20,12 @@ names, installable parts).
 
 | Path | Purpose |
 |---|---|
-| `wiki/validate/` | the C# validator program (Project `wiki/validate/wiki.csproj`) |
-| `wiki/out/out_vehicle_data.json` | gathered per-vehicle stats (gather mode output) |
+| `wiki/validate/` | the whole wiki pipeline, one C# project (`wiki/validate/wiki.csproj`): `PartExtractor.cs` (part/vehicle extraction + per-part pages), `Program.cs` (gather + validate modes), `Validator.cs` (wiki checks) |
+| `wiki/out/out_vehicle_part.json` | every part: name/cost/massKg/restrict/stats (gather mode output) |
+| `wiki/out/out_vehicle_part_type_name.json` | localized part-type names (gather mode output) |
+| `wiki/out/out_vehicle.json` | every vehicle with restriction fields + default parts (gather mode output) |
+| `wiki/out/parts/<key>.json` | one human-readable page per part, `type` translated (gather mode output) |
+| `wiki/out/out_vehicle_data.json` | gathered per-vehicle stats: weight, axles, drag, fuel, seats (gather mode output) |
 | `wiki/out/validation.json` | machine-readable list of every incorrect claim found |
 | `wiki/out/review.md` | hand-written human review (NOT auto-generated — you write it) |
 | `wiki/out/pages/` | cached fetched wiki pages (raw exports) |
@@ -32,7 +36,7 @@ output there.
 ## Commands
 
 ```bash
-# 1. Gather pak data (needs resource/MotorTown-Windows.pak + aes + Mappings.usmap)
+# 1. Gather everything from the pak (needs resource/MotorTown-Windows.pak + aes + Mappings.usmap)
 dotnet run -c Release --project wiki/validate
 
 # 2. Fetch wiki pages + validate everything
@@ -42,7 +46,9 @@ dotnet run -c Release --project wiki/validate -- --validate
 dotnet run -c Release --project wiki/validate -- --validate --wiki-out wiki/out
 ```
 
-`--validate` fetches the wiki live and writes `wiki/out/validation.json` — one JSON
+Gather mode (default) writes the four part/vehicle JSONs, the per-part pages under
+`wiki/out/parts/`, and `out_vehicle_data.json` — all from one pak mount. `--validate`
+additionally fetches the wiki live and writes `wiki/out/validation.json` — one JSON
 object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
 
 ## What the validator checks

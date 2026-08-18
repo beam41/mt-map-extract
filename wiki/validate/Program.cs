@@ -5,18 +5,22 @@ using MtExtract;
 namespace WikiValidate;
 
 /// <summary>
-/// Wiki validator for Motor Town: gathers per-vehicle stats from the pak and validates the
-/// wiki (https://wiki.aseanmotorclub.com) against them. Everything lives under wiki/:
+/// Wiki pipeline for Motor Town: extracts vehicle + part data from the pak and validates the
+/// wiki (https://wiki.aseanmotorclub.com) against it. Everything lives under wiki/:
 ///
-///   wiki/validate/            this program
-///   wiki/out/out_vehicle_data.json   gathered vehicle stats (gather mode)
-///   wiki/out/pages/                  fetched wiki pages (validate mode)
-///   wiki/out/validation.json         every incorrect claim found (validate mode)
-///   wiki/out/review.md               human-readable review of the claims (validate mode)
+///   wiki/validate/            this program (gather + validate in one project)
+///   wiki/out/out_vehicle_data.json      per-vehicle stats (weight, axles, drag, fuel, ...)
+///   wiki/out/out_vehicle_part.json      every part with per-type stats and restrictions
+///   wiki/out/out_vehicle_part_type_name.json  localized part-type names
+///   wiki/out/out_vehicle.json           every vehicle with restriction fields and default parts
+///   wiki/out/parts/<key>.json           one human-readable page per part (wiki generator input)
+///   wiki/out/pages/                     fetched wiki pages (validate mode)
+///   wiki/out/validation.json            every incorrect claim found (validate mode)
+///   wiki/out/review.md                  hand-written review of the claims (validate mode)
 ///
-/// Gather mode (default):
+/// Gather mode (default) extracts all of the above from the pak:
 ///     dotnet run -c Release --project wiki/validate
-/// Validate mode:
+/// Validate mode additionally fetches the wiki and checks it against the gathered data:
 ///     dotnet run -c Release --project wiki/validate -- --validate
 /// </summary>
 internal static class Program
@@ -48,8 +52,8 @@ internal static class Program
 
         if (opts.ShowHelp)
         {
-            Console.WriteLine("wiki validator: gather pak data, then validate the wiki against it.");
-            Console.WriteLine("  --validate        fetch wiki pages and validate (writes wiki/out/validation.json + review.md)");
+            Console.WriteLine("wiki pipeline: extract vehicle + part data from the pak, then validate the wiki against it.");
+            Console.WriteLine("  --validate        fetch wiki pages and validate (writes wiki/out/validation.json; review.md is hand-written)");
             Console.WriteLine("  --wiki-out <dir>  output directory (default wiki/out)");
             return 0;
         }
@@ -72,6 +76,18 @@ internal static class Program
         var localization = assets.LoadLocalization();
         Console.WriteLine($"  {localization.Languages.Count} languages: {string.Join(", ", localization.Languages)}");
 
+        // ---- part data (formerly the standalone parts/ project) ----
+        Directory.CreateDirectory(_wikiOut);
+        var partExtractor = new PartExtractor(assets, localization);
+        Output.WriteJson(Path.Combine(_wikiOut, "out_vehicle_part.json"), partExtractor.VehicleParts(), "vehicle parts");
+        Output.WriteJson(Path.Combine(_wikiOut, "out_vehicle_part_type_name.json"), partExtractor.PartTypeNames(), "part type names");
+        Output.WriteJson(Path.Combine(_wikiOut, "out_vehicle.json"), partExtractor.Vehicles(), "vehicles");
+
+        var partsDir = Path.Combine(_wikiOut, "parts");
+        var wikiPages = partExtractor.WikiParts(partsDir);
+        Console.WriteLine($"  {partsDir,32} {wikiPages,4} part pages");
+
+        // ---- vehicle data (blueprint-derived stats) ----
         var vehicles = assets.RequirePackage(VehiclesPath).First()["Rows"] as JObject ?? [];
         var parts = assets.RequirePackage(VehiclePartsPath).First()["Rows"] as JObject ?? [];
         var englishIndex = localization.IndexByEnglish("VehicleName", "Vehicle", "Brand", "Common", "");
@@ -90,15 +106,12 @@ internal static class Program
             }
         }
 
-        Directory.CreateDirectory(_wikiOut);
         Output.WriteJson(Path.Combine(_wikiOut, "out_vehicle_data.json"), output, "vehicle data");
 
         if (validate)
         {
-            // Validate against the extractor's JSON outputs (flattened parts/vehicles), not the
-            // raw table rows: wiki/out/out_vehicle_part.json (name/cost/massKg/restrict),
-            // wiki/out/out_vehicle.json (type/truckClass/tags/parts), and the freshly gathered
-            // wiki/out/out_vehicle_data.json.
+            // Validate against the freshly gathered JSON outputs (flattened parts/vehicles and
+            // the blueprint-derived stats), not the raw table rows.
             var partsJson = JObject.Parse(File.ReadAllText(Path.Combine(_wikiOut, "out_vehicle_part.json")));
             var vehiclesJson = JObject.Parse(File.ReadAllText(Path.Combine(_wikiOut, "out_vehicle.json")));
             var validator = new Validator(_wikiOut);

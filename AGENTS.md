@@ -11,7 +11,8 @@ Paths are relative to the **working directory** — run from the repo root:
 ```bash
 dotnet run -c Release                       # full run: data + map + tiles (~15s + ~1m AVIF)
 dotnet run -c Release -- --skip-tiles       # data only
-dotnet run -c Release --project parts       # standalone vehicle-parts extractor
+dotnet run -c Release --project wiki/validate   # wiki data: parts + vehicles + per-part pages (wiki/out/)
+dotnet run -c Release --project wiki/validate -- --validate   # also fetch wiki + validate it
 dotnet run -c Release --project richtags    # standalone rich-text tag finder
 ```
 
@@ -30,13 +31,14 @@ dotnet run -c Release --project richtags    # standalone rich-text tag finder
 | `CargoKeys.cs` | folds FName cargo keys onto the `Cargos` table spelling (case-insensitive match) |
 | `Localization.cs` | locres tables + `Text` FText helpers + `Output.WriteJson` |
 | `TileGenerator.cs` | libvips (NetVips) tile pyramid; `{z}_{x}_{y}.{ext}`, native zoom = 4096px map at z4 |
-| `parts/` | standalone `mt-parts`; links in `AssetSource.cs`, `Options.cs`, `Localization.cs`, `CargoKeys.cs` from the root via `<Compile Include="../…">` — shared code changes affect it |
+| `wiki/validate/` | wiki pipeline (`mt-wiki`): `Program.cs` (gather + validate modes), `PartExtractor.cs` (vehicle parts + per-part pages), `Validator.cs` (wiki checks); links in `AssetSource.cs`, `Options.cs`, `Localization.cs`, `CargoKeys.cs` from the root via `<Compile Include="../../…">` — shared code changes affect it |
 | `richtags/` | standalone rich-text tag scanner; own mounting, no shared files |
 | `tools/explore/` | throwaway exploration harness for parts data (`find`, `table`, `rows`, `grep`, `stats`, …); keep hacky |
 | `docs/vehicle-parts.md` | full data map of VehicleParts/Vehicles tables; update when part fields change |
 
-`parts/`, `richtags/`, `tools/` are excluded from the main project's compile glob in
-`MtExtract.csproj`; each has its own csproj.
+`richtags/`, `tools/` are excluded from the main project's compile glob in
+`MtExtract.csproj`; each has its own csproj. The wiki pipeline writes only under `wiki/out/`
+(out/ is the map extractor's output).
 
 ## Inputs (`resource/`, gitignored)
 

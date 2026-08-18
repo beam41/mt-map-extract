@@ -154,18 +154,19 @@ license its Normal type), and the resolved asset stats. The purely-default parts
 
 ## The extractor output
 
-The parts extractor is a standalone tool in `parts/` (like `richtags/`), run from the repo
-root with `dotnet run -c Release --project parts`. It shares the main extractor's
-`resource/` and `--out` conventions and writes four things:
+Part extraction is the gather mode of the wiki pipeline (`wiki/validate/`, one project
+covering part + vehicle data and wiki validation), run from the repo root with
+`dotnet run -c Release --project wiki/validate`. It shares the main extractor's
+`resource/` conventions and writes four things under `wiki/out/`:
 
 - **`out_vehicle_part.json`** — keyed by part key. Per part: `name` (localized, 23
   cultures), `type`, `cost`, `massKg`, `hidden`, `level` (career levels), `slots`,
   `restrict` (`types`, `truckClasses`, `truckClassIncludeNone`, `keys`,
   `overrideKeys`, `tagQuery`, `tags`), `stats` (as above). ≈ 560 KB.
-- **`out/wiki/parts/<key>.json`** — one page per part, the same data with only the part
+- **`parts/<key>.json`** — one page per part, the same data with only the part
   `type` translated to plain English (`EMTVehiclePartType::Suspension_Damper` →
   "Suspension Damper"); the whole `restrict` block and everything else stay exactly as
-  in `out_vehicle_part.json`. 768 files under `out/wiki/parts/`.
+  in `out_vehicle_part.json`. 768 files under `wiki/out/parts/`.
 - **`out_vehicle_part_type_name.json`** — keyed by `EMTVehiclePartType::*`; localized
   names from the `Parts` namespace (e.g. `Suspension_Damper` → "Suspension Damper"),
   falling back to a humanized enum tail.
