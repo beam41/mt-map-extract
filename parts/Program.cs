@@ -53,12 +53,15 @@ internal static class Program
 
         var parts = new PartExtractor(assets, localization);
 
-        Output.WriteJson(opts.Out("out_vehicle_part.json"), parts.VehicleParts(), "vehicle parts");
-        Output.WriteJson(opts.Out("out_vehicle_part_type_name.json"), parts.PartTypeNames(), "part type names");
-        Output.WriteJson(opts.Out("out_vehicle.json"), parts.Vehicles(), "vehicles");
+        // Wiki data lives under wiki/, not out/ (out/ is the map extractor's output).
+        const string wikiOut = "wiki/out";
+        Directory.CreateDirectory(wikiOut);
+        Output.WriteJson(Path.Combine(wikiOut, "out_vehicle_part.json"), parts.VehicleParts(), "vehicle parts");
+        Output.WriteJson(Path.Combine(wikiOut, "out_vehicle_part_type_name.json"), parts.PartTypeNames(), "part type names");
+        Output.WriteJson(Path.Combine(wikiOut, "out_vehicle.json"), parts.Vehicles(), "vehicles");
 
-        var wiki = parts.WikiParts(opts.Out("wiki/parts"));
-        Console.WriteLine($"  out/wiki/parts/ {wiki,4} part pages");
+        var wiki = parts.WikiParts("wiki/parts");
+        Console.WriteLine($"  wiki/parts/ {wiki,4} part pages");
 
         return 0;
     }

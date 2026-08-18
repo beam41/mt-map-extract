@@ -5,8 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>mt-vehicledata</AssemblyName>
-    <RootNamespace>VehicleData</RootNamespace>
+    <AssemblyName>mt-wiki</AssemblyName>
+    <RootNamespace>WikiValidate</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>

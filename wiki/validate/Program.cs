@@ -2,33 +2,43 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using MtExtract;
 
-namespace VehicleData;
+namespace WikiValidate;
 
 /// <summary>
-/// Vehicle data gatherer for wiki validation: reads the Vehicles data table, resolves each
-/// vehicle's class blueprint, and extracts the stats the wiki shows — chassis weight
-/// (sum of BodyInstance.MassInKgOverride over the blueprint's exports), comfort (Comport),
-/// seats (MTSeatComponent count), axles (MHWheelComponent pairs + CDO LiftAxles), drag
-/// coefficient and fuel tank (class default object), fuel type (default engine part).
+/// Wiki validator for Motor Town: gathers per-vehicle stats from the pak and validates the
+/// wiki (https://wiki.aseanmotorclub.com) against them. Everything lives under wiki/:
 ///
-/// Writes out_vehicle_data.json keyed by vehicle row name. Run from the repo root:
+///   wiki/validate/            this program
+///   wiki/out/out_vehicle_data.json   gathered vehicle stats (gather mode)
+///   wiki/out/pages/                  fetched wiki pages (validate mode)
+///   wiki/out/validation.json         every incorrect claim found (validate mode)
+///   wiki/out/review.md               human-readable review of the claims (validate mode)
 ///
-///     dotnet run -c Release --project tools/vehicledata
+/// Gather mode (default):
+///     dotnet run -c Release --project wiki/validate
+/// Validate mode:
+///     dotnet run -c Release --project wiki/validate -- --validate
 /// </summary>
 internal static class Program
 {
     private const string VehiclesPath = "MotorTown/Content/DataAsset/Vehicles/Vehicles";
     private const string VehiclePartsPath = "MotorTown/Content/DataAsset/VehicleParts/VehicleParts";
     private const string SlotPrefix = "EMTVehiclePartSlot::";
+    private const string WikiBase = "https://wiki.aseanmotorclub.com";
 
     private static AssetSource? _assets;
+    private static string _wikiOut = "wiki/out";
 
     private static int Main(string[] args)
     {
+        var validate = args.Contains("--validate");
+        var outDir = args.SkipWhile(a => a != "--wiki-out").Skip(1).FirstOrDefault() ?? "wiki/out";
+        _wikiOut = outDir;
+
         Options opts;
         try
         {
-            opts = Options.Parse(args);
+            opts = Options.Parse(args.Where(a => a != "--validate" && a != "--wiki-out").ToArray());
         }
         catch (ArgumentException e)
         {
@@ -38,7 +48,9 @@ internal static class Program
 
         if (opts.ShowHelp)
         {
-            Console.WriteLine(Options.Usage);
+            Console.WriteLine("wiki validator: gather pak data, then validate the wiki against it.");
+            Console.WriteLine("  --validate        fetch wiki pages and validate (writes wiki/out/validation.json + review.md)");
+            Console.WriteLine("  --wiki-out <dir>  output directory (default wiki/out)");
             return 0;
         }
 
@@ -78,7 +90,21 @@ internal static class Program
             }
         }
 
-        Output.WriteJson(opts.Out("out_vehicle_data.json"), output, "vehicle data");
+        Directory.CreateDirectory(_wikiOut);
+        Output.WriteJson(Path.Combine(_wikiOut, "out_vehicle_data.json"), output, "vehicle data");
+
+        if (validate)
+        {
+            // Validate against the extractor's JSON outputs (flattened parts/vehicles), not the
+            // raw table rows: wiki/out/out_vehicle_part.json (name/cost/massKg/restrict),
+            // wiki/out/out_vehicle.json (type/truckClass/tags/parts), and the freshly gathered
+            // wiki/out/out_vehicle_data.json.
+            var partsJson = JObject.Parse(File.ReadAllText(Path.Combine(_wikiOut, "out_vehicle_part.json")));
+            var vehiclesJson = JObject.Parse(File.ReadAllText(Path.Combine(_wikiOut, "out_vehicle.json")));
+            var validator = new Validator(_wikiOut);
+            validator.Run(vehiclesJson, partsJson, output, localization, englishIndex);
+        }
+
         return 0;
     }
 
@@ -93,6 +119,17 @@ internal static class Program
             ["cost"] = (long?)row["Cost"] ?? 0,
             ["comfort"] = (double?)row["Comport"] ?? 0,
         };
+
+        var flags = new JObject();
+        foreach (var (field, name) in new[]
+                 {
+                     ("bIsTaxiable", "taxiable"), ("bIsLimoable", "limoable"), ("bIsBusable", "busable"),
+                     ("bIsRaceCar", "raceCar"),
+                 })
+        {
+            if ((bool?)row[field] == true) flags[name] = true;
+        }
+        if (flags.Count > 0) vehicle["flags"] = flags;
 
         var classPath = (string?)row["VehicleClass"]?["AssetPathName"]
                         ?? (string?)row["VehicleClass"]?["ObjectPath"];
@@ -112,6 +149,18 @@ internal static class Program
         {
             var fuelType = EngineFuelType(engineRow);
             if (fuelType is not null) vehicle["fuelType"] = fuelType;
+        }
+
+        if (row["Parts"] is JArray defaultParts && defaultParts.Count > 0)
+        {
+            var map = new JObject();
+            foreach (var entry in defaultParts.OfType<JObject>())
+            {
+                var slot = (string?)entry["Key"] ?? "";
+                if (slot.StartsWith(SlotPrefix, StringComparison.Ordinal)) slot = slot[SlotPrefix.Length..];
+                map[slot] = (string?)entry["Value"] ?? "";
+            }
+            vehicle["defaultParts"] = map;
         }
 
         return vehicle;
