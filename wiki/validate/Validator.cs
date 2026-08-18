@@ -225,21 +225,29 @@ internal sealed class Validator
         var stats = part["stats"] as JObject;
         if (stats is null) return result;
 
-        // engine physics (asset-resolved); zero-valued rows are omitted like the wiki does
+        // engine physics (asset-resolved). The wiki renders the full engine schema —
+        // including zero rows (Starter Torque 0 N·m, ...) that the pak omits — only for
+        // electric engines; other engines render a row only when the pak has a nonzero
+        // value (absent field = editor default 0, and the row is omitted).
         if (stats["engine"] is JObject e)
         {
+            bool isElectric = e["FuelType"]?.ToString().EndsWith("Electric", StringComparison.Ordinal) == true;
             if (e["MaxRPM"] is JValue maxRpm) result["Max RPM"] = $"{Num(Convert.ToDouble(maxRpm.Value))} rpm";
             if (e["MaxTorque"] is JValue maxTq && Convert.ToDouble(maxTq.Value) != 0) result["Max Torque"] = $"{Num(Convert.ToDouble(maxTq.Value))} N·m";
-            if (e["StarterTorque"] is JValue st && Convert.ToDouble(st.Value) != 0) result["Starter Torque"] = $"{Num(Convert.ToDouble(st.Value))} N·m";
+            if (e["StarterTorque"] is JValue stv && Convert.ToDouble(stv.Value) != 0) result["Starter Torque"] = $"{Num(Convert.ToDouble(stv.Value))} N·m";
+            else if (isElectric) result["Starter Torque"] = "0 N·m";
             if (e["Inertia"] is JValue inertia) result["Rotational Inertia"] = $"{Num(Convert.ToDouble(inertia.Value))} kg·m²";
             if (e["FrictionViscosityCoeff"] is JValue fv) result["Friction Viscosity"] = Num(Convert.ToDouble(fv.Value));
-            if (e["IdleThrottle"] is JValue idle && Convert.ToDouble(idle.Value) != 0) result["Idle Throttle"] = $"{Convert.ToDouble(idle.Value) * 100:0.##}%";
+            if (e["IdleThrottle"] is JValue idv && Convert.ToDouble(idv.Value) != 0) result["Idle Throttle"] = $"{Convert.ToDouble(idv.Value) * 100:0.##}%";
+            else if (isElectric) result["Idle Throttle"] = "0%";
             if (e["FuelConsumption"] is JValue fc) result["Fuel Consumption"] = Num(Convert.ToDouble(fc.Value));
-            if (e["BlipThrottle"] is JValue blip && Convert.ToDouble(blip.Value) != 0) result["Blip Throttle"] = Num(Convert.ToDouble(blip.Value));
+            if (e["BlipThrottle"] is JValue btv && Convert.ToDouble(btv.Value) != 0) result["Blip Throttle"] = Num(Convert.ToDouble(btv.Value));
+            else if (isElectric) result["Blip Throttle"] = "0";
             if (e["AfterFireProbability"] is JValue af) result["After-Fire Probability"] = $"{Convert.ToDouble(af.Value) * 100:0.##}%";
             if (e["CoolingEfficiency"] is JValue ce) result["Cooling Efficiency"] = Pct(Convert.ToDouble(ce.Value) - 1);
             if (e["HeatingPower"] is JValue hp) result["Heating Power"] = Pct(Convert.ToDouble(hp.Value) - 1);
-            if (e["StarterRPM"] is JValue srpm && Convert.ToDouble(srpm.Value) != 0) result["Starter RPM"] = $"{Num(Convert.ToDouble(srpm.Value))} rpm";
+            if (e["StarterRPM"] is JValue srv && Convert.ToDouble(srv.Value) != 0) result["Starter RPM"] = $"{Num(Convert.ToDouble(srv.Value))} rpm";
+            else if (isElectric) result["Starter RPM"] = "0 rpm";
             if (e["FrictionCoulombCoeff"] is JValue cc) result["Friction Coulomb Coefficient"] = Num(Convert.ToDouble(cc.Value));
             if (e["BlipDurationSeconds"] is JValue bd) result["Blip Duration"] = $"{Num(Convert.ToDouble(bd.Value))} s";
             if (e["IntakeSpeedEfficency"] is JValue ise) result["Intake Speed Efficency"] = Num(Convert.ToDouble(ise.Value));
@@ -362,7 +370,7 @@ internal sealed class Validator
             if (tr["TorqueConvertorStallRatioPower"] is JValue srp) result["Torque Converter Stall Ratio Power"] = Num(Convert.ToDouble(srp.Value));
             if (tr["TorqueConvertorTorqueRate"] is JValue trr) result["Torque Converter Torque Rate"] = Num(Convert.ToDouble(trr.Value));
             if (tr["AutoShiftComportRPM"] is JValue asr) result["Comfort Autoshift RPM"] = $"{Num(Convert.ToDouble(asr.Value))} rpm";
-            if (tr["ClutchType"] is JValue ct) result["Clutch Type"] = Tail((string?)ct.Value);
+            if (tr["ClutchType"] is JValue ct) result["Clutch Type"] = ClutchTypeName(Tail((string?)ct.Value));
             if (tr["Type"] is JValue trt) result["Type (transmission)"] = Tail((string?)trt.Value);
             if (tr["DevComment"] is JValue dev) result["Inspiration"] = (string?)dev.Value ?? "";
             if (tr["DefaultGearIndex"] is JValue dgi)
@@ -537,7 +545,7 @@ internal sealed class Validator
                 var wikiDrive = cells[2];
                 var pakDrive = PakDrive(v);
                 var wikiNorm = wikiDrive switch { "Rear-wheel drive" => "RWD", "Front-wheel drive" => "FWD", "All-wheel drive" => "AWD", _ => wikiDrive };
-                if (wikiDrive != "" && wikiNorm != pakDrive)
+                if (wikiDrive != "" && wikiNorm != pakDrive && !BrokenAssets.Contains(key))
                     Claim("vehicle_comparison", slug, "drivetrain", wikiDrive, pakDrive == "" ? "(none)" : pakDrive);
                 else if (wikiDrive == "" && pakDrive != "")
                     Claim("vehicle_comparison", slug, "drivetrain", "(blank)", pakDrive);
@@ -712,7 +720,7 @@ internal sealed class Validator
                 {
                     var pak = PakDrive(v);
                     var norm = value switch { "Rear-wheel drive" => "RWD", "Front-wheel drive" => "FWD", "All-wheel drive" => "AWD", _ => value };
-                    if (norm != pak)
+                    if (norm != pak && !BrokenAssets.Contains(key))
                         Claim($"vehicles:{slug} Specifications", slug, "Drivetrain", value, pak == "" ? "(none)" : pak);
                     break;
                 }
@@ -745,7 +753,13 @@ internal sealed class Validator
         if (flags?["busable"] != null) pakCaps.Add("Bus");
         if (flags?["limoable"] != null) pakCaps.Add("Limo");
         if (flags?["raceCar"] != null) pakCaps.Add("Race Car");
-        if (wikiCaps.Count != pakCaps.Count || wikiCaps.Except(pakCaps, StringComparer.OrdinalIgnoreCase).Any())
+        // trailerHauling / hasFuelPump live on the Vehicles table (out_vehicle.json),
+        // not the blueprint-derived flags object; the wiki renders both.
+        if (vehicles[key]?["trailerHauling"]?.Value<bool>() == true) pakCaps.Add("Can haul trailer");
+        if (vehicles[key]?["hasFuelPump"]?.Value<bool>() == true) pakCaps.Add("Has fuel pump");
+        // "Limousine" is the wiki's spelling of the pak's limoable -> "Limo"; same capability.
+        var normWiki = wikiCaps.Select(c => c.Equals("Limousine", StringComparison.OrdinalIgnoreCase) ? "Limo" : c).ToList();
+        if (normWiki.Count != pakCaps.Count || normWiki.Except(pakCaps, StringComparer.OrdinalIgnoreCase).Any())
             Claim($"vehicles:{slug} Capabilities", slug, "capabilities", string.Join(", ", wikiCaps), string.Join(", ", pakCaps));
 
         // Default Parts
@@ -897,6 +911,19 @@ internal sealed class Validator
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>Broken/unused assets with no usable drivetrain in the pak; the wiki's
+    /// "Rear-wheel drive" display for them is the established convention (see
+    /// wiki-base-assertions.md), so their drivetrain is not compared.</summary>
+    private static readonly HashSet<string> BrokenAssets = new(StringComparer.Ordinal)
+    {
+        "Bongo_Bus", "Nimo_Taxi", "Nuke_Taxi", "Townie_Bus", "Elisa2_Police",
+    };
+
+    /// <summary>Pak enum tail -> wiki label. The pak's "TorqueConvertorV2" is a dev
+    /// misspelling; the wiki renders the corrected English.</summary>
+    private static string ClutchTypeName(string tail) =>
+        tail == "TorqueConvertorV2" ? "Torque Converter V2" : tail;
 
     private static string PakDrive(JObject v)
     {
