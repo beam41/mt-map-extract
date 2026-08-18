@@ -33,7 +33,6 @@ not in the assertions file.
 | `wiki/out/out_vehicle_data.json` | gathered per-vehicle stats: weight, axles, drag, fuel, seats (gather mode output) |
 | `wiki/out/validation.json` | machine-readable list of every incorrect claim found |
 | `wiki/out/review.md` | hand-written review for the wiki generator agent (see "Writing the review") |
-| `wiki/out/review-extra.md` | this round's extra (validator-blind) findings — kept as the checklist to re-verify after the wiki agent applies fixes; drop it once re-validated |
 | `wiki/out/pages/` | cached fetched wiki pages (raw exports) |
 
 `out/` is the MAIN extractor's output (map data, tiles). Do not write wiki validation
@@ -122,10 +121,8 @@ the pak, or the validator. Rules:
   (multi-level vehicles, broken-asset drivetrains, page structures without a claim).
   Do not re-list automated findings as manual tasks.
 - Keep the review single-file and per-round: each round is `validation.json` (claims) +
-  `review.md` (your fixes + this round's extra notices). `review-extra.md` is this
-  round's record of the validator-blind findings that became automated checks — do not
-  treat it as a persistent artifact; once the wiki agent has applied the fixes, re-run
-  `--validate` and use the file to confirm every extra finding is gone, then remove it.
+  `review.md` (your fixes + this round's extra notices). Do not create a separate
+  extra-findings file — there is no persistent "extras" artifact.
 - Include an "already correct" section: surfaces verified against the pak that must not
   change, with the exact pak-confirmed values.
 - Include a data-conventions section (key casing, absent-field policy, chassis-weight
