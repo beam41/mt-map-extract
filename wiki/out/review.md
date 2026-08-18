@@ -80,8 +80,8 @@ Remaining part-page claims: **63**, all in two groups:
     `[[vehicles:6744ad…|Trailer_Cotra_40_3_VehicleName]]` (raw FName, no pak match).
   - 3 merged trailers: `trailer_shobed`, `trailer_shotan`, `trailer_shovan`
     (pak keys are `Shobed_7`/`Shobed_10`, `Shotan_7`/`Shotan_10`, `Shovan_7`/`Shovan_10`).
-- **`kuda_` broken slug still there** — cost `130,000` vs pak `220,000` (wiki row is a
-  mangled merge; pak key is `Kuda_Flatbed`).
+- **`kuda_` broken slug still there** — cost `130,000` vs pak `220,000`, chassis weight
+  `5,050 kg` vs `5,600 kg` (wiki row is a mangled merge; pak key is `Kuda_Flatbed`).
 
 ### Review 4 — live validation: drag, drivetrain, chassis weight still wrong
 
