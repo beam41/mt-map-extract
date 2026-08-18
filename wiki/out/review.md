@@ -1,106 +1,155 @@
-# Wiki Validation Review
+# Wiki review 1–4 re-validation — findings (2026-08-18, live)
 
-Generated 2026-08-18 by `wiki/validate` (pak data gathered from
-`MotorTown-Windows.pak` via `wiki/out/out_vehicle_data.json` + the parts
-extractor's `wiki/out/*.json`). Every claim is in `wiki/out/validation.json`.
-This review is hand-written — it groups, judges and explains the 447 claims.
+Fresh live-wiki run: `wiki/validate --validate` with an empty page cache re-fetched every
+page (768 part pages, 168 vehicle pages, 168 installable-parts pages, 3 list pages) on
+2026-08-18. Ground truth: `wiki/out/out_vehicle_part.json` / `out_vehicle_data.json`
+from the pak. Machine-readable claim dump: `wiki/out/validation.json` (510 claims). This
+file is the hand-written findings summary; the claim table is not repeated here.
 
-## Verdict
+## The embedded question: is `parts:anglekit_5` validated?
 
-The wiki is **not valid** against the game data. 447 incorrect claims across
-all five surfaces (comparison table, vehicle infobox, Specifications,
-Capabilities, Default Parts). The part list itself is clean — all 768 parts
-validate (name, cost, mass). The problems are concentrated in:
+**Yes — now it is.** Part detail pages were never validated before this run (only the
+`list_of_parts` rows were). The validator now fetches all 768 `parts:<slug>` pages and
+compares their infobox, Specifications, and Stats tables against the pak.
 
-1. **Drag: every single vehicle row shows `1.0`** — a placeholder, not data.
-   The pak has real `AirDragCoeff` values (Hana 0.5, Terra 0.9, Raton 0.22).
-   Both the comparison table (138 rows) and the infobox (133) are wrong.
-   This is the single biggest defect: the whole drag column/field is broken.
-2. **Chassis weight: 12 vehicles show `0 kg`** but have real weights in the
-   pak (Civo 9.1 t, Goliath-4/6/10 15/22/36 t, Longhorn Semi DC 4x2 7.2 t,
-   Atlas 6x2 Garbage 17.9 t, Jemusi Flatbed 6.1 t, Kuda Container 6x2 6 t,
-   Elisa 2/2 Police 1.57/1.72 t, Small Cage Trailer 0.5 t, Cotra 20-3L 3 t).
-   Same in table and infobox.
-3. **Drivetrain: 60 rows blank + 8 wrong** in the table; 8 wrong in
-   Specifications. The pak derives it from wheel `DifferentialComponentName`
-   (count driven axles). Hana/Ranchy/Voltex are shown "Rear-wheel drive" but
-   are AWD (all wheels driven); Bongo Bus/Elisa 2 Police/Nimo Taxi/Nuke
-   Taxi/Townie Bus shown RWD but have no driven axle in the pak.
-4. **Capabilities: 22 mismatches** — 10 pages show capabilities the pak
-   doesn't have or vice versa; naming differs ("Limousine" vs "Limo").
-5. **Default Parts: 35 slot mismatches** on 7 vehicles (Kart, Trophy Air,
-   the four 30-foot trailers) — those pages are missing the whole Default
-   Parts section or specific slots.
-6. **Vehicle list: 5 name/existence problems** — the broken `kuda_` slug and
-   5 entries not resolvable to pak vehicles (GUID junk rows).
+`parts:anglekit_5` itself: **no claims** — correct on every checked surface:
 
-## By surface
-
-### `list_of_parts` — CLEAN ✅
-
-All 768 parts: name (incl. `#1 → "#1 (Vehicle)"` augmentation), cost, mass.
-Zero claims.
-
-### `vehicle_comparison` — 220 claims ❌
-
-| Field | Claims | Detail |
+| Surface | Wiki shows | Pak |
 |---|---|---|
-| drag | 138 | every row `1.0`; pak `AirDragCoeff` 0.22–0.9 |
-| drivetrain | 68 | 60 blank, 8 wrong (Hana/Ranchy/Voltex AWD shown RWD; Bongo Bus/Elisa 2 Police/Nimo Taxi/Nuke Taxi/Townie Bus shown RWD, pak no driven axle) |
-| chassisWeight | 13 | 12 wrong 0 kg + 1 (Kuda Flatbed row points at the wrong vehicle via `kuda_` slug) |
-| cost | 1 | Kuda Flatbed row → `kuda_` slug resolves to the Kuda SemiTractor, so its cost/weight mismatch |
+| infobox name / Cost / Mass | `+5` / `10,000` / `5 kg` | AngleKit_5, 10000, 5.0 kg |
+| Stats → Angle Kit → Angle Increase | `5 deg` | `AngleKit.AngleIncreaseInDegree 5.0` |
 
-### Vehicle infobox — 145 claims ❌
+## Fix status by review round
 
-- `Drag coefficient` = 1.0 on 133 pages (same broken value as the table).
-- `Weight` = 0 kg on 12 pages (see #2 above).
+### Review 1 — sort order: mostly fixed, 1 table still wrong
 
-### Specifications — 20 claims ❌
+Was 23 unsorted tables; re-checked the fresh live `list_of_parts` with the review1
+comparator (numeric names first, then alpha with embedded digit runs):
 
-- `Chassis Weight` 0 kg on 12 pages.
-- `Drivetrain` wrong on 8 (same AWD/RWD errors as the table).
+- **Transmission — still unsorted (1 remaining):** `13 Speed` and `18 Speed` sit before
+  `4 Speed Mini Bus` (adjacent inversion `18 Speed` > `4 Speed Mini Bus`; both should sort
+  after the `4–6 Speed` block, before `Bike 6 Speed`).
+- **Limited Slip Differential — now correct.** The earlier "2 Way before Lockable"
+  concern was a comparator artifact: digits sort before letters, so `2 Way Clutch Pack
+  LSD (100)` before `Lockable` is the right order. Verified 0 inversions.
 
-### Capabilities — 22 claims ❌
+### Review 2 — display rules: applied; part-page stats: mostly right
 
-- Missing section or wrong content on 10 vehicles: Kart shows no Capabilities
-  but is a Race Car; Conter/Flaber/Hobber/Taber leads show "Can haul trailer"
-  (pak `bTrailerHauling`, not modeled); Mammoth "Limousine" vs pak "Limo".
+All review2 display rules verified present: multipliers as `±%` (Anti-Roll Bar `-50%`,
+Brake Power `+30%`, Brake Pad `±0%/+10%/-30%`), tire grip `0.97 G / 0.87 G`, `N/m`,
+`N·s/m`, winch `m`, aero `+22.5%` (×1.5 lift rule), lift `-7561 (214.7 kg downforce
+@ 200 km/h)`, LSD `Clutch Pack LSD`, sign typos fixed (`-1.5%`, `-2%`).
 
-### Default Parts — 35 claims ❌
+Remaining part-page claims: **63**, all in two groups:
 
-- Kart and Trophy Air pages have **no Default Parts section** (whole page is
-  bare: infobox + axle info only).
-- The four 30-foot trailers (container/dry-van/log/tanker) are missing Tire
-  and Wheel slots (and their pages are otherwise sparse).
+1. **Transmission pages are missing the review2 extractor fields (51 claims).** The pak
+   transmits `DevComment` (Inspiration), `ClutchType`, `AutoShiftComportRPM`, and `Type`
+   (`EatonFuller13/18`, `CVT`), but **no** `parts:<transmission>` page renders them.
+   Every transmission page is affected:
 
-### `list_of_vehicles` — 5 claims ❌
+   - **Inspiration missing (19 pages)** — e.g. `4speedmanual_daffy` should show
+     `Citroen 2CV 6`, `5speedsports` → `Ford Fiesta 1.25 JA8 Facelift 82ps, (2013 - 2017)`,
+     `6speedsportslp670` → `Murcielago LP670`, `302` → `Ford 4R70W (Mustang)`,
+     `301` → `Toyota T 40 (AE86)`, `ef18_01` → `RTO-15618`, `bike6speed` → `CBR 250`,
+     `bike6speedsport` → `R1`, `hm_minetruck_7speed` → `769D`, `hd_forklift_3speed` → `TE17`.
+   - **Clutch Type missing (15 pages)** — every listed transmission has
+     `MultiPlateClutch` in the pak; `hm_minetruck_7speed` has `TorqueConvertorV2`.
+   - **Comfort Autoshift RPM missing (14 pages)** — 2000/2500/3500/5000 rpm in pak.
+   - **Type missing (3 pages)** — `ef13_01` → `EatonFuller13`, `ef18_01` → `EatonFuller18`,
+     `scooter2speed` → `CVT`.
 
-- `kuda_` (Kuda Flatbed) — broken slug, resolves to the wrong pak vehicle.
-- 4 trailer entries appear under raw pak-key names (`Trailer_*_VehicleName`)
-  or GUID slugs, not their localized names.
+   The wiki's Transmission Physics block still shows only the original field set
+   (Torque Converter Stall RPM/Ratio, Default Gear, Gears, Shift Time, Torque Converter
+   Torque Rate). This is the review2 "extractor additions on wiki pages" item **still not
+   applied to transmissions** (engines got the new fields; transmissions did not).
 
-## Known-good exceptions (do NOT "fix" these)
+2. **EV engines show zero-value rows the pak omits (12 claims).** `electric_130hp` /
+   `electric_300hp` / `electric_670hp` pages render `Starter Torque 0 N·m`, `Idle Throttle
+   0%`, `Blip Throttle 0`, `Starter RPM 0 rpm` — the pak engine object lacks those keys
+   (zeros). Cosmetic: the values are correct, but the rows exist on the wiki and not in
+   the pak. Not worth changing either side; flagged for completeness. (The remaining claim
+   is `electric1speed_01` Clutch Type, part of the transmission group above.)
 
-- **Zero = 0 kg** — genuinely has no `MassInKgOverride` in its blueprint.
-- **Bongo Bus, Nimo Taxi, Nuke Taxi, Townie Bus** — broken/unused assets
-  (user-confirmed); their missing drivetrain/weight is acceptable.
-- **Trailers with no engine** — no fuel type/tank by design.
+### Review 3 — missing vehicles: added, but junk rows and 0-kg weights remain
 
-## Root causes
+- **All 9 missing vehicles are now present** (list + comparison table): Civo, Elisa 2,
+  Elisa 2 Police, Longhorn Semi DC 4x2, Jemusi Flatbed, Atlas 6x2 Garbage, Goliath-4/6/10.
+- **Jemusi renamed to "Jemusi Logger"** — correct.
+- **NOT fixed — 5 junk rows still in `list_of_vehicles`:**
+  - 2 GUID-keyed rows: `[[vehicles:b623ce…|Trailer_Cotra_20_3_VehicleName]]` and
+    `[[vehicles:6744ad…|Trailer_Cotra_40_3_VehicleName]]` (raw FName, no pak match).
+  - 3 merged trailers: `trailer_shobed`, `trailer_shotan`, `trailer_shovan`
+    (pak keys are `Shobed_7`/`Shobed_10`, `Shotan_7`/`Shotan_10`, `Shovan_7`/`Shovan_10`).
+- **`kuda_` broken slug still there** — cost `130,000` vs pak `220,000` (wiki row is a
+  mangled merge; pak key is `Kuda_Flatbed`).
 
-- The wiki generator reads a weight/drag source that no longer matches the
-  pak: weight is `BodyInstance.MassInKgOverride` summed over the vehicle class
-  blueprint (NOT the Vehicles table `CurbWeight`, which is 0 everywhere, and
-  NOT the parts sum — see review5.md for the full wrong-claim analysis).
-- Drag has a hardcoded/placeholder `1.0` (or `?? 1` fallback).
-- Drivetrain is derived from a stale or partial axle source.
-- The `kuda_` slug and trailer name resolution are broken in the generator
-  (raw pak keys / GUIDs leaking into links).
+### Review 4 — live validation: drag, drivetrain, chassis weight still wrong
 
-## Fix order
+- **Drag coefficient: wrong on 271 surfaces (138 comparison + 133 infobox).** The
+  comparison table shows `1.0` for 138 vehicles where the pak has a real value
+  (0.22–0.9); the infobox shows `1.0` for 133 vehicles. Examples: `micky` 0.34,
+  `raton` 0.22, `zydro` 0.23, `duke` 0.35, `spider` 0.25, `neo` 0.33. A few vehicles are
+  correct — the four 30-foot trailers (0.8) and `trophy_air` (0) in the infobox, and the
+  24 vehicles whose pak `AirDragCoeff` is exactly 1.0. Notably the comparison table shows
+  `1.0` even for the trailers whose infobox correctly says 0.8. This is the biggest single
+  defect.
+- **Drivetrain: 60 blank + 3 wrong in the comparison table.** Blank: `gunthoo`,
+  `scooty`, `zero`, `civo`, `vulcan`, … (pak says RWD/FWD/AWD). Wrong: `hana`, `ranchy`,
+  `voltex` show `Rear-wheel drive`, pak says `AWD`. (The 4 user-confirmed broken assets
+  `bongo_bus`/`nimo_taxi`/`nuke_taxi`/`townie_bus` + `elisa_2_police` show RWD where pak
+  has no drivetrain — known-good, not flagged.)
+- **Chassis Weight `0 kg` on 12 vehicles** (comparison + Specifications + infobox):
+  `civo` (9100), `elisa_2` (1570), `elisa_2_police` (1720), `longhorn_semi_dc_4x2` (7200),
+  `atlas_6x2_garbage` (17900), `jemusi_flatbed` (6100), `goliath_4` (15000),
+  `goliath_6` (22000), `goliath_10` (36000), `kuda_container_6x2` (6000),
+  `cotra_20_3l` (3000), `small_cage_trailer` (500). Pak `weightKg` values in parens —
+  all nonzero. Includes every review3 vehicle except Zero.
+- **Kart and Trophy Air pages are gutted.** Review4 said kart/trophy_air were removed;
+  they are back but with **no Specifications, no Capabilities, no Default Parts sections**
+  (only infobox + Axle info). Default Parts slot claims for both: `kart` should have
+  `Kart1Speed` / `110` / `KartEngine_10HP` / `SmallRadiator_100` / `LSD_Locked` /
+  `BasicTire_45,BasicTire_65` / `Kart` / `DefaultBody` / `BrakePad_Small_01`;
+  `trophy_air` should have `302` / `109` / `SmallBlock_90HP` / `TaxiLicense0` / `Trophy`
+  wheels etc. Capabilities: `kart` → `Race Car`, `trophy_air` → `Taxi` — both absent.
+- **The four 30-foot trailers are gutted the same way.** `30_foot_container_trailer`,
+  `30_foot_dry_van_trailer`, `30_foot_log_trailer`, `30feet_tanker_trailer` pages exist
+  (infobox correct: weight 4,000 kg, drag 0.8) but have no Specifications / Default Parts
+  sections; pak default parts (e.g. `BasicHeavyDutyRearTire`) are not shown.
+- **Capabilities label drift (4 claims).** Wiki `Limousine` vs pak `Limo`
+  (`mammoth`, `monarch_limo`, `nimo`, `nimo_taxi`) — the wiki spells it out; pak short
+  form. Cosmetic label choice, not a data error. `brutus_fire_engine` / `brutus_tanker` /
+  `dinky_tanker` / `jemusi_tanker` wiki "Has fuel pump" and 12 trailer "Can haul trailer"
+  rows have no pak counterpart — wiki-only capabilities, not flagged as errors.
 
-1. Drag: wire the comparison table + infobox to CDO `AirDragCoeff`.
-2. Chassis weight: sum `BodyInstance.MassInKgOverride` (12 rows currently 0).
-3. Drivetrain: count driven axles from `DifferentialComponentName`.
-4. Regenerate Kart / Trophy Air / 30-foot trailer pages (missing sections).
-5. Fix `kuda_` slug → `kuda_flatbed_4x2`, and trailer name resolution.
+## What the validator checks now (coverage)
+
+- `list_of_parts`: name/cost/mass for all 768 rows — clean (0 claims).
+- `list_of_vehicles`: slug ↔ pak key — 5 junk rows above.
+- `vehicle_comparison`: cost (1 claim: `kuda_`), drivetrain, chassis weight, drag.
+- Every `vehicles:<slug>` page: infobox (Weight, Drag coefficient), Specifications
+  (Chassis Weight, Drivetrain, Engine, Transmission), Capabilities, Default Parts
+  (grouped base slots).
+- Every `parts:<slug>` page: infobox (name/Cost/Mass), Specifications, Stats tables —
+  engine, transmission, tire, LSD, aero, brakes, suspension, intake, radiator, turbo,
+  wheel spacer, winch, cargo bed, fuel tank, taxis.
+
+## Known-good (validated, not flagged)
+
+- `parts:anglekit_5` and all other Angle Kit pages.
+- Aero display rules (`+22.5%`, lift kg, `-2.25%` air drag on `elisa2_rearspoiler_02`).
+- Default Gear / Gears on transmissions (index + gear-ratio rounding verified).
+- Cost on all vehicles except `kuda_`.
+
+## Action list for the wiki maintainer
+
+1. **Drag coefficient** — populate from pak `AirDragCoeff` in infobox + comparison
+   (271 rows).
+2. **Transmission part pages** — add Inspiration / Clutch Type / Comfort Autoshift RPM /
+   Type rows (51 rows across 19 pages).
+3. **Chassis Weight** — fill the 12 `0 kg` rows from `weightKg`.
+4. **Drivetrain** — fill 60 blank comparison rows; fix `hana`/`ranchy`/`voltex` to AWD.
+5. **Rebuild kart, trophy_air, and the four 30-foot trailer pages** with
+   Specifications / Capabilities / Default Parts.
+6. **Remove 5 junk rows** from `list_of_vehicles` (2 GUID, 3 merged trailers); restore
+   `kuda_flatbed`; fix `kuda_` cost.
+7. **Sort the Transmission table** (`13 Speed`/`18 Speed` before `4 Speed Mini Bus`).

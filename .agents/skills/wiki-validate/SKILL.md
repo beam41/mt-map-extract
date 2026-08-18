@@ -49,6 +49,14 @@ object per incorrect claim: `{source, vehicle, field, wiki, pak}`.
 
 - **`list_of_parts`** — every part: name (English, incl. the `#1 → "#1 (Vehicle)"`
   augmentation), cost, mass. All 768 parts.
+- **Per-part pages (`parts:<slug>`)** — every one of the 768 part detail pages:
+  infobox (`name`, `Part Type`, `Cost`, `Mass`), `Specifications`, and every `Stats`
+  table (engine, transmission, tire, LSD, aero, brakes, suspension, intake, radiator,
+  turbo, wheel spacer, winch, cargo bed, fuel tank, taxis). Value formatting matches
+  the wiki generator: `±%` multipliers, `G`/`N/m`/`N·s/m` units, aero lift
+  `coef (kg @ 200 km/h)`, gear ratios as `F2` with trailing zeros stripped,
+  `Default Gear` as the raw `DefaultGearIndex`. Zero-valued engine rows the pak omits
+  are not expected (EV pages render them — cosmetic, flag as wiki-only).
 - **`list_of_vehicles`** — every vehicle: English name + existence in pak.
 - **`vehicle_comparison`** — cost, drivetrain, chassis weight, drag for all rows.
 - **Per-vehicle pages** — infobox (`Weight`, `Drag coefficient`),

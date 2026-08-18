@@ -34,6 +34,14 @@ internal sealed class Validator
         var partList = Fetch("list_of_parts?do=export_raw", "list_of_parts.txt");
         ValidatePartList(partList, parts);
 
+        // ---- part detail pages: infobox + Specifications + Stats for every part ----
+        var lcParts = parts.Properties().ToDictionary(p => p.Name.ToLowerInvariant(), p => p.Name);
+        foreach (var (slug, _) in PartEntries(partList))
+        {
+            var raw = Fetch($"parts:{slug}?do=export_raw", $"parts_{slug}.txt");
+            ValidatePartPage(slug, raw, parts, lcParts);
+        }
+
         // ---- vehicle list + comparison ----
         var vehicleList = Fetch("list_of_vehicles?do=export_raw", "list_of_vehicles.txt");
         var comparison = Fetch("vehicle_comparison?do=export_raw", "vehicle_comparison.txt");
@@ -100,6 +108,346 @@ internal sealed class Validator
             if (!double.IsNaN(wikiMass) && Math.Abs(wikiMass - pakMass) > 1e-9)
                 Claim("list_of_parts", slug, "mass", mass, pakMass.ToString());
         }
+    }
+
+    // ------------------------------------------------------------------ part detail pages
+
+    private static List<(string Slug, string Name)> PartEntries(string raw) =>
+        Regex.Matches(raw, @"\[\[parts:([^|]+)\|([^\]]+)\]\]")
+            .Select(m => (m.Groups[1].Value, m.Groups[2].Value)).ToList();
+
+    /// <summary>
+    /// Validates one part detail page: infobox (name, type, cost, mass), Specifications and the
+    /// Stats blocks. Stat values are compared against the pak using the review2 display rules:
+    /// multipliers render as ±% from 100, probabilities as %, grip as G, and unit labels are
+    /// applied (deg, N/m, N·s/m, kg, °C, ...). A missing Stats block on a part that has stats is
+    /// also flagged.
+    /// </summary>
+    private void ValidatePartPage(string slug, string raw, JObject parts, Dictionary<string, string> lc)
+    {
+        var key = ResolvePart(slug, lc, parts);
+        if (key is null) { Claim("parts:" + slug, slug, "part", slug, "not found in pak"); return; }
+        var part = (JObject)parts[key]!;
+        var en = (string?)(part["name"] as JObject)?["en"] ?? "";
+
+        // infobox
+        var infobox = Regex.Match(raw, @"\{\{infobox>(.*?)\}\}", RegexOptions.Singleline);
+        if (infobox.Success)
+        {
+            var fields = new Dictionary<string, string>();
+            foreach (Match fm in Regex.Matches(infobox.Groups[1].Value, @"^(\S[^=]*?) = (.*)$", RegexOptions.Multiline))
+                fields[fm.Groups[1].Value.Trim()] = fm.Groups[2].Value.Trim();
+
+            if (fields.TryGetValue("name", out var wikiName) && wikiName != en)
+                Claim($"parts:{slug} infobox", slug, "name", wikiName, en);
+            if (fields.TryGetValue("Cost", out var wikiCost)
+                && long.TryParse(wikiCost.Replace(",", "").Replace("$", ""), out var wc)
+                && wc != (long?)part["cost"])
+                Claim($"parts:{slug} infobox", slug, "cost", wikiCost, part["cost"]!.ToString());
+            if (fields.TryGetValue("Mass", out var wikiMass) && TryKg(wikiMass, out var wm)
+                && Math.Abs(wm - (double?)part["massKg"] ?? 0) > 1e-9)
+                Claim($"parts:{slug} infobox", slug, "mass", wikiMass, (part["massKg"]?.ToString() ?? "0"));
+        }
+
+        // Specifications
+        var specs = Section(raw, "Specifications");
+        foreach (Match row in Regex.Matches(specs, @"^\| ([^|]+) \| (.+?) \|$", RegexOptions.Multiline))
+        {
+            var stat = row.Groups[1].Value.Trim();
+            var value = row.Groups[2].Value.Trim();
+            switch (stat)
+            {
+                case "Cost" when long.TryParse(value.Replace(",", ""), out var wc) && wc != (long?)part["cost"]:
+                    Claim($"parts:{slug} Specifications", slug, "Cost", value, part["cost"]!.ToString());
+                    break;
+                case "Mass" when TryKg(value, out var wm) && Math.Abs(wm - (double?)part["massKg"] ?? 0) > 1e-9:
+                    Claim($"parts:{slug} Specifications", slug, "Mass", value, (part["massKg"]?.ToString() ?? "0"));
+                    break;
+            }
+        }
+
+        // Stats: build the expected rows from the pak and compare values.
+        var expectedStats = ExpectedStats(part);
+        var statsSection = Section(raw, "Stats");
+        foreach (var (label, expected) in expectedStats)
+        {
+            var m = Regex.Match(statsSection, @"^\| " + Regex.Escape(label) + @" \| (.+?) \|$", RegexOptions.Multiline);
+            if (!m.Success)
+                Claim($"parts:{slug} Stats", slug, label, "(missing row)", expected);
+            else if (m.Groups[1].Value.Trim() != "-" && NormalizeNumber(m.Groups[1].Value.Trim()) != NormalizeNumber(expected))
+                Claim($"parts:{slug} Stats", slug, label, m.Groups[1].Value.Trim(), expected);
+        }
+        // Stats block present on the wiki but nothing in the pak -> data the wiki invented.
+        // A "-" value means "no data" (the wiki renders the full schema), so it is not a claim.
+        var wikiLabels = Regex.Matches(statsSection, @"^\| ([^|]+) \| (.+?) \|$", RegexOptions.Multiline)
+            .Where(m => m.Groups[2].Value.Trim() != "-")
+            .Select(m => m.Groups[1].Value.Trim()).ToList();
+        foreach (var label in wikiLabels)
+        {
+            if (!expectedStats.ContainsKey(label) && label is not ("Type" or "Cost" or "Mass"))
+                Claim($"parts:{slug} Stats", slug, label, "(wiki only)", "(no such stat in pak)");
+        }
+    }
+
+    /// <summary>Strip separators/units so "1,500 kg" == "1500" == "1500kg" for comparison.</summary>
+    private static string NormalizeNumber(string s) =>
+        Regex.Replace(s, @"[\s,°%N·m²/×]", "").ToLowerInvariant();
+
+    /// <summary>
+    /// Maps the part's pak stats to the wiki's displayed rows: label -> formatted value.
+    /// Covers every stat the wiki renders, applying the review2 display rules.
+    /// </summary>
+    private static Dictionary<string, string> ExpectedStats(JObject part)
+    {
+        var result = new Dictionary<string, string>();
+        var stats = part["stats"] as JObject;
+        if (stats is null) return result;
+
+        // engine physics (asset-resolved); zero-valued rows are omitted like the wiki does
+        if (stats["engine"] is JObject e)
+        {
+            if (e["MaxRPM"] is JValue maxRpm) result["Max RPM"] = $"{Num(Convert.ToDouble(maxRpm.Value))} rpm";
+            if (e["MaxTorque"] is JValue maxTq && Convert.ToDouble(maxTq.Value) != 0) result["Max Torque"] = $"{Num(Convert.ToDouble(maxTq.Value))} N·m";
+            if (e["StarterTorque"] is JValue st && Convert.ToDouble(st.Value) != 0) result["Starter Torque"] = $"{Num(Convert.ToDouble(st.Value))} N·m";
+            if (e["Inertia"] is JValue inertia) result["Rotational Inertia"] = $"{Num(Convert.ToDouble(inertia.Value))} kg·m²";
+            if (e["FrictionViscosityCoeff"] is JValue fv) result["Friction Viscosity"] = Num(Convert.ToDouble(fv.Value));
+            if (e["IdleThrottle"] is JValue idle && Convert.ToDouble(idle.Value) != 0) result["Idle Throttle"] = $"{Convert.ToDouble(idle.Value) * 100:0.##}%";
+            if (e["FuelConsumption"] is JValue fc) result["Fuel Consumption"] = Num(Convert.ToDouble(fc.Value));
+            if (e["BlipThrottle"] is JValue blip && Convert.ToDouble(blip.Value) != 0) result["Blip Throttle"] = Num(Convert.ToDouble(blip.Value));
+            if (e["AfterFireProbability"] is JValue af) result["After-Fire Probability"] = $"{Convert.ToDouble(af.Value) * 100:0.##}%";
+            if (e["CoolingEfficiency"] is JValue ce) result["Cooling Efficiency"] = Pct(Convert.ToDouble(ce.Value) - 1);
+            if (e["HeatingPower"] is JValue hp) result["Heating Power"] = Pct(Convert.ToDouble(hp.Value) - 1);
+            if (e["StarterRPM"] is JValue srpm && Convert.ToDouble(srpm.Value) != 0) result["Starter RPM"] = $"{Num(Convert.ToDouble(srpm.Value))} rpm";
+            if (e["FrictionCoulombCoeff"] is JValue cc) result["Friction Coulomb Coefficient"] = Num(Convert.ToDouble(cc.Value));
+            if (e["BlipDurationSeconds"] is JValue bd) result["Blip Duration"] = $"{Num(Convert.ToDouble(bd.Value))} s";
+            if (e["IntakeSpeedEfficency"] is JValue ise) result["Intake Speed Efficency"] = Num(Convert.ToDouble(ise.Value));
+            if (e["FuelType"] is JValue ft) result["Fuel Type"] = Tail((string?)ft.Value);
+            if (e["EngineType"] is JValue et) result["Engine Type"] = Tail((string?)et.Value);
+            if (e["MaxJakeBrakeStep"] is JValue jb) result["Max Jake Brake Step"] = Num(Convert.ToDouble(jb.Value));
+            if (e["MaxRegenTorqueRatio"] is JValue mr) result["Max Regen Torque Ratio"] = $"{Convert.ToDouble(mr.Value) * 100:0}%";
+            if (e["MotorMaxPower"] is JValue mp) result["Motor Max Power"] = $"{Num(Convert.ToDouble(mp.Value))} W";
+            if (e["MotorMaxVoltage"] is JValue mv) result["Motor Max Voltage"] = $"{Num(Convert.ToDouble(mv.Value))} V";
+            if (e["TorqueCurve"] is JArray curve)
+            {
+                result["Torque Curve"] = string.Join(", ", curve.OfType<JObject>()
+                    .Select(k => $"{k["Value"]:0.##} @ {k["Time"]:0.##}"));
+            }
+        }
+
+        // struct stats
+        void Struct(string section, Dictionary<string, (string Label, Func<double, string> Fmt)> fields)
+        {
+            if (stats[section] is not JObject obj) return;
+            foreach (var (field, (label, fmt)) in fields)
+            {
+                if (obj[field] is JValue v) result[label] = fmt(Convert.ToDouble(v.Value));
+            }
+        }
+
+        Struct("AngleKit", new() { ["AngleIncreaseInDegree"] = ("Angle Increase", x => $"{Num(x)} deg") });
+        Struct("AntiRollBar", new() { ["AntiRollBarRateMultiplier"] = ("Anti-Roll Bar Rate", x => Pct(x - 1)) });
+        Struct("BrakeBalance", new()
+        {
+            ["FrontMultiplier"] = ("Front Brake Bias", x => Pct(x - 1)),
+            ["RearMultiplier"] = ("Rear Brake Bias", x => Pct(x - 1)),
+        });
+        Struct("BrakePad", new()
+        {
+            ["HeatingMultiplier"] = ("Heating", x => Pct(x - 1)),
+            ["CoolingMultiplier"] = ("Brake Cooling", x => Pct(x - 1)),
+            ["WearMultiplier"] = ("Wear Rate", x => Pct(x - 1)),
+            ["FadeTemperature"] = ("Fade Temperature", x => $"{Num(x)} °C"),
+        });
+        Struct("BrakePower", new() { ["BrakePowerMultiplier"] = ("Brake Power", x => Pct(x - 1)) });
+        Struct("SuspensionDamper", new()
+        {
+            ["BoundDampingRateMultiplier"] = ("Bound Damping Rate", x => Pct(x - 1)),
+            ["ReboundDampingRateMultiplier"] = ("Rebound Damping Rate", x => Pct(x - 1)),
+        });
+        Struct("SuspensionSpring", new() { ["SpringRateMultiplier"] = ("Spring Rate", x => Pct(x - 1)) });
+        Struct("SuspensionRideHeight", new() { ["RideHeightChange"] = ("Ride Height Change", x => $"{Num(x)} cm") });
+        Struct("CoolantRadiator", new()
+        {
+            ["CoolingPower"] = ("Cooling Power", x => Pct(x - 1)),
+            ["CoolantWaterInLiter"] = ("Coolant Capacity", x => $"{Num(x)} L"),
+        });
+        Struct("Turbocharger", new()
+        {
+            ["BaseTorqueMultiplier"] = ("Base Torque", x => Pct(x - 1)),
+            ["TorqueMultiplier"] = ("Torque", x => Pct(x - 1)),
+            ["IntakePressureMultiplier"] = ("Intake Pressure", x => Pct(x - 1)),
+            ["HeatingMultiplier"] = ("Heating", x => Pct(x - 1)),
+            ["FuelConsumptionMultiplier"] = ("Fuel Consumption", x => Pct(x - 1)),
+            ["TurbineWeight"] = ("Turbine Weight", x => $"{Num(x)} kg"),
+            ["TurbineAspectRatio"] = ("Turbine Aspect Ratio", Num),
+        });
+        Struct("Intake", new()
+        {
+            ["Slope"] = ("Intake Torque Slope", Num),
+            ["BaseRPMRatio"] = ("Base RPM Ratio", Num),
+            ["IntakeSpeedEfficencyMultiplier"] = ("Intake Speed Efficiency", x => Pct(x - 1)),
+        });
+        Struct("WheelSpacer", new() { ["Space"] = ("Width", x => $"{Num(x * 10)} mm") });
+        if (stats["WheelSpacer"] is JObject ws && ws["Space"] is JValue spaceVal)
+            result["Width"] = $"{Num(Convert.ToDouble(spaceVal.Value) * 10)} mm";
+
+        // tire physics (asset-resolved); the wiki renders a fixed field set and omits
+        // rolling resistance / wear / offroad / smoke rows entirely
+        if (stats["tire"] is JObject t)
+        {
+            if (t["PatchLengthCoefficient"] is JValue plc) result["Patch Length Coefficient"] = Num(Convert.ToDouble(plc.Value));
+            if (t["StaticMu"] is JValue sm) result["Static Grip"] = Num(Convert.ToDouble(sm.Value)) + " G";
+            if (t["SlidingMu"] is JValue sl) result["Sliding Grip"] = Num(Convert.ToDouble(sl.Value)) + " G";
+            if (t["SpringX"] is JValue sx) result["Spring Rate X"] = $"{Num(Convert.ToDouble(sx.Value))} N/m";
+            if (t["SpringY"] is JValue sy) result["Spring Rate Y"] = $"{Num(Convert.ToDouble(sy.Value))} N/m";
+            if (t["DampingX"] is JValue dx) result["Damping X"] = $"{Num(Convert.ToDouble(dx.Value))} N·s/m";
+            if (t["DampingY"] is JValue dy) result["Damping Y"] = $"{Num(Convert.ToDouble(dy.Value))} N·s/m";
+            if (t["MaxWeightKg"] is JValue mw) result["Max Load"] = $"{Num(Convert.ToDouble(mw.Value))} kg";
+        }
+        if (stats["Tire"] is JObject tireStruct && tireStruct["bIsDualRearWheel"] is JValue dual)
+            result["Dual Rear"] = (bool?)dual.Value == true ? "Yes" : "No";
+
+        // aero
+        if (new[] { "AirDragMultiplier", "FrontDamageMultiplier", "AeroLift", "FrontAeroLift", "RearAeroLift", "TrailerAirDragMultiplier" }
+                .Any(f => stats[f] is JValue) || HasLift(stats))
+        {
+            var mult = (double?)stats["AirDragMultiplier"] ?? 1;
+            var liftMult = HasLift(stats) ? 1.5 : 1.0;
+            if (mult != 1 || liftMult != 1)
+                result["Air Drag"] = Pct((mult - 1) * liftMult);
+            if (stats["TrailerAirDragMultiplier"] is JValue td && Convert.ToDouble(td.Value) != 1)
+                result["Trailer Air Drag"] = Pct(Convert.ToDouble(td.Value) - 1);
+            if (stats["FrontDamageMultiplier"] is JValue fdm && Convert.ToDouble(fdm.Value) != 1)
+                result["Front Damage"] = Pct(Convert.ToDouble(fdm.Value) - 1);
+            foreach (var (field, label) in new[] { ("AeroLift", "Aero Lift"), ("FrontAeroLift", "Front Aero Lift"), ("RearAeroLift", "Rear Aero Lift") })
+            {
+                if (stats[field] is JValue lift && Convert.ToDouble(lift.Value) != 0)
+                    result[label] = field == "AeroLift"
+                        ? AeroLift(Convert.ToDouble(lift.Value), withKind: true)
+                        : AeroLift(Convert.ToDouble(lift.Value), withKind: false);
+            }
+        }
+
+        // final drive ratio (scalar stat)
+        if (stats["FinalDriveRatio"] is JValue fdr && Convert.ToDouble(fdr.Value) != -1)
+            result["Final Drive Ratio"] = Num(Convert.ToDouble(fdr.Value));
+
+        // transmission (asset-resolved)
+        if (stats["transmission"] is JObject tr)
+        {
+            if (tr["ShiftTimeSeconds"] is JValue shift) result["Shift Time"] = $"{Num(Convert.ToDouble(shift.Value))} s";
+            if (tr["TorqueConvertorStallRPM"] is JValue stall) result["Torque Converter Stall RPM"] = $"{Num(Convert.ToDouble(stall.Value))} rpm";
+            if (tr["TorqueConvertorStallRatioPower"] is JValue srp) result["Torque Converter Stall Ratio Power"] = Num(Convert.ToDouble(srp.Value));
+            if (tr["TorqueConvertorTorqueRate"] is JValue trr) result["Torque Converter Torque Rate"] = Num(Convert.ToDouble(trr.Value));
+            if (tr["AutoShiftComportRPM"] is JValue asr) result["Comfort Autoshift RPM"] = $"{Num(Convert.ToDouble(asr.Value))} rpm";
+            if (tr["ClutchType"] is JValue ct) result["Clutch Type"] = Tail((string?)ct.Value);
+            if (tr["Type"] is JValue trt) result["Type (transmission)"] = Tail((string?)trt.Value);
+            if (tr["DevComment"] is JValue dev) result["Inspiration"] = (string?)dev.Value ?? "";
+            if (tr["DefaultGearIndex"] is JValue dgi)
+                result["Default Gear"] = ((long?)dgi.Value ?? 0).ToString();
+            if (tr["Gears"] is JArray gearArray)
+            {
+                result["Gears"] = string.Join(", ", gearArray.OfType<JObject>()
+                    .Select(g => $"{g["Name"]}:{GearRatio(Convert.ToDouble(g["GearRatio"]))}"));
+            }
+        }
+
+        // LSD (asset-resolved)
+        if (stats["lsd"] is JObject lsd)
+        {
+            if (lsd["LSDType"] is JValue lt) result["LSD Type"] = Humanize(Tail((string?)lt.Value));
+            if (lsd["ClutchPackAccel"] is JValue ca) result["Clutch Pack Acceleration"] = Num(Convert.ToDouble(ca.Value));
+            if (lsd["ClutchPackBrake"] is JValue cb) result["Clutch Pack Brake"] = Num(Convert.ToDouble(cb.Value));
+        }
+
+        // winch / trailer hitch / taxi / cargo bed / inventory / fuel tank
+        Struct("Winch", new()
+        {
+            ["MaxForceKg"] = ("Max Force", x => $"{Num(x)} kg"),
+            ["MaxLength"] = ("Cable Length", x => $"{Num(x / 100)} m"),
+        });
+        if (stats["TrailerHitch"] is JObject hitch && hitch["ConnectionType"] is JValue conn)
+            result["Connection"] = Tail((string?)conn.Value);
+        if (stats["Taxi"] is JObject taxi && taxi["TaxiType"] is JValue taxiType)
+            result["Type"] = Tail((string?)taxiType.Value);
+        if (stats["CargoBed"] is JObject cargo
+            && !part["type"]?.ToString().Contains("CargoBedAttachment", StringComparison.Ordinal) == true)
+        {
+            if (cargo["CargoSpaceType"] is JValue cst) result["Cargo Space Type"] = Tail((string?)cst.Value);
+            if (cargo["DumpVolume"] is JValue dv) result["Dump Volume"] = $"{Num(Convert.ToDouble(dv.Value))} kL";
+            if (cargo["CargoSpaceLocation"] is JObject loc)
+                result["Cargo Space Location"] = Vec(loc);
+            if (cargo["CargoSpaceSize"] is JObject size)
+                result["Cargo Space Size"] = Vec(size);
+        }
+        if (stats["RoofRack"] is JObject rack)
+        {
+            if (rack["CargoSpaceLocation"] is JObject rl) result["Cargo Space Location"] = Vec(rl);
+            if (rack["CargoSpaceSize"] is JObject rs) result["Cargo Space Size"] = Vec(rs);
+        }
+        if (stats["ItemInventory"] is JObject inv && inv["NumSlots"] is JValue slots)
+            result["Slots"] = Num(Convert.ToDouble(slots.Value));
+        if (stats["FuelTank"] is JObject tank && tank["FuelLiter"] is JValue fuel)
+            result["Fuel Capacity"] = $"{Num(Convert.ToDouble(fuel.Value))} L";
+
+        return result;
+    }
+
+    /// <summary>A 3D vector struct -> "X cm × Y cm × Z cm" with each axis labeled per review2.</summary>
+    private static string Vec(JObject v)
+    {
+        double X = (double?)v["X"] ?? 0, Y = (double?)v["Y"] ?? 0, Z = (double?)v["Z"] ?? 0;
+        return $"{Num(Eps(X))} cm × {Num(Eps(Y))} cm × {Num(Eps(Z))} cm";
+    }
+
+    /// <summary>Axis values like -0.000122 are editor noise; the wiki renders them as 0.</summary>
+    private static double Eps(double x) => Math.Abs(x) < 0.01 ? 0 : x;
+
+    private static bool HasLift(JObject stats) =>
+        new[] { "AeroLift", "FrontAeroLift", "RearAeroLift" }.Any(f => stats[f] is JValue v && Convert.ToDouble(v.Value) != 0);
+
+    /// <summary>Downforce coefficient -> "coef (X kg @ 200 km/h)" using force = 7.098e-7 * v² * coef.
+    /// The wiki labels the whole-vehicle Aero Lift with the kind (downforce/lift) but not the
+    /// per-axle Front/Rear lifts.</summary>
+    private static string AeroLift(double coef, bool withKind)
+    {
+        var force = 7.098e-7 * 40000 * coef;
+        var kind = coef < 0 ? " downforce" : " lift";
+        return withKind
+            ? $"{coef:0} ({Math.Abs(force):0.0} kg{kind} @ 200 km/h)"
+            : $"{coef:0} ({Math.Abs(force):0.0} kg @ 200 km/h)";
+    }
+
+    private static string Tail(string? value)
+    {
+        if (value is null) return "";
+        var idx = value.LastIndexOf("::", StringComparison.Ordinal);
+        return idx < 0 ? value : value[(idx + 2)..];
+    }
+
+    /// <summary>"ClutchPackLSD" -> "Clutch Pack LSD": split camelCase for display.</summary>
+    private static string Humanize(string value) =>
+        Regex.Replace(value, "([a-z0-9])([A-Z])", "$1 $2");
+
+    /// <summary>Multiplier delta as ±% from 100: 1.15 -> "+15%", 0.98 -> "-2%", 1.0 -> "±0%".</summary>
+    private static string Pct(double x) => x switch
+    {
+        0 => "±0%",
+        > 0 => $"+{x * 100:0.##}%",
+        _ => $"{x * 100:0.##}%",
+    };
+
+    /// <summary>Whole numbers without a trailing .0, decimals to 2 places.</summary>
+    private static string Num(double x) => x == Math.Floor(x) ? ((long)x).ToString() : x.ToString("0.##");
+
+    /// <summary>Gear ratios: the wiki renders ToString("F2") with trailing zeros stripped —
+    /// 1.785 -> "1.78", 1.315 -> "1.31", 2.105 -> "2.1". (Math.Round/0.## differ on exact
+    /// halves because the custom format rounds the binary value; F2 rounds the decimal
+    /// representation.)</summary>
+    private static string GearRatio(double x)
+    {
+        var f2 = x.ToString("F2");
+        return f2.TrimEnd('0').TrimEnd('.');
     }
 
     // ------------------------------------------------------------------ vehicle list + comparison
@@ -499,22 +847,7 @@ internal sealed class Validator
     {
         var json = new JArray(_claims);
         Output.WriteJson(Path.Combine(_outDir, "validation.json"), json, "validation claims");
-
-        var md = new System.Text.StringBuilder();
-        md.AppendLine("# Wiki validation report");
-        md.AppendLine();
-        md.AppendLine($"Generated by wiki/validate on {DateTime.UtcNow:yyyy-MM-dd}.");
-        md.AppendLine();
-        md.AppendLine($"**{_claims.Count} incorrect claims found.** Machine-readable copy: `validation.json`.");
-        md.AppendLine();
-        md.AppendLine("| Source | Vehicle | Field | Wiki says | Pak says |");
-        md.AppendLine("|---|---|---|---|---|");
-        foreach (var c in _claims)
-        {
-            md.AppendLine($"| {c["source"]} | {c["vehicle"]} | {c["field"]} | `{c["wiki"]}` | `{c["pak"]}` |");
-        }
-        File.WriteAllText(Path.Combine(_outDir, "review.md"), md.ToString());
         Console.WriteLine($"  {Path.Combine(_outDir, "validation.json")} {_claims.Count} claims");
-        Console.WriteLine($"  {Path.Combine(_outDir, "review.md")}");
+        Console.WriteLine("  review.md is hand-written; run `--validate` then author findings from validation.json");
     }
 }
