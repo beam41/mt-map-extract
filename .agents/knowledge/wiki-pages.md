@@ -77,6 +77,22 @@ shell-page literal text, Specifications-onward renders from `:auto_details`, and
 transcluded block gets its own `[Edit]` link pointing straight at the subpage that owns
 it.
 
+**Exhaustive prose-content audit** (all 171 live vehicle pages, not just the 13 with an
+`image` field): fetched every `vehicles:{slug}?do=export_raw`, located the generator's own
+`====== {Name} ======` / intro-sentence pair, and diffed everything between it and the
+first `===== Specifications =====` heading. Only **3** vehicles carry hand-written prose
+there — **air_city** (2 paragraphs), **5t_tanker_trailer** (3 paragraphs), and **lobo** (a
+full `===== History =====` sub-section with an embedded image, ~4 KB of lore text). The
+other 10 `image`-field vehicles (ambi, atlas_4x2_semi, campy, eastwood, enfo_gt, flanker3,
+flanker3s, small_cage_trailer, spt1, tanko_40, vamos3) have **no** extra prose — the
+`image` field is their only hand content, already preserved by the always-on
+`LiveWiki.FetchImageLine`/`MergeImage` path. All 3 prose vehicles migrated to
+`out/wiki-migrated/vehicles/{slug}.txt` (shell content: infobox include, heading, intro,
+the extracted hand paragraphs verbatim, details include) and confirmed rendering correctly
+in the local preview (infobox, History section with its `{{ :logo_lobo.jpg?300|...}}`
+media reference, Specifications onward all present and in the right order).
+`out/wiki-migrated/` is a one-off manual-migration output, not written by a normal run.
+
 **Deployment rule — this is the entire point of the feature:** when syncing generated
 output onto the live wiki, only ever push `{ns}/{slug}/auto_infobox.txt` and
 `auto_details.txt` (plus the untouched aggregate/list pages) — **never** a delete-capable
@@ -632,9 +648,11 @@ directive). Zeroed `CargoSpaceSize` structs are not real spaces.
 
 - **Full-22 "In other languages"** on pages showing English-only or native-name rows
   (~789 pages) — the wiki mixed generator generations.
-- **Hand content dropped**: `image =` fields + custom intros/history on 13 vehicle
-  pages (air_city, ambi, lobo, 5t_tanker_trailer, …); air_city's `Internal key = Bus`
-  is a plain error.
+- **Hand content — resolved**: 13 vehicles carry an `image =` infobox field (all 13
+  preserved every run by `LiveWiki`); of those, only air_city and 5t_tanker_trailer also
+  had hand-written prose paragraphs, and lobo (no `image` field) had a full hand-written
+  `===== History =====` sub-section — all 3 migrated, see "Exhaustive prose-content audit"
+  above. air_city's `Internal key = Bus` is a plain error, not hand content.
 - **Old-template pages** (12): atlas_6x2_garbage, civo, elisa_2(_police), goliath_4/6/10,
   jemusi_flatbed, longhorn_semi_dc_4x2, trailer_shobed/shotan/shovan lack Axle info /
   In other languages; kart's `Comfort = No comfort` and trophy_air's `Fuel = 50L` are
