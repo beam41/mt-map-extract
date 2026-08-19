@@ -606,40 +606,51 @@ internal sealed class Data(AssetSource assets, Localization localization)
         if (Blank(names.GetValueOrDefault("en")))
             names["en"] = name is null ? key : Text.Source(name) ?? key;
 
-        // Generic "#N" names are ambiguous on their own; append the vehicles that use the
-        // part. When all owners share a brand (leading words), collapse to the brand —
-        // "Brutus Wrecker / Brutus Tanker / Brutus Ambulance / Brutus Fire Engine" ->
-        // "Brutus" (user directive); unrelated owners keep the full " / " join.
-        if (Regex.IsMatch(names.GetValueOrDefault("en") ?? "", @"^#\d+$")
-            && VehicleKeys(row) is { Count: > 0 } keys)
+        // Generic "#N" names are ambiguous on their own; append the family. When all owners
+        // share a brand (leading words), collapse to the brand — "Brutus Wrecker / Brutus
+        // Tanker / Brutus Ambulance / Brutus Fire Engine" -> "Brutus" (user directive);
+        // unrelated owners keep the full " / " join. Parts with no VehicleKeys are keyed by
+        // tag query instead (atlas_frontbumper_01 -> ANY( Vehicle.Key.Atlas )) — the family
+        // then comes from the fit rule's fitting vehicles.
+        if (Regex.IsMatch(names.GetValueOrDefault("en") ?? "", @"^#\d+$"))
         {
             foreach (var language in localization.Languages)
             {
                 if (!names.TryGetValue(language, out var value) || Blank(value)) continue;
-                var owners = keys
-                    .Where(vk => vk != "None")
-                    .Select(vk => vehicleNames.GetValueOrDefault(vk)?.GetValueOrDefault(language) ?? vk)
-                    .Where(v => !Blank(v))
-                    .ToList();
-                var suffix = Brand(owners) ?? string.Join(" / ", owners);
+                var keys = VehicleKeys(row);
+                var owners = keys is { Count: > 0 }
+                    ? keys.Where(vk => vk != "None")
+                        .Select(vk => vehicleNames.GetValueOrDefault(vk)?.GetValueOrDefault(language) ?? vk)
+                        .Where(v => !Blank(v))
+                        .ToList()
+                    : FittingVehicles(key, row)
+                        .Select(v => v.Names.GetValueOrDefault(language) ?? v.En)
+                        .Where(v => !Blank(v))
+                        .ToList();
+                var suffix = owners.Count == 0 ? null
+                    : Brand(owners) ?? (keys is { Count: > 0 } || owners.Count <= 4
+                        ? string.Join(" / ", owners)
+                        : null);
                 if (!Blank(suffix)) names[language] = $"{value} ({suffix})";
             }
         }
         return names;
     }
 
-    /// <summary>The brand shared by all owner names — the longest common leading words
-    /// ("Brutus Wrecker", "Brutus Tanker" -> "Brutus"); null when they share none.</summary>
+    /// <summary>The brand shared by all owner names — the longest common leading tokens split
+    /// on any non-alphanumeric boundary ("Brutus Wrecker", "Brutus Tanker" -> "Brutus";
+    /// "Goliath-4", "Goliath-6" -> "Goliath"); null when they share none.</summary>
     private static string? Brand(List<string> owners)
     {
         if (owners.Count == 0) return null;
-        var words = owners.Select(n => n.Split(' ')).ToList();
+        var tokens = owners.Select(n => Regex.Split(n, @"[^A-Za-z0-9]+")
+            .Where(t => t.Length > 0).ToList()).ToList();
         var common = new List<string>();
         for (var i = 0; ; i++)
         {
-            var w = words[0].Length > i ? words[0][i] : null;
-            if (w is null || words.Any(ws => ws.Length <= i || ws[i] != w)) break;
-            common.Add(w);
+            var t = tokens[0].Count > i ? tokens[0][i] : null;
+            if (t is null || tokens.Any(ts => ts.Count <= i || ts[i] != t)) break;
+            common.Add(t);
         }
         return common.Count == 0 ? null : string.Join(" ", common);
     }
@@ -1211,13 +1222,15 @@ internal sealed class Data(AssetSource assets, Localization localization)
     /// <summary>Every vehicle the part fits, per the same fit rule (the inverse of
     /// InstallableParts — a vehicle can install the part iff the part is in its installable
     /// list). Memoized; used by the per-part installable_vehicles pages.</summary>
-    public List<VehicleInfo> InstallableVehicles(PartInfo part)
+    public List<VehicleInfo> InstallableVehicles(PartInfo part) =>
+        _partRowsByKey.TryGetValue(part.Key, out var row) ? FittingVehicles(part.Key, row) : [];
+
+    /// <summary>Every vehicle the raw part row fits, memoized by part key.</summary>
+    private List<VehicleInfo> FittingVehicles(string key, JObject row)
     {
-        if (_installableVehiclesCache.TryGetValue(part.Key, out var cached)) return cached;
-        var result = new List<VehicleInfo>();
-        if (_partRowsByKey.TryGetValue(part.Key, out var row))
-            result.AddRange(Vehicles.Where(v => PartFitsVehicle(row, v)));
-        _installableVehiclesCache[part.Key] = result;
+        if (_installableVehiclesCache.TryGetValue(key, out var cached)) return cached;
+        var result = Vehicles.Where(v => PartFitsVehicle(row, v)).ToList();
+        _installableVehiclesCache[key] = result;
         return result;
     }
 

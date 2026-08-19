@@ -435,6 +435,11 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
 - **Family-grouped #N part order** (directive): "#N (Family)" parts sort with the family
   first — "#1 (Dabo)", "#2 (Dabo)", "#3 (Dabo)" adjacent — instead of all "#1"s together.
   The wiki's list order shows all "#1" parts first.
+- **Tag-query-keyed #N families** (directive): "#N" parts with no VehicleKeys (keyed by
+  tag query, e.g. atlas_frontbumper_01 -> ANY( Vehicle.Key.Atlas )) derive the family from
+  the fit rule's fitting vehicles — "#1 (Atlas)", "#1 (Goliath)". The wiki leaves them as
+  bare "#1". The brand collapse tokenizes on non-alphanumeric boundaries so "Goliath-4 /
+  Goliath-6 / Goliath-10" -> "Goliath".
 - **Collapsed #N owner names** (directive): a "#N" part whose owners share a brand shows
   only the brand — "#1 (Brutus)" instead of "#1 (Brutus Wrecker / Brutus Tanker / Brutus
   Ambulance / Brutus Fire Engine)"; unrelated owners keep the " / " join. The wiki shows
