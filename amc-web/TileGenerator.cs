@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using NetVips;
 
-namespace AmcWeb;
+namespace AmcWebExtractor;
 
 /// <summary>
 /// Slices the world map into Leaflet/OpenLayers tiles (<c>{z}_{x}_{y}.{ext}</c>), the job the

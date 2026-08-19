@@ -2,7 +2,7 @@ using System.Globalization;
 using CUE4Parse.UE4.Versions;
 using YamlDotNet.Serialization;
 
-namespace AmcWeb;
+namespace AmcWebExtractor;
 
 /// <summary>Tile-encoding options parsed from the yaml; declared here so the standalone
 /// projects that link Options.cs (wiki generator, explore) get them without their own copies.</summary>

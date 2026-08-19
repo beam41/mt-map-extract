@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using Newtonsoft.Json.Linq;
 
-namespace WikiGenerate;
+namespace WikiGenerator;
 
 internal static class RenderParts
 {

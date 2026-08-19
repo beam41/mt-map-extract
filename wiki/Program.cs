@@ -1,6 +1,6 @@
 using MtExtract;
 
-namespace WikiGenerate;
+namespace WikiGenerator;
 
 /// <summary>
 /// The wiki generator: reads the pak directly and writes the DokuWiki source of every

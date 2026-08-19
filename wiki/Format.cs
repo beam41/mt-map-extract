@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace WikiGenerate;
+namespace WikiGenerator;
 
 /// <summary>
 /// The wiki's display conventions (reverse-engineered from the live pages):

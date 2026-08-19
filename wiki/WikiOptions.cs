@@ -1,6 +1,6 @@
 using MtExtract;
 
-namespace WikiGenerate;
+namespace WikiGenerator;
 
 /// <summary>The wiki generator's own mount options. The amc-web Options type is not shared —
 /// each project parses its own CLI (pak/aes/usmap paths here, tile options there).</summary>

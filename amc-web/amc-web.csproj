@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>amc-web</AssemblyName>
-    <RootNamespace>AmcWeb</RootNamespace>
+    <RootNamespace>AmcWebExtractor</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>

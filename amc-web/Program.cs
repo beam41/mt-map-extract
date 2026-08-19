@@ -6,7 +6,7 @@ using CUE4Parse_Conversion.Textures;
 using Newtonsoft.Json.Linq;
 using MtExtract;
 
-namespace AmcWeb;
+namespace AmcWebExtractor;
 
 /// <summary>
 /// One pass over MotorTown-Windows.pak that produces every out_*.json the site needs, plus the

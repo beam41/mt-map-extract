@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using MtExtract;
 
-namespace WikiGenerate;
+namespace WikiGenerator;
 
 internal sealed class AxleInfo(double brakeRatio, bool driven, bool dual, bool lift)
 {
