@@ -74,7 +74,7 @@ generated `FD*` ratios (loop 0.05→25.0), `EF6_4106` (1). The wiki's part list 
 
 ## Policy applied to the wiki generator
 
-The generator in `wiki/generate/` is the pak-direct right source. Where the live wiki
+The generator in `wiki/` is the pak-direct right source. Where the live wiki
 deviates from the pak, the deviation is allowed (generator keeps pak truth) when it is
 explainable by the wiki being stale or generated from buggy extraction; it is fixed
 (kept identical) when the wiki is correct. No mt-pak-extract edits; the allowed

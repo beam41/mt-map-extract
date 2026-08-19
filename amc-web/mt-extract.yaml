@@ -8,10 +8,9 @@
 # usmap: resource/Mappings.usmap
 # game: GAME_UE5_5
 
-# Outputs - map-out and tiles-out follow `out` unless set here
-out: out
-# map-out: out/map.png
-# tiles-out: out/tiles
+# Outputs - defaults are out/amc-web/data (json), out/amc-web/map/map.png + out/amc-web/map/tiles
+# map-out: out/amc-web/map/map.png
+# tiles-out: out/amc-web/map/tiles
 
 # Stages - set any to true to leave that output alone
 skip-json: false     # out/out_*.json

@@ -15,13 +15,13 @@ namespace MtExtract;
 /// The mounted pak plus the two things everything else needs from it: packages as
 /// FModel-shaped JSON, and the localization tables.
 /// </summary>
-internal sealed class AssetSource : IDisposable
+public sealed class AssetSource : IDisposable
 {
     private readonly DefaultFileProvider _provider;
     private readonly JsonSerializer _serializer = JsonSerializer.CreateDefault();
     private readonly Dictionary<string, PackageJson?> _packages = new(StringComparer.OrdinalIgnoreCase);
 
-    public AssetSource(Options opts)
+    public AssetSource(PakOptions opts)
     {
         _provider = new DefaultFileProvider(
             Path.GetDirectoryName(Path.GetFullPath(opts.PakPath))!,
@@ -140,7 +140,7 @@ internal sealed class AssetSource : IDisposable
 }
 
 /// <summary>A loaded package whose exports are converted to JSON on demand and cached.</summary>
-internal sealed class PackageJson
+public sealed class PackageJson
 {
     private readonly JsonSerializer _serializer;
     private readonly Dictionary<int, JObject> _json = new();

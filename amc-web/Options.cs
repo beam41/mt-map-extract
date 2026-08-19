@@ -4,6 +4,12 @@ using YamlDotNet.Serialization;
 
 namespace MtExtract;
 
+/// <summary>Tile-encoding options parsed from the yaml; declared here so the standalone
+/// projects that link Options.cs (wiki generator, explore) get them without their own copies.</summary>
+internal enum TileFormat { Png, Jpeg, Webp, Avif }
+
+internal enum ResampleKernel { Nearest, Linear, Cubic, Mitchell, Lanczos2, Lanczos3 }
+
 internal sealed record Options
 {
     public const string DefaultConfig = "mt-extract.yaml";
@@ -24,7 +30,7 @@ internal sealed record Options
                                                       (default resource/aes)
           --usmap <file>     type mappings            (default resource/Mappings.usmap)
           --game <EGame>     UE version               (default GAME_UE5_5)
-          --out <dir>        json output directory    (default out)
+          --out <dir>        json output directory    (default out/amc-web/data)
           --amc              rename enums for the AMC map: drop EMTAreaVolumeFlags::,
                              EDeliveryCargoType:: -> _T, _TSmallPackage2 -> _TSmallPackage
 
@@ -64,23 +70,35 @@ internal sealed record Options
     private static readonly HashSet<string> Flags =
         ["--amc", "--skip-json", "--skip-map", "--skip-tiles", "--help"];
 
+    /// <summary>The amc-web project dir: bin/Release/net10.0 -> amc-web. The shared projects
+    /// link Options.cs, but these defaults only matter for the main extractor's own output.</summary>
+    public static string ProjectRoot { get; } =
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+
+    /// <summary>The repo root: the consolidated <c>out/</c> tree lives here, split by project
+    /// (<c>out/amc-web</c>, <c>out/richtags</c>, <c>out/wiki</c>).</summary>
+    public static string RepoRoot { get; } =
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+
     public string PakPath { get; private init; } = Path.Combine("resource", "MotorTown-Windows.pak");
     public string AesKey { get; private init; } = "";
     public string UsmapPath { get; private init; } = Path.Combine("resource", "Mappings.usmap");
     public EGame Game { get; private init; } = EGame.GAME_UE5_5;
-    public string OutDir { get; private init; } = "out";
+    /// <summary>The json output directory: <c>out/amc-web/data</c> regardless of the working
+    /// directory; --out overrides it.</summary>
+    public string OutDir { get; private init; } = Path.Combine(RepoRoot, "out", "amc-web", "data");
     public string Root { get; private init; } = "MotorTown/";
     public bool Amc { get; private init; }
 
     public string MapTexture { get; private init; } = "MotorTown/Content/UI/InGame/Map/WorldMap/T_WorldMap_Jeju";
-    /// <summary>Unset means <c>&lt;out&gt;/map.png</c>, so it follows --out.</summary>
+    /// <summary>Unset means <c>out/amc-web/map/map.png</c>.</summary>
     private string? MapOutPath { get; init; }
 
-    public string MapOut => MapOutPath ?? Out("map.png");
-    /// <summary>Unset means <c>&lt;out&gt;/tiles</c>, so it follows --out too.</summary>
+    public string MapOut => MapOutPath ?? Path.Combine(RepoRoot, "out", "amc-web", "map", "map.png");
+    /// <summary>Unset means <c>out/amc-web/map/tiles</c>.</summary>
     private string? TilesOutPath { get; init; }
 
-    public string TilesOut => TilesOutPath ?? Out("tiles");
+    public string TilesOut => TilesOutPath ?? Path.Combine(RepoRoot, "out", "amc-web", "map", "tiles");
 
     /// <summary>Null means the image's native zoom, i.e. never upscale.</summary>
     public int? MaxZoom { get; private init; } = 5;
@@ -175,7 +193,9 @@ internal sealed record Options
             return path;
         }
 
-        return File.Exists(DefaultConfig) ? DefaultConfig : null;
+        if (File.Exists(DefaultConfig)) return DefaultConfig;
+        var projectConfig = Path.Combine(ProjectRoot, DefaultConfig);
+        return File.Exists(projectConfig) ? projectConfig : null;
     }
 
     /// <summary>

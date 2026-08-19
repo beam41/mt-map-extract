@@ -3,10 +3,6 @@ using NetVips;
 
 namespace MtExtract;
 
-internal enum TileFormat { Png, Jpeg, Webp, Avif }
-
-internal enum ResampleKernel { Nearest, Linear, Cubic, Mitchell, Lanczos2, Lanczos3 }
-
 /// <summary>
 /// Slices the world map into Leaflet/OpenLayers tiles (<c>{z}_{x}_{y}.{ext}</c>), the job the
 /// standalone tilegen used to do.

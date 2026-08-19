@@ -6,7 +6,7 @@ namespace MtExtract;
 /// <summary>
 /// Game.locres for every shipped culture, as namespace -> key -> string.
 /// </summary>
-internal sealed class Localization(SortedDictionary<string, Dictionary<string, Dictionary<string, string>>> tables)
+public sealed class Localization(SortedDictionary<string, Dictionary<string, Dictionary<string, string>>> tables)
 {
     public const string English = "en";
 
@@ -57,7 +57,7 @@ internal sealed class Localization(SortedDictionary<string, Dictionary<string, D
 }
 
 /// <summary>Helpers for the FText shape CUE4Parse emits.</summary>
-internal static class Text
+public static class Text
 {
     /// <summary>
     /// Texts authored in the editor carry no namespace at all and land in the locres under the
@@ -109,7 +109,7 @@ internal static class Text
     }
 }
 
-internal static class Output
+public static class Output
 {
     public static void Write(string path, string text)
     {

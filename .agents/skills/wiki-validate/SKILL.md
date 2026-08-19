@@ -5,14 +5,14 @@ description: |
   Motor Town pak data in this repo. Triggers: "validate wiki", "check wiki",
   "missing vehicle", "wrong weight", "verify part", "wiki review", "wiki validation",
   "compare wiki to game data", "installable parts check", "fix wiki".
-  Run `dotnet run -c Release --project wiki/generate` to write every DokuWiki page as
-  .txt under wiki/out/ (no json).
+  Run `dotnet run -c Release --project wiki` to write every DokuWiki page as
+  .txt under out/wiki/ (no json).
 ---
 
 # Wiki Generator (ASEAN Motor Club)
 
 This repo reads Motor Town game data from `resource/MotorTown-Windows.pak` and the
-`wiki/generate/` project renders every wiki page (vehicles, parts, cargos, cargo
+`wiki/` project renders every wiki page (vehicles, parts, cargos, cargo
 spaces, and the four list pages) as plain DokuWiki .txt. Use this skill whenever asked
 to check, verify, fix, review, or regenerate anything on the wiki (parts, vehicles,
 comparison tables, weights, costs, names, cargo pages, production recipes).
@@ -25,26 +25,26 @@ results.
 
 | Path | Purpose |
 |---|---|
-| `wiki/generate/` | the whole generator, one C# project (`wiki/generate/wiki-generate.csproj`): `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` (page templates), `Format.cs` (display rules) |
+| `wiki/` | the whole generator, one C# project (`wiki/wiki-generate.csproj`): `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` (page templates), `Format.cs` (display rules) |
 | `wiki/assertions/` | snapshot of the live wiki pages (raw exports) — diff generated output against it |
-| `wiki/out/vehicles/` | one page per vehicle |
-| `wiki/out/parts/` | one page per part (RideHeight_-N and removed vehicles have none) |
-| `wiki/out/cargos/` | one page per active cargo |
-| `wiki/out/cargo_space/` | one aggregate page per space type |
-| `wiki/out/list_of_parts.txt`, `list_of_vehicles.txt`, `list_of_cargos.txt`, `vehicle_comparison.txt` | the list pages |
+| `out/wiki/vehicles/` | one page per vehicle |
+| `out/wiki/parts/` | one page per part (RideHeight_-N and removed vehicles have none) |
+| `out/wiki/cargos/` | one page per active cargo |
+| `out/wiki/cargo_space/` | one aggregate page per space type |
+| `out/wiki/list_of_parts.txt`, `list_of_vehicles.txt`, `list_of_cargos.txt`, `vehicle_comparison.txt` | the list pages |
 
 `out/` is the MAIN extractor's output (map data, tiles). Do not write wiki output
-there. The generator wipes `wiki/out/` on every run and writes only .txt — there is no
+there. The generator wipes `out/wiki/` on every run and writes only .txt — there is no
 json output.
 
 ## Commands
 
 ```bash
 # Generate every page from the pak (needs resource/MotorTown-Windows.pak + aes + Mappings.usmap)
-dotnet run -c Release --project wiki/generate
+dotnet run -c Release --project wiki
 
 # Compare generated pages against the snapshot
-diff -r wiki/out wiki/assertions
+diff -r out/wiki wiki/assertions
 ```
 
 ## Display conventions baked into the generator
@@ -107,6 +107,5 @@ The live wiki mixes several generator generations. Regenerating normalizes:
   the display name ("Elisa Taxi" → `elisa_taxi`).
 - The pak serializes float32; the JSON text shows the round-trip decimal. The generator
   rounds the float32 directly (UE5-style).
-- `wiki/generate/` links `AssetSource.cs`/`Options.cs`/`Localization.cs`/`CargoKeys.cs`/
-  `TableExtractor.cs` from the repo root via `<Compile Include="../../…">` — shared code
-  changes affect it.
+- `wiki/` links `AssetSource.cs`/`Options.cs`/`Localization.cs`/`CargoKeys.cs`/
+  (`common/`) via `<ProjectReference>` — shared code changes affect it.

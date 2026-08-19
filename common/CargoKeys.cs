@@ -9,7 +9,7 @@ namespace MtExtract;
 /// the name and metadata files are keyed by. Note this is not plain PascalCase: "lHBeam_6m" is
 /// genuinely lowercase in the table.
 /// </summary>
-internal sealed class CargoKeys(AssetSource assets)
+public sealed class CargoKeys(AssetSource assets)
 {
     private const string CargosPath = "MotorTown/Content/DataAsset/Cargos";
     private const string CargosScheduleIPath = "MotorTown/Content/DataAsset/Cargos_ScheduleI";

@@ -2,7 +2,7 @@
 
 Axioms about Motor Town game data (the pak), stable across wiki states and game-version
 changes only when the data model changes. Current wiki state is NOT asserted here — it
-lives in `wiki/out/validation.json` (machine claims) and `wiki/out/review.md` (fix work
+lives in `wiki/assertions/` (the live wiki snapshot) and `out/wiki/` (the generator output)
 order). These assertions are the reference both sides must agree on.
 
 ## 1. Data sources (what each fact is, in the pak)

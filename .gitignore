@@ -1,7 +1,6 @@
 /MotorTown
 /MotorTown-old
 /out
-/out_map
 *.json
 .vscode/
 /wiki/out/

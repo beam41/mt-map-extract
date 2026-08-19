@@ -1,8 +1,9 @@
 # AGENT.md
 
-C# (.NET 10) tool that reads Motor Town's `resource/MotorTown-Windows.pak` (UE 5.5) via CUE4Parse
-and writes every `out/out_*.json` the map site needs, `out/map.png`, and the Leaflet tile pyramid
-`out/tiles/` in one pass. Replaces the old three-stage dump + Rust + Node pipeline.
+C# (.NET 10) tooling around Motor Town's `resource/MotorTown-Windows.pak` (UE 5.5), read via
+CUE4Parse. Four standalone projects, each with its own csproj, sharing the pak helpers from
+`common/` via `<ProjectReference>` — no per-project copies. All outputs go into the root
+`out/` tree, split by project.
 
 ## Read before starting
 
@@ -22,40 +23,34 @@ Update the relevant doc whenever a schema or a display rule changes.
 Paths are relative to the **working directory** — run from the repo root:
 
 ```bash
-dotnet run -c Release                       # full run: data + map + tiles (~15s + ~1m AVIF)
-dotnet run -c Release -- --skip-tiles       # data only
-dotnet run -c Release --project wiki/generate   # wiki generator: every DokuWiki page as .txt (wiki/out/, no json)
-dotnet run -c Release --project richtags    # standalone rich-text tag finder
+dotnet run -c Release --project amc-web          # amc-web extractor: data + map + tiles (~15s + ~1m AVIF)
+dotnet run -c Release --project amc-web -- --skip-tiles   # data only
+dotnet run -c Release --project wiki             # wiki generator: every DokuWiki page as .txt (out/wiki/, no json)
+dotnet run -c Release --project richtags         # rich-text tag finder (writes out/richtags/)
+dotnet run -c Release --project tools/explore    # throwaway parts-data exploration harness
 ```
 
-`mt-extract.yaml` is picked up automatically; CLI flags win over it. `--help` lists every option.
-`--skip-json` / `--skip-map` / `--skip-tiles` disable stages independently.
+`amc-web/mt-extract.yaml` is picked up automatically; CLI flags win over it. `--help` lists
+every option. `--skip-json` / `--skip-map` / `--skip-tiles` disable stages independently.
 
 ## Layout
 
-| File | Role |
+| Path | Role |
 | --- | --- |
-| `Program.cs` | entry, orchestrates the pass; `DecodeMapTexture` (DXT1 → png via SkiaSharp), optional `--dump` |
-| `Options.cs` | CLI + yaml parsing (`Options` record, flags enum, validation) |
-| `AssetSource.cs` | pak mount, AES/keys/usmap; cached `PackageJson` (FModel-shaped exports); `LoadLocalization` |
-| `WorldExtractor.cs` | `out_area_volume/delivery_point/bus_stop/house.json` from world actors |
-| `TableExtractor.cs` | `out_cargo_key/metadata/name`, `out_cargo_type_name`, `out_vehicles_name` from data tables |
-| `CargoKeys.cs` | folds FName cargo keys onto the `Cargos` table spelling (case-insensitive match) |
-| `Localization.cs` | locres tables + `Text` FText helpers + `Output.WriteJson` |
-| `TileGenerator.cs` | libvips (NetVips) tile pyramid; `{z}_{x}_{y}.{ext}`, native zoom = 4096px map at z4 |
-|`wiki/generate/`|the DokuWiki generator (`mt-wiki-generate`): reads the pak directly and writes every generated page as .txt — `vehicles/`, `parts/`, `cargos/`, `cargo_space/`, `list_of_*.txt`, `vehicle_comparison.txt` (no intermediate json); links `AssetSource.cs`, `Options.cs`, `Localization.cs`, `CargoKeys.cs`, `TableExtractor.cs` from the root via `<Compile Include="../../…">`|
-| `richtags/` | standalone rich-text tag scanner; own mounting, no shared files |
-| `tools/explore/` | throwaway exploration harness for parts data (`find`, `table`, `rows`, `grep`, `stats`, …); keep hacky |
+| `common/` | the shared pak helpers: `AssetSource.cs` (pak mount, AES/usmap, cached `PackageJson`, `LoadLocalization`), `Localization.cs` (locres tables + `Text` helpers + `Output.WriteJson`), `CargoKeys.cs` (canonical cargo keys), `TableExtractor.cs` (cargo/vehicle name tables), `WorldExtractor.cs` (areas, delivery points, bus stops, houses), `PakOptions.cs` (the minimal mount config). Referenced by every project — no `<Compile Include>` sharing. |
+| `amc-web/` | the amc-web extractor (`mt-extract`): `Program.cs` (orchestration, `DecodeMapTexture`), `Options.cs` (CLI + yaml — amc-web-only: tile/dump options), `TileGenerator.cs` (libvips tile pyramid). Writes `out/amc-web/data/` (the `out_*.json`), `out/amc-web/map/map.png`, `out/amc-web/map/tiles/`. |
+| `wiki/` | the DokuWiki generator (`mt-wiki-generate`): `Program.cs`, `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` (page templates), `Format.cs` (display rules), `WikiOptions.cs` (its own CLI). Writes `out/wiki/` (vehicles/, parts/, cargos/, cargo_space/, list_of_*.txt, vehicle_comparison.txt) — no json. |
+| `richtags/` | rich-text tag scanner (`richtags`), standalone, writes `out/richtags/rich_text_tags.md`. |
+| `tools/explore/` | throwaway exploration harness for parts data (`find`, `table`, `rows`, `grep`, `stats`, …); keep hacky. |
 | `docs/vehicle-parts.md` | full data map of VehicleParts/Vehicles tables; update when part fields change |
 | `docs/vehicles.md` | vehicle domain: Vehicles table, blueprint stats, axles, capabilities, cargo spaces |
 | `docs/cargos.md` | cargo domain: Cargos tables, weights, space types, DeliveryPoint recipes |
 | `docs/wiki-pages.md` | the exact DokuWiki templates, display rules, and pak→wiki field map the generator must reproduce |
 | `docs/mt-pak-extract-review.md` | read-only review of the mt-pak-extract extraction pipeline (deviations found 2026-08-19) |
 
-`richtags/`, `tools/` are excluded from the main project's compile glob in
-`MtExtract.csproj`; each has its own csproj. The wiki generator owns `wiki/out/` (it wipes the
-directory and writes only .txt pages); `out/` is the map extractor's output. `wiki/assertions/`
-holds a snapshot of the wiki pages for diffing generated output.
+The wiki generator wipes `out/wiki/` on every run and writes only .txt pages. `wiki/assertions/`
+holds a snapshot of the live wiki pages for diffing generated output. Every project writes into
+the root `out/` tree, split by project; `out/` is gitignored.
 
 ## Inputs (`resource/`, gitignored)
 
@@ -78,8 +73,8 @@ Overridable via `--pak`, `--aes`, `--usmap`. Failure signatures: `nothing mounte
 - Locres texts authored in the editor have an empty (not null) namespace — `Text.Namespace`
   falls back to `""`, not null.
 - `Output.WriteJson` is the only sanctioned way to write output files.
-- No test suite. Verification is a smoke run: `dotnet run -c Release` and inspect the affected
-  `out/out_*.json`. Keep runs cheap with the skip flags.
+- No test suite. Verification is a smoke run of the affected project and an inspection of its
+  `out/` subtree. Keep runs cheap with the skip flags.
 
 ## Gotchas
 

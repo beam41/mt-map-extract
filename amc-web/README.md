@@ -1,7 +1,7 @@
 # mt-extract
 
-Reads `MotorTown-Windows.pak` and writes every `out/out_*.json` the map site needs, the world
-map as `out/map.png`, and the Leaflet tile pyramid in `out/tiles/` - in one pass. This replaces the
+Reads `MotorTown-Windows.pak` and writes every `amc-web/out/out_*.json` the map site needs, the world
+map as `amc-web/out/map.png`, and the Leaflet tile pyramid in `amc-web/out/tiles/` - in one pass. This replaces the
 old three-stage pipeline (FModel-style dump into `MotorTown/` → `cargo run` → six Node scripts)
 and the standalone `tilegen`; nothing is written to disk between stages any more, so a full run
 is ~15s of extraction plus however long the tile encoder takes (~1m for AVIF at effort 9).
@@ -9,7 +9,7 @@ is ~15s of extraction plus however long the tile encoder takes (~1m for AVIF at 
 Paths are relative to the **working directory**, so run it from the repo root:
 
 ```bash
-dotnet run -c Release
+dotnet run -c Release --project amc-web
 ```
 
 Nothing needs installing beyond the .NET SDK: the native libraries it leans on (libvips for

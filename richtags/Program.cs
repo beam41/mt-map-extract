@@ -28,7 +28,8 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")); // repo root
+        var outDir = Path.Combine(root, "out", "richtags");
         var resource = Path.Combine(root, "resource");
         var pakPath = Path.Combine(resource, "MotorTown-Windows.pak");
         var aesPath = Path.Combine(resource, "aes");
@@ -153,7 +154,7 @@ internal static class Program
         if (missing.Count > 0) Console.WriteLine("  " + string.Join(", ", missing));
 
         // Markdown summary
-        var md = Path.Combine(root, "out", "rich_text_tags.md");
+        var md = Path.Combine(outDir, "rich_text_tags.md");
         Directory.CreateDirectory(Path.GetDirectoryName(md)!);
         using (var w = new StreamWriter(md))
         {

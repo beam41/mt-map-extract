@@ -6,7 +6,7 @@ namespace MtExtract;
 /// The world-data half of the pipeline: area volumes, delivery points, bus stops and houses,
 /// read straight out of the pak instead of a JSON dump.
 /// </summary>
-internal sealed class WorldExtractor(AssetSource assets, Localization localization)
+public sealed class WorldExtractor(AssetSource assets, Localization localization)
 {
     private const string WorldPath = "MotorTown/Content/Maps/Jeju/Jeju_World";
     private const string DeliveryPointDir = "MotorTown/Content/Objects/Mission/Delivery/DeliveryPoint/";

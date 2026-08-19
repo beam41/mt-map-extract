@@ -6,7 +6,7 @@ namespace MtExtract;
 /// The data-table half of the pipeline: cargo keys/metadata and the localized name maps for
 /// cargo, cargo types and vehicles.
 /// </summary>
-internal sealed class TableExtractor(AssetSource assets, Localization localization)
+public sealed class TableExtractor(AssetSource assets, Localization localization)
 {
     private const string CargosPath = "MotorTown/Content/DataAsset/Cargos";
     private const string CargosScheduleIPath = "MotorTown/Content/DataAsset/Cargos_ScheduleI";

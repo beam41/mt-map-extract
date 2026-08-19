@@ -17,14 +17,8 @@
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
-  <!-- Reuse the main extractor's mounting/localization helpers, linked in from the repo root. -->
   <ItemGroup>
-    <Compile Include="../../AssetSource.cs" Link="Shared/AssetSource.cs" />
-    <Compile Include="../../Options.cs" Link="Shared/Options.cs" />
-    <Compile Include="../../Localization.cs" Link="Shared/Localization.cs" />
-    <Compile Include="../../CargoKeys.cs" Link="Shared/CargoKeys.cs" />
-    <Compile Include="../../TableExtractor.cs" Link="Shared/TableExtractor.cs" />
-    <Compile Include="../../WorldExtractor.cs" Link="Shared/WorldExtractor.cs" />
+    <ProjectReference Include="../common/common.csproj" />
   </ItemGroup>
 
 </Project>

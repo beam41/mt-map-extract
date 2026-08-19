@@ -5,14 +5,14 @@ description: |
   from the Motor Town pak data in this repo. Triggers: "cargo wiki", "check cargo",
   "validate cargo", "cargo review", "cargo pages", "Compatible Cargo Space",
   "production/dropoff cargo", "cargo improvement".
-  Run `dotnet run -c Release --project wiki/generate` to write every DokuWiki page as
-  .txt under wiki/out/ (no json).
+  Run `dotnet run -c Release --project wiki` to write every DokuWiki page as
+  .txt under out/wiki/ (no json).
 ---
 
 # Cargo Wiki Generator (ASEAN Motor Club)
 
 This repo reads Motor Town game data from `resource/MotorTown-Windows.pak` and the
-`wiki/generate/` project renders every wiki page including the cargo domain: the
+`wiki/` project renders every wiki page including the cargo domain: the
 per-cargo pages (`cargos/`), the aggregate `cargo_space/` pages, and `list_of_cargos.txt`.
 Use this skill whenever asked to check, verify, fix, review, or regenerate anything
 cargo-related on the wiki (cargo pages, the `list_of_cargos` page, cargo space types,
@@ -41,10 +41,10 @@ The cargo domain has its own ground-truth sources distinct from parts/vehicles: 
 
 ```bash
 # Generate every page from the pak (needs resource/MotorTown-Windows.pak + aes + Mappings.usmap)
-dotnet run -c Release --project wiki/generate
+dotnet run -c Release --project wiki
 
 # Compare generated pages against the snapshot
-diff -r wiki/out wiki/assertions
+diff -r out/wiki wiki/assertions
 ```
 
 ## Known intentional deviations from the live wiki
@@ -59,6 +59,5 @@ diff -r wiki/out wiki/assertions
 
 - Cargo keys are FNames matched case-insensitively — fold through `CargoKeys.Canonical`.
 - Cargo slugs are the lowercased canonical key (`WoodPlank_14ft_5t` → `woodplank_14ft_5t`).
-- `wiki/generate/` links `AssetSource.cs`/`Options.cs`/`Localization.cs`/`CargoKeys.cs`/
-  `TableExtractor.cs` from the repo root via `<Compile Include="../../…">` — shared code
-  changes affect it.
+- `wiki/` links `AssetSource.cs`/`Options.cs`/`Localization.cs`/`CargoKeys.cs`/
+  (`common/`) via `<ProjectReference>` — shared code changes affect it.

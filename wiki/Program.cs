@@ -20,12 +20,12 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        Options opts;
+        WikiOptions opts;
         try
         {
-            opts = Options.Parse(args);
+            opts = WikiOptions.Parse(args);
         }
-        catch (ArgumentException e)
+        catch (Exception e)
         {
             Console.Error.WriteLine($"error: {e.Message}");
             return 2;
@@ -43,7 +43,7 @@ internal static class Program
             return 2;
         }
 
-        using var assets = new AssetSource(opts);
+        using var assets = new AssetSource(opts.Pak);
         Console.WriteLine($"Mounted {Path.GetFileName(opts.PakPath)}: {assets.FileCount} files ({opts.Game})");
         if (assets.FileCount == 0)
         {
@@ -58,9 +58,10 @@ internal static class Program
         data.Gather();
         Console.WriteLine($"  {data.Vehicles.Count,3} vehicles, {data.Parts.Count,3} parts, {data.Cargos.Count,3} cargos, {data.Spaces.Count,2} spaces, {data.Points.Count,3} delivery points");
 
-        // wipe previous output (the old pipeline's JSON and stale pages) — this generator
-        // writes only DokuWiki txt
-        var outDir = Path.GetFullPath("wiki/out");
+        // wipe previous output — this generator writes only DokuWiki txt
+        var outDir = Path.Combine(
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")),
+            "out", "wiki");
         if (Directory.Exists(outDir)) Directory.Delete(outDir, recursive: true);
         Directory.CreateDirectory(outDir);
 

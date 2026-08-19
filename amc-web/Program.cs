@@ -41,7 +41,7 @@ internal static class Program
         }
 
         var total = Stopwatch.StartNew();
-        using var assets = new AssetSource(opts);
+        using var assets = new AssetSource(new PakOptions(opts.PakPath, opts.AesKey, opts.UsmapPath, opts.Game));
         Console.WriteLine($"Mounted {Path.GetFileName(opts.PakPath)}: {assets.FileCount} files ({opts.Game})");
         if (assets.FileCount == 0)
         {

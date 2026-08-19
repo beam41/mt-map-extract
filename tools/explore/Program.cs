@@ -21,9 +21,13 @@ internal static class Program
     private static int Main(string[] args)
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var opts = Options.Parse(["--skip-map", "--skip-tiles"]);
-        if (!File.Exists(opts.PakPath))
-            opts = Options.Parse(["--pak", Path.Combine(root, "resource", "MotorTown-Windows.pak"), "--skip-map", "--skip-tiles"]);
+        var pakPath = Path.Combine("resource", "MotorTown-Windows.pak");
+        if (!File.Exists(pakPath))
+            pakPath = Path.Combine(root, "resource", "MotorTown-Windows.pak");
+        var opts = new PakOptions(pakPath,
+            File.ReadAllText(Path.Combine(root, "resource", "aes")).Trim(),
+            Path.Combine(root, "resource", "Mappings.usmap"),
+            CUE4Parse.UE4.Versions.EGame.GAME_UE5_5);
 
         using var assets = new AssetSource(opts);
         Console.Error.WriteLine($"Mounted {Path.GetFileName(opts.PakPath)}: {assets.FileCount} files");

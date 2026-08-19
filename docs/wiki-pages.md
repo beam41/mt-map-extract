@@ -5,7 +5,7 @@ headings, links, media, plugins) is kept in `docs/dokuwiki-syntax.md` (fetched f
 https://www.dokuwiki.org/wiki:syntax) — read it before changing any page template, since
 DokuWiki syntax differs from Markdown (e.g. `_(none)_` is NOT italic).
 
-Everything `wiki/generate/` renders, reverse-engineered from the live wiki
+Everything `wiki/` renders, reverse-engineered from the live wiki
 (https://wiki.aseanmotorclub.com, snapshot in `wiki/assertions/`) and the pak. The
 generator reads the pak directly and must produce exactly these pages. "Identical to the
 wiki" is the goal; the exceptions (drift, staleness, deliberate choices) are listed at
