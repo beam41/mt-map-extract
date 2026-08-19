@@ -1172,10 +1172,9 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 {
                     if (!slot.StartsWith("CargoBed", StringComparison.Ordinal)) continue;
                     if (_partsByKey.TryGetValue(partKey, out var part)
-                        && part.Stats["CargoBed"] is JObject bed
-                        && SpaceSuffix((string?)bed["CargoSpaceType"]) is { } bedType)
+                        && StatsCargoSpace(part) is { } fromPart)
                     {
-                        space = PartCargoSpace(partKey, bed, bedType);
+                        space = fromPart;
                         vehicle.CargoSpace = space;
                         break;
                     }
@@ -1192,25 +1191,21 @@ internal sealed class Data(AssetSource assets, Localization localization)
             if (vehicle.CargoSpace is not null) continue;
             foreach (var part in InstallableParts(vehicle))
             {
-                // CargoBedAttachment parts modify an existing bed — they don't add space
-                if (part.Type.Contains("CargoBedAttachment", StringComparison.Ordinal)) continue;
-                if (part.Stats["CargoBed"] is not JObject bed) continue;
-                if (SpaceSuffix((string?)bed["CargoSpaceType"]) is not { } bedType) continue;
-                if (vehicle.InstallableSpaces.All(s => s.Type != bedType))
+                if (StatsCargoSpace(part) is not { } fromPart) continue;
+                if (vehicle.InstallableSpaces.All(s => s.Type != fromPart.Type))
                 {
-                    vehicle.InstallableSpaces.Add(PartCargoSpace(part.Key, bed, bedType));
-                    Bucket(bedType).Vehicles.Add((vehicle, Installable: true));
+                    vehicle.InstallableSpaces.Add(fromPart);
+                    Bucket(fromPart.Type).Vehicles.Add((vehicle, Installable: true));
                 }
             }
         }
 
-        // part spaces: CargoBed parts
+        // part spaces: every part whose stats carry a real cargo space
         foreach (var part in Parts)
         {
-            if (part.Stats["CargoBed"] is not JObject bed) continue;
-            if (SpaceSuffix((string?)bed["CargoSpaceType"]) is not { } bedType) continue;
+            if (StatsCargoSpace(part) is not { } fromPart) continue;
             if (!part.Type.Contains("CargoBedAttachment", StringComparison.Ordinal))
-                Bucket(bedType).Parts.Add(part);
+                Bucket(fromPart.Type).Parts.Add(part);
         }
 
         Spaces.AddRange(spaces.Values);
@@ -1250,24 +1245,33 @@ internal sealed class Data(AssetSource assets, Localization localization)
         return result;
     }
 
-    /// <summary>Dimensions from the CargoBed part's CargoSpaceSize vector (cm).</summary>
-    private CargoSpaceInfo PartCargoSpace(string partKey, JObject bed, string type)
+    /// <summary>The cargo space a part's rendered stats provide, or null when it carries none.
+    /// Covers every space-giving struct: CargoBed (typed) and RoofRack (no CargoSpaceType in
+    /// the pak — the enum default Flatbed, per user directive). A struct with a zeroed
+    /// CargoSpaceSize is not a real space.</summary>
+    private static CargoSpaceInfo? StatsCargoSpace(PartInfo part)
     {
-        var size = bed["CargoSpaceSize"] as JObject;
-        var x = (double?)size?["X"] ?? 0;
-        var y = (double?)size?["Y"] ?? 0;
-        var z = (double?)size?["Z"] ?? 0;
-        return new CargoSpaceInfo
+        foreach (var structName in new[] { "CargoBed", "RoofRack" })
         {
-            Type = type,
-            LengthM = x / 100,
-            WidthM = y / 100,
-            HeightM = z / 100,
-            VolumeM3 = (x / 100) * (y / 100) * (z / 100),
-            DumpKl = (double?)bed["DumpVolume"] is { } dv && dv != 0 ? dv : null,
-            FixCargo = (bool?)bed["bFixCargo"] == true,
-            UnlimitedHeight = (bool?)bed["bUnlimitedHeight"] == true,
-        };
+            if (part.Stats[structName] is not JObject s) continue;
+            var size = s["CargoSpaceSize"] as JObject;
+            var x = (double?)size?["X"] ?? 0;
+            var y = (double?)size?["Y"] ?? 0;
+            var z = (double?)size?["Z"] ?? 0;
+            if (x == 0 && y == 0 && z == 0) continue;
+            return new CargoSpaceInfo
+            {
+                Type = SpaceSuffix((string?)s["CargoSpaceType"]) ?? "Flatbed",
+                LengthM = x / 100,
+                WidthM = y / 100,
+                HeightM = z / 100,
+                VolumeM3 = (x / 100) * (y / 100) * (z / 100),
+                DumpKl = (double?)s["DumpVolume"] is { } dv && dv != 0 ? dv : null,
+                FixCargo = (bool?)s["bFixCargo"] == true,
+                UnlimitedHeight = (bool?)s["bUnlimitedHeight"] == true,
+            };
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ delivery points

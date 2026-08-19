@@ -344,10 +344,11 @@ Everything that provides or accepts the **{Type}** cargo space.
 ```
 
 Empty sections render `_(none)_`. Vehicle/part space membership: blueprint
-`MTVehicleCargoSpaceComponent` first, else the default CargoBed part's struct; the
-installable scan matches the part-side restrictions (`VehicleKeys`/`VehicleTypes`/
-`TruckClasses`, same rule the wiki's installable_vehicles pages use) and skips the
-editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
+`MTVehicleCargoSpaceComponent` first, else a real space in the default CargoBed part;
+the installable scan matches the part-side restrictions (the same fit rule) and takes
+**every** space-giving struct in the rendered stats: `CargoBed` (typed) and `RoofRack`
+(no `CargoSpaceType` in the pak — the enum default **Flatbed**, per user directive).
+Zeroed `CargoSpaceSize` structs are not real spaces.
 
 ## List pages
 
@@ -423,9 +424,11 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
 - **UE5 float rounding** (directive): gears render 1.32 / 2.11 where the wiki shows
   1.31 / 2.1 (the wiki rounded the JSON round-trip text).
 - **Installable cargo space** (directive): vehicles that ship with no cargo space but can
-  fit a space-giving CargoBed part render "(installable)" in the infobox and in the
-  cargo-space page's vehicle list (scooty, gunthoo → Box). The wiki shows them with no
-  space at all — its data source only sees default parts.
+  fit a space-giving part render "(installable)" in the infobox and in the cargo-space
+  page's vehicle list — scooty/gunthoo → Box (beds), muhan/savannah → Flatbed (roof
+  racks, which carry no type in the pak and default to Flatbed). The wiki shows them with
+  no space at all — its data source only sees default parts; roof racks also now appear
+  on the flatbed page's part list.
 - **Installable parts pages** (new, generated 2026-08-19): per-vehicle pages matching the
   wiki except: (a) the FD bandaid slugs (fd_9_4/fd_13_15 — approved), (b) the generic
   RearWing_A/B/C/D + Muhan_FrontBumper_02 excluded (wiki's "None"-key catch-all is a
