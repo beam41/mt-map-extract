@@ -6,7 +6,11 @@ namespace WikiGenerator;
 
 internal static class RenderVehicles
 {
-    public static string VehiclePage(VehicleInfo v, Data data)
+    /// <summary>Just the infobox block — transcluded first
+    /// ({{page>vehicles:{slug}:auto_infobox}}). Regenerated every run; the live wiki's
+    /// current `image = ...` line (hand-curated, no pak source) is merged back in by the
+    /// caller via LiveWiki.MergeImage before writing, so it survives regeneration.</summary>
+    public static string VehiclePageInfobox(VehicleInfo v, Data data)
     {
         var sb = new StringBuilder();
         sb.AppendLine("{{infobox>");
@@ -30,10 +34,22 @@ internal static class RenderVehicles
         if (v.Seats is { } seats) sb.AppendLine($"Seats = {seats}");
         if (v.Levels.Count > 0) sb.AppendLine($"Level requirement = {LevelText(v)}");
         sb.AppendLine("}}");
-        sb.AppendLine();
-        sb.AppendLine($"====== {v.En} ======");
-        sb.AppendLine($"**{v.En}** is a {Format.IntroType(v.Type, v.TruckClass)} vehicle in [[:motor_town|Motor Town]]");
-        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <summary>Heading + intro sentence — generated once, straight into the live shell
+    /// page's bootstrap suggestion (never its own auto_* subpage, so a curator is free to
+    /// tweak it without losing the edit on the next run).</summary>
+    public static string VehiclePageHeading(VehicleInfo v) =>
+        $"====== {v.En} ======\n**{v.En}** is a {Format.IntroType(v.Type, v.TruckClass)} vehicle in [[:motor_town|Motor Town]]";
+
+    /// <summary>Specifications through In other languages — transcluded second
+    /// ({{page>vehicles:{slug}:auto_info}}).</summary>
+    public static string VehiclePageInfo(VehicleInfo v, Data data)
+    {
+        var sb = new StringBuilder();
+        var enginePart = EnginePart(v, data);
+        var drive = v.Drivetrain(spelledOut: true);
 
         // Specifications
         sb.AppendLine("===== Specifications =====");

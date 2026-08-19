@@ -4,7 +4,9 @@ namespace WikiGenerator;
 
 internal static class RenderDelivery
 {
-    public static string DeliveryPointPage(DeliveryPointInfo point, Data data)
+    /// <summary>Just the infobox block — transcluded first
+    /// ({{page>delivery_points:{slug}:auto_infobox}}). Regenerated every run.</summary>
+    public static string DeliveryPointPageInfobox(DeliveryPointInfo point, Data data)
     {
         var import = JoinDistinct(data,
             point.Configs.SelectMany(c => c.Inputs).Select(r => (r.Key, (string?)null)),
@@ -25,11 +27,19 @@ internal static class RenderDelivery
         sb.AppendLine($"Location = {point.Zone}");
         sb.AppendLine($"External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{point.Guid}&delivery={point.Guid}|View on map]]");
         sb.AppendLine("}}");
-        sb.AppendLine();
-        sb.AppendLine($"====== {point.En} ======");
-        sb.AppendLine();
-        sb.AppendLine($"**{point.En}** is a delivery point in [[:motor_town|Motor Town]].");
-        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <summary>Heading + intro sentence — generated once, straight into the live shell
+    /// page's bootstrap suggestion.</summary>
+    public static string DeliveryPointPageHeading(DeliveryPointInfo point) =>
+        $"====== {point.En} ======\n\n**{point.En}** is a delivery point in [[:motor_town|Motor Town]].";
+
+    /// <summary>Production through In other languages — transcluded second
+    /// ({{page>delivery_points:{slug}:auto_info}}).</summary>
+    public static string DeliveryPointPageInfo(DeliveryPointInfo point, Data data)
+    {
+        var sb = new StringBuilder();
         sb.AppendLine("===== Production =====");
 
         var recipeRows = new List<(string Inputs, string Output, string Time)>();

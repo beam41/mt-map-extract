@@ -6,7 +6,9 @@ namespace WikiGenerator;
 
 internal static class RenderCargos
 {
-    public static string CargoPage(CargoInfo cargo, Data data)
+    /// <summary>Just the infobox block — transcluded first
+    /// ({{page>cargos:{slug}:auto_infobox}}). Regenerated every run.</summary>
+    public static string CargoPageInfobox(CargoInfo cargo, Data data)
     {
         var sb = new StringBuilder();
         sb.AppendLine("{{infobox>");
@@ -16,11 +18,19 @@ internal static class RenderCargos
         if (cargo.WeightText() is { } weight) sb.AppendLine($"Weight = {weight}");
         sb.AppendLine($"Payment = ${cargo.PaymentPerKm}/km");
         sb.AppendLine("}}");
-        sb.AppendLine();
-        sb.AppendLine($"====== {cargo.Name} ======");
-        sb.AppendLine();
-        sb.AppendLine(IntroSentence(cargo, data));
-        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <summary>Heading + intro sentence — generated once, straight into the live shell
+    /// page's bootstrap suggestion.</summary>
+    public static string CargoPageHeading(CargoInfo cargo, Data data) =>
+        $"====== {cargo.Name} ======\n\n{IntroSentence(cargo, data)}";
+
+    /// <summary>Specifications through Production — transcluded second
+    /// ({{page>cargos:{slug}:auto_info}}).</summary>
+    public static string CargoPageInfo(CargoInfo cargo, Data data)
+    {
+        var sb = new StringBuilder();
         sb.AppendLine("===== Specifications =====");
         sb.AppendLine("^ Stat ^ Value ^");
         sb.AppendLine($"| Type | {CargoTypeText(data, cargo.Type)} |");

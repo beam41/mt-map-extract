@@ -13,6 +13,7 @@ internal sealed record WikiOptions(string PakPath, string AesKey, string UsmapPa
         var usmap = Path.Combine("resource", "Mappings.usmap");
         var game = CUE4Parse.UE4.Versions.EGame.GAME_UE5_5;
         var showHelp = false;
+        var bootstrap = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -22,15 +23,22 @@ internal sealed record WikiOptions(string PakPath, string AesKey, string UsmapPa
                 case "--aes": aes = args[++i]; break;
                 case "--usmap": usmap = args[++i]; break;
                 case "--game": game = Enum.Parse<CUE4Parse.UE4.Versions.EGame>(args[++i]); break;
+                case "--bootstrap": bootstrap = true; break;
                 case "--help" or "-h": showHelp = true; break;
                 default: throw new ArgumentException($"unknown option: {args[i]}");
             }
         }
 
-        return new WikiOptions(pak, File.Exists(aes) ? File.ReadAllText(aes).Trim() : aes, usmap, game) { ShowHelp = showHelp };
+        return new WikiOptions(pak, File.Exists(aes) ? File.ReadAllText(aes).Trim() : aes, usmap, game)
+            { ShowHelp = showHelp, Bootstrap = bootstrap };
     }
 
     public bool ShowHelp { get; init; }
+
+    /// <summary>Off by default: the wiki-bootstrap/ shell-suggestion tree is only useful
+    /// once per page (the initial live-wiki migration), so regenerating all 1196 of them
+    /// every run is noise once most pages are migrated. Opt in with --bootstrap.</summary>
+    public bool Bootstrap { get; init; }
 
     public PakOptions Pak => new(PakPath, AesKey, UsmapPath, Game);
 }

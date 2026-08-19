@@ -6,7 +6,9 @@ namespace WikiGenerator;
 
 internal static class RenderParts
 {
-    public static string PartPage(PartInfo part)
+    /// <summary>Just the infobox block — transcluded first
+    /// ({{page>parts:{slug}:auto_infobox}}). Regenerated every run.</summary>
+    public static string PartPageInfobox(PartInfo part)
     {
         var sb = new StringBuilder();
         sb.AppendLine("{{infobox>");
@@ -15,12 +17,22 @@ internal static class RenderParts
         sb.AppendLine($"Cost = {Format.N0(part.Cost)}");
         if (part.MassKg is { } mass) sb.AppendLine($"Mass = {Format.N0(mass)} kg");
         sb.AppendLine("}}");
-        sb.AppendLine();
-        sb.AppendLine($"====== {part.En} ({part.TypeEnglish}) ======");
-        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <summary>Heading + intro sentence — generated once, straight into the live shell
+    /// page's bootstrap suggestion.</summary>
+    public static string PartPageHeading(PartInfo part)
+    {
         var article = "aeiou".Contains(char.ToLowerInvariant(part.TypeEnglish[0])) ? "an" : "a";
-        sb.AppendLine($"**{part.En}** is {article} {part.TypeEnglish.ToLowerInvariant()} part for vehicles in [[:motor_town|Motor Town]].");
-        sb.AppendLine();
+        return $"====== {part.En} ({part.TypeEnglish}) ======\n\n**{part.En}** is {article} {part.TypeEnglish.ToLowerInvariant()} part for vehicles in [[:motor_town|Motor Town]].";
+    }
+
+    /// <summary>Specifications through In other languages — transcluded second
+    /// ({{page>parts:{slug}:auto_info}}).</summary>
+    public static string PartPageInfo(PartInfo part)
+    {
+        var sb = new StringBuilder();
         sb.AppendLine("===== Specifications =====");
         sb.AppendLine("^ Stat ^ Value ^");
         sb.AppendLine($"| Type | {part.TypeEnglish} |");
