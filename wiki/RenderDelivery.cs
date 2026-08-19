@@ -21,7 +21,7 @@ internal static class RenderDelivery
         if (import.Length > 0) sb.AppendLine($"Import = {import}");
         if (export.Length > 0) sb.AppendLine($"Export = {export}");
         sb.AppendLine($"Location = {point.Zone}");
-        sb.AppendLine($"External Link = https://www.aseanmotorclub.com/map?menu=deliveries/{point.Guid}&delivery={point.Guid}");
+        sb.AppendLine($"External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{point.Guid}&delivery={point.Guid}|View on map]]");
         sb.AppendLine("}}");
         sb.AppendLine();
         sb.AppendLine($"====== {point.En} ======");
