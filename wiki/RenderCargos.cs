@@ -87,7 +87,7 @@ internal static class RenderCargos
                 if (!matches) continue;
                 matchedRecipe = true;
                 var inputs = InputText(c);
-                result.Add((point.En, pointText, inputs, $"{Format.Num(c.TimeSeconds)}s"));
+                result.Add((point.En, pointText, inputs, Format.Duration(c.TimeSeconds)));
             }
             if (matchedRecipe) continue;
 

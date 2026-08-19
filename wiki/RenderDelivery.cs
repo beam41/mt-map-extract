@@ -30,7 +30,7 @@ internal static class RenderDelivery
 
         var recipeRows = new List<(string Inputs, string Output, string Time)>();
         foreach (var c in point.Configs)
-            recipeRows.Add((RenderCargos.InputText(c), OutputText(c, data), $"{Format.Num(c.TimeSeconds)}s"));
+            recipeRows.Add((RenderCargos.InputText(c), OutputText(c, data), Format.Duration(c.TimeSeconds)));
         foreach (var s in point.PassiveSupplies)
             recipeRows.Add(("(passive)", CargoRefText(s, data), "—"));
 

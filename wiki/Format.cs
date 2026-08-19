@@ -21,6 +21,17 @@ internal static class Format
             ? ((long)x).ToString("N0", CultureInfo.InvariantCulture)
             : x.ToString("0.##", CultureInfo.InvariantCulture);
 
+    /// <summary>Production/delivery time: under a minute stays plain seconds ("45s"); a
+    /// minute or more splits into minutes + remainder seconds ("90s" -> "1m 30s", "120s" ->
+    /// "2m").</summary>
+    public static string Duration(double seconds)
+    {
+        if (seconds < 60) return $"{Num(seconds)}s";
+        var minutes = (long)(seconds / 60);
+        var remainder = seconds - minutes * 60;
+        return remainder == 0 ? $"{minutes}m" : $"{minutes}m {Num(remainder)}s";
+    }
+
     /// <summary>Multiplier delta as ±% from 100: 1.15 -> "+15%", 0.98 -> "-2%", 1.0 -> "±0%".</summary>
     public static string Pct(double x) => x switch
     {
