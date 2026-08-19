@@ -356,6 +356,13 @@ name = {en}
                                              # linked [[cargos:{slug}|{name}]], type refs
                                              # linked [[cargo_type:{slug}|{name}]]
 [Export = {cargo1}, {cargo2}, …]            # recipe outputs ∪ passive supplies, same rule
+[Required Space Type = {type1}, {type2}, …] # cargo space type(s) needed to carry the
+                                             # produced output away — the in-game panel's
+                                             # own requirement, derived from the resolved
+                                             # output cargos' Compatible Cargo Space Types
+                                             # (recipes carry no space-type field of their
+                                             # own); omitted when every output is a
+                                             # type-ref or a Production Speed boost
 Location = {ZoneNameEn}
 External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&delivery={guid}|View on map]]
 }}
@@ -365,8 +372,8 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
 ===== Production =====
 
 [==== Recipes ====
-^ Inputs ^ Output ^ Space Type ^ Time ^
-| {inputs or (passive)} | {linked output cargo, "Production Speed: +X.X%", or —} | {linked cargo_space types or —} | {time}s |]
+^ Inputs ^ Output ^ Time ^
+| {inputs or (passive)} | {linked output cargo, "Production Speed: +X.X%", or —} | {time}s |]
 ```
 
 - `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs linked to
@@ -380,11 +387,6 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
   feeding Fuel/Pallets/Quicklime for +100%/+50%/+30% speed with no output row). Falls back
   to `—` only when the multiplier is exactly 1 (not observed in practice — every real
   no-output config carries a nonzero multiplier).
-- **Space Type** = the cargo space type(s) a vehicle needs to carry the produced output
-  away — the in-game production panel's own requirement, derived from the resolved output
-  cargo's own `Compatible Cargo Space Types` (recipes carry no separate space-type field
-  of their own). `—` for Production Speed rows and type-ref outputs (no single cargo to
-  resolve).
 - Time: `Format.Duration` — plain seconds under a minute, else `Nm` / `Nm Ss` (`90s` ->
   `"1m 30s"`).
 

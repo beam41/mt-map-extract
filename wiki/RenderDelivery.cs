@@ -14,12 +14,14 @@ internal static class RenderDelivery
             point.Configs.SelectMany(c => c.Outputs).Select(r => (r.Key, (string?)null)),
             point.Configs.SelectMany(c => c.OutputTypes).Select(r => ((string?)null, Format.Tail(r.Key))),
             point.PassiveSupplies.Select(s => (s.Key, s.Type)));
+        var requiredSpaceType = string.Join(", ", RequiredSpaceTypes(point, data));
 
         var sb = new StringBuilder();
         sb.AppendLine("{{infobox>");
         sb.AppendLine($"name = {point.En}");
         if (import.Length > 0) sb.AppendLine($"Import = {import}");
         if (export.Length > 0) sb.AppendLine($"Export = {export}");
+        if (requiredSpaceType.Length > 0) sb.AppendLine($"Required Space Type = {requiredSpaceType}");
         sb.AppendLine($"Location = {point.Zone}");
         sb.AppendLine($"External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{point.Guid}&delivery={point.Guid}|View on map]]");
         sb.AppendLine("}}");
@@ -28,20 +30,19 @@ internal static class RenderDelivery
         sb.AppendLine();
         sb.AppendLine("===== Production =====");
 
-        var recipeRows = new List<(string Inputs, string Output, string SpaceType, string Time)>();
+        var recipeRows = new List<(string Inputs, string Output, string Time)>();
         foreach (var c in point.Configs)
-            recipeRows.Add((RenderCargos.InputText(c, data), OutputText(c, data),
-                SpaceTypeText(data, c.Outputs.Select(r => r.Key)), Format.Duration(c.TimeSeconds)));
+            recipeRows.Add((RenderCargos.InputText(c, data), OutputText(c, data), Format.Duration(c.TimeSeconds)));
         foreach (var s in point.PassiveSupplies)
-            recipeRows.Add(("(passive)", CargoRefText(s, data), SpaceTypeText(data, [s.Key]), "—"));
+            recipeRows.Add(("(passive)", CargoRefText(s, data), "—"));
 
         if (recipeRows.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine("==== Recipes ====");
-            sb.AppendLine("^ Inputs ^ Output ^ Space Type ^ Time ^");
-            foreach (var (inputs, output, spaceType, time) in recipeRows)
-                sb.AppendLine($"| {inputs} | {output} | {spaceType} | {time} |");
+            sb.AppendLine("^ Inputs ^ Output ^ Time ^");
+            foreach (var (inputs, output, time) in recipeRows)
+                sb.AppendLine($"| {inputs} | {output} | {time} |");
         }
 
         if (point.Demands.Count > 0)
@@ -80,15 +81,17 @@ internal static class RenderDelivery
         return c.SpeedMultiplier != 1 ? $"Production Speed: {Format.SpeedPct(c.SpeedMultiplier)}" : "—";
     }
 
-    /// <summary>The cargo space type(s) needed to carry the produced output away — the
-    /// in-game production panel's own requirement, derived from the resolved output
-    /// cargo(s)' own Compatible Cargo Space Types (recipes have no separate space-type
-    /// field of their own). Type-ref outputs (no specific cargo key) can't resolve to one
-    /// cargo's space types and render "—".</summary>
-    private static string SpaceTypeText(Data data, IEnumerable<string?> outputKeys)
+    /// <summary>The cargo space type(s) needed to carry this point's produced output away —
+    /// the in-game production panel's own requirement, derived from every resolved output
+    /// cargo's own Compatible Cargo Space Types (recipes/passive supplies have no separate
+    /// space-type field of their own). Type-ref outputs (no specific cargo key) can't
+    /// resolve to a cargo's space types and are skipped.</summary>
+    private static List<string> RequiredSpaceTypes(DeliveryPointInfo point, Data data)
     {
+        var keys = point.Configs.SelectMany(c => c.Outputs).Select(r => r.Key)
+            .Concat(point.PassiveSupplies.Select(s => s.Key));
         var types = new List<string>();
-        foreach (var key in outputKeys)
+        foreach (var key in keys)
         {
             if (key is not { } k) continue;
             var cargo = data.CargoByKey(k);
@@ -96,7 +99,7 @@ internal static class RenderDelivery
             foreach (var t in cargo.SpaceTypes)
                 if (!types.Contains(t, StringComparer.Ordinal)) types.Add(t);
         }
-        return types.Count == 0 ? "—" : string.Join(", ", types.Select(t => $"[[cargo_space:{t.ToLowerInvariant()}|{t}]]"));
+        return types.Select(t => $"[[cargo_space:{t.ToLowerInvariant()}|{t}]]").ToList();
     }
 
     private static string CargoRefText(CargoRef r, Data data) =>
