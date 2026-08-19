@@ -332,11 +332,12 @@ Payment = ${PaymentPer1Km}/km
   `WorldExtractor.DeliveryPointDetails()` — a blueprint reused at many locations (a
   generic drop point, a construction site) gets one row per placement, each linking its
   own `delivery_points:{slug}` page; config order kept per placement, rows sorted by
-  placement name. `inputs` = `N× {canonical cargo key}` joined; `(passive)` when a config
-  has no inputs; demand rows render `| {point} | — | — |`. Placements with a matching
-  recipe skip their passive/demand rows. The 223 anonymous residential placements
-  (`Resident_C`, no per-instance name) collapse to one unlinked `Resident` row instead of
-  223 duplicates.
+  placement name. `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs plain
+  tail text — `RenderCargos.InputText`/`CargoLink`); `(passive)` when a config has no
+  inputs; demand rows render `| {point} | — | — |`. Time via `Format.Duration` (`90s` ->
+  `"1m 30s"`, `120s` -> `"2m"`). Placements with a matching recipe skip their
+  passive/demand rows. The 223 anonymous residential placements (`Resident_C`, no
+  per-instance name) collapse to one unlinked `Resident` row instead of 223 duplicates.
 - One blank line before `===== Production =====`, `==== Produced At ====` and
   `==== Consumed At ====` (the wiki has none there — normalized).
 
@@ -354,7 +355,7 @@ name = {en}
                                              # refs (tag-only demand, no CargoKey) plain text
 [Export = {cargo1}, {cargo2}, …]            # recipe outputs ∪ passive supplies, same rule
 Location = {ZoneNameEn}
-External Link = https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&delivery={guid}
+External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&delivery={guid}|View on map]]
 }}
 
 ====== {en} ======
@@ -363,28 +364,44 @@ External Link = https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&delive
 
 [==== Recipes ====
 ^ Inputs ^ Output ^ Time ^
-| {inputs or (passive)} | {linked output cargo or —} | {time}s |]   # ProductionConfigs
-                                                                     # + PassiveSupplies
-                                                                     # ((passive), no time)
+| {inputs or (passive)} | {linked output cargo, "Production Speed: +X.X%", or —} | {time}s |]
+```
 
-[==== Demand =====
-^ Cargo ^ Payment Multiplier ^
-| {linked cargo or bare type} | {mult:F1}x |]                       # DemandConfigs
+- `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs render as their plain
+  tail, same as the cargo page's own Inputs column — one shared `RenderCargos.InputText` /
+  `CargoLink`); `(passive)` for `PassiveSupplies` rows (no time).
+- **Output** = the linked produced cargo(s), or — when the recipe has **no output cargo**
+  and a `ProductionSpeedMultiplier != 1` — `Production Speed: +100.0%` (`Format.SpeedPct`,
+  always one decimal, matches the in-game production panel exactly: these recipes consume
+  an input to boost the point's *other* recipes instead of producing anything, e.g. a farm
+  feeding Fuel/Pallets/Quicklime for +100%/+50%/+30% speed with no output row). Falls back
+  to `—` only when the multiplier is exactly 1 (not observed in practice — every real
+  no-output config carries a nonzero multiplier).
+- Time: `Format.Duration` — plain seconds under a minute, else `Nm` / `Nm Ss` (`90s` ->
+  `"1m 30s"`).
+
+```
+[==== Demand ====
+^ Cargo ^ Payment Multiplier ^ Max Storage ^
+| {linked cargo or bare type} | {mult:F1}x | {MaxStorage or —} |]   # DemandConfigs
 
 ===== In other languages =====
 ^ Language ^ Name ^
 … (22 languages)
 ```
 
+- **Max Storage** = `DemandConfigs[].MaxStorage` (present on every raw entry alongside
+  `PaymentMultiplier`; the cap the point holds of that cargo before it stops accepting
+  deliveries — the in-game production panel's `n/MaxStorage` storage column).
 - **Location** = the enclosing **Zone**-flagged area (point-in-polygon ray-cast against
   `WorldExtractor.AreaVolumes()`'s `TopViewLines`, C# port of amc-web's
   `area.ts` `getLocationAtPoint`/`getLocationNearPoint`), falling back to the nearest
   zone edge when the point sits inside none — same algorithm, verified zero mismatches
   against a from-scratch port for all 180 points. Only the 7 `Zone`-flag areas are
   considered (not `SmallArea`/`LargeArea`/`RaceTrack`, which nest inside zones).
-- **External Link** guid is the placement's own `DeliveryPointGuid` (falls back to the
-  blueprint's when the world actor doesn't serialize its own — same rule
-  `WorldExtractor.DeliveryPoints()` uses for the map site).
+- **External Link** = `[[url|View on map]]`; guid is the placement's own
+  `DeliveryPointGuid` (falls back to the blueprint's when the world actor doesn't
+  serialize its own — same rule `WorldExtractor.DeliveryPoints()` uses for the map site).
 - A placement whose name collides with another real placement (13 pairs, e.g. two
   "BurgerJoint Jeju" locations) gets `_2`/`_3`… appended to the slug (guid-ordinal
   order); the display name (`name =`/page title) is unchanged.
