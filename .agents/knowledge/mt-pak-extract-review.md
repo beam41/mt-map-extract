@@ -78,4 +78,4 @@ The generator in `wiki/` is the pak-direct right source. Where the live wiki
 deviates from the pak, the deviation is allowed (generator keeps pak truth) when it is
 explainable by the wiki being stale or generated from buggy extraction; it is fixed
 (kept identical) when the wiki is correct. No mt-pak-extract edits; the allowed
-deviations are enumerated in `docs/wiki-pages.md` ("Known wiki deviations").
+deviations are enumerated in `.agents/knowledge/wiki-pages.md` ("Known wiki deviations").

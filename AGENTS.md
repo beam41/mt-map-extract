@@ -10,11 +10,11 @@ CUE4Parse. Four standalone projects, each with its own csproj, sharing the pak h
 Any work on pak data or the wiki pages **must** start by reading the domain docs —
 they are the verified ground truth (layout, schemas, display rules, gotchas):
 
-- `docs/vehicle-parts.md` — the VehicleParts table, part→vehicle restrictions, per-type statistics
-- `docs/vehicles.md` — the Vehicles table, blueprint-derived stats (weight/drag/seats/fuel/axles), capabilities, default parts, cargo spaces
-- `docs/cargos.md` — the Cargos tables, cargo weights, cargo-space types, DeliveryPoint recipes
-- `docs/wiki-pages.md` — the exact DokuWiki templates + display rules the generator must reproduce
-- `docs/dokuwiki-syntax.md` — the DokuWiki markup reference (https://www.dokuwiki.org/wiki:syntax)
+- `.agents/knowledge/vehicle-parts.md` — the VehicleParts table, part→vehicle restrictions, per-type statistics
+- `.agents/knowledge/vehicles.md` — the Vehicles table, blueprint-derived stats (weight/drag/seats/fuel/axles), capabilities, default parts, cargo spaces
+- `.agents/knowledge/cargos.md` — the Cargos tables, cargo weights, cargo-space types, DeliveryPoint recipes
+- `.agents/knowledge/wiki-pages.md` — the exact DokuWiki templates + display rules the generator must reproduce
+- `.agents/knowledge/dokuwiki-syntax.md` — the DokuWiki markup reference (https://www.dokuwiki.org/wiki:syntax)
 - `.agents/knowledge/explore-tool.md` — how to inspect the pak directly with the explore harness
 
 Update the relevant doc whenever a schema or a display rule changes.
@@ -43,11 +43,11 @@ every option. `--skip-json` / `--skip-map` / `--skip-tiles` disable stages indep
 | `wiki/` | the DokuWiki generator (`mt-wiki-generate`): `Program.cs`, `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` (page templates), `Format.cs` (display rules), `WikiOptions.cs` (its own CLI). Writes `out/wiki/` (vehicles/, parts/, cargos/, cargo_space/, list_of_*.txt, vehicle_comparison.txt) — no json. |
 | `richtags/` | rich-text tag scanner (`richtags`), standalone, writes `out/richtags/rich_text_tags.md`. |
 | `tools/explore/` | throwaway exploration harness for parts data (`find`, `table`, `rows`, `grep`, `stats`, …); keep hacky. |
-| `docs/vehicle-parts.md` | full data map of VehicleParts/Vehicles tables; update when part fields change |
-| `docs/vehicles.md` | vehicle domain: Vehicles table, blueprint stats, axles, capabilities, cargo spaces |
-| `docs/cargos.md` | cargo domain: Cargos tables, weights, space types, DeliveryPoint recipes |
-| `docs/wiki-pages.md` | the exact DokuWiki templates, display rules, and pak→wiki field map the generator must reproduce |
-| `docs/mt-pak-extract-review.md` | read-only review of the mt-pak-extract extraction pipeline (deviations found 2026-08-19) |
+| `.agents/knowledge/vehicle-parts.md` | full data map of VehicleParts/Vehicles tables; update when part fields change |
+| `.agents/knowledge/vehicles.md` | vehicle domain: Vehicles table, blueprint stats, axles, capabilities, cargo spaces |
+| `.agents/knowledge/cargos.md` | cargo domain: Cargos tables, weights, space types, DeliveryPoint recipes |
+| `.agents/knowledge/wiki-pages.md` | the exact DokuWiki templates, display rules, and pak→wiki field map the generator must reproduce |
+| `.agents/knowledge/mt-pak-extract-review.md` | read-only review of the mt-pak-extract extraction pipeline (deviations found 2026-08-19) |
 
 The wiki generator wipes `out/wiki/` on every run and writes only .txt pages. `wiki/assertions/`
 holds a snapshot of the live wiki pages for diffing generated output. Every project writes into

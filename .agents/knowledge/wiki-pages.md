@@ -1,7 +1,7 @@
 # Wiki page formats (the generator's spec)
 
 The generator emits DokuWiki markup. The syntax reference (bold, italic, tables,
-headings, links, media, plugins) is kept in `docs/dokuwiki-syntax.md` (fetched from
+headings, links, media, plugins) is kept in `.agents/knowledge/dokuwiki-syntax.md` (fetched from
 https://www.dokuwiki.org/wiki:syntax) — read it before changing any page template, since
 DokuWiki syntax differs from Markdown (e.g. `_(none)_` is NOT italic).
 

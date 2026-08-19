@@ -78,5 +78,5 @@ prints to stdout; pak-package paths are used without the extension where noted.
 ## When to use instead of the code
 
 - Checking whether a wiki value is pak-truth: `rows`/`dump` are the ground truth.
-- Spot-checking the wiki generator's data sources (`docs/wiki-pages.md` field map).
+- Spot-checking the wiki generator's data sources (`.agents/knowledge/wiki-pages.md` field map).
 - Debugging a missing name/translation: `locfind` + `rows` on the name fields.

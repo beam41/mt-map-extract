@@ -91,4 +91,4 @@ Infobox (`name`, `Cargo Type`, `Volume`, `Weight`, `Payment`) → `====== {name}
 payment, Min/Max delivery distance, Stackable, Can be pickup, Fragile) → Compatible
 Cargo Space Types → `===== Production =====` (Produced At / Consumed At). No
 In-other-languages section on cargo pages. "Can be pickup" = type ∈ {SmallPackage,
-Food, MilitarySupply}. The full template is in `docs/wiki-pages.md`.
+Food, MilitarySupply}. The full template is in `.agents/knowledge/wiki-pages.md`.

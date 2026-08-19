@@ -81,7 +81,7 @@ It shares the main extractor's `resource/` and `--out` conventions and writes
 per slot) and the per-part wiki pages `wiki/out/parts/<key>.json` - the same data with
 only the part `type` translated to plain English. `-- --validate` additionally fetches the
 wiki and checks it (see `.agents/skills/wiki-validate/SKILL.md`). See
-`docs/vehicle-parts.md` for the full map of the data: every part type's stat
+`.agents/knowledge/vehicle-parts.md` for the full map of the data: every part type's stat
 fields (engine torque curves, gear ratios, tire physics, brake/suspension/aero
 multipliers, ...), the part-side restriction fields (`VehicleTypes`, `TruckClasses`,
 `VehicleKeys`, `OverrideAllowedVehicleKeys`, `VehicleRowGameplayTagQuery`) and the
