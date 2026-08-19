@@ -217,6 +217,11 @@ internal sealed class ProductionConfig
     public List<CargoRef> OutputTypes { get; } = [];
     public List<string> OutputTags { get; } = [];
     public double TimeSeconds { get; set; }
+
+    /// <summary>ProductionSpeedMultiplier: recipes with no output cargo use this input to
+    /// boost the point's *other* recipes instead of producing anything - the in-game
+    /// production panel shows "Production Speed: +100.0%" in place of a produced item.</summary>
+    public double SpeedMultiplier { get; set; } = 1;
 }
 
 internal sealed class CargoRef
@@ -226,8 +231,10 @@ internal sealed class CargoRef
     public List<string> Tags { get; } = [];
     public double Count { get; init; } = 1;
 
-    /// <summary>Demand-only: the buy price multiplier (unused by recipe inputs/outputs).</summary>
+    /// <summary>Demand-only: the buy price multiplier and the max amount the point will
+    /// hold before it stops accepting deliveries (unused by recipe inputs/outputs).</summary>
     public double PaymentMultiplier { get; init; } = 1;
+    public long? MaxStorage { get; init; }
 }
 
 internal sealed class SpaceInfo
@@ -1358,7 +1365,11 @@ internal sealed class Data(AssetSource assets, Localization localization)
 
             foreach (var c in detail.ProductionConfigs.OfType<JObject>())
             {
-                var config = new ProductionConfig { TimeSeconds = (double?)c["ProductionTimeSeconds"] ?? 0 };
+                var config = new ProductionConfig
+                {
+                    TimeSeconds = (double?)c["ProductionTimeSeconds"] ?? 0,
+                    SpeedMultiplier = (double?)c["ProductionSpeedMultiplier"] is { } sm && sm != 0 ? sm : 1,
+                };
                 config.Inputs.AddRange(CargoRefs(c["InputCargos"]));
                 config.InputTypes.AddRange(CargoRefs(c["InputCargoTypes"]));
                 config.InputTags.AddRange(QueryTags(c["InputCargoGameplayTagQuery"]));
@@ -1375,6 +1386,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
                     Key = dKey,
                     Type = TypeSuffix((string?)d["CargoType"]) is { Length: > 0 } t && t != "None" ? t : null,
                     PaymentMultiplier = (double?)d["PaymentMultiplier"] ?? 1,
+                    MaxStorage = (long?)d["MaxStorage"] is { } ms && ms != 0 ? ms : null,
                 };
                 demand.Tags.AddRange(QueryTags(d["CargoGameplayTagQuery"]));
                 point.Demands.Add(demand);

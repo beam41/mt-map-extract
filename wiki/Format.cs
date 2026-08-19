@@ -32,6 +32,14 @@ internal static class Format
         return remainder == 0 ? $"{minutes}m" : $"{minutes}m {Num(remainder)}s";
     }
 
+    /// <summary>Production speed multiplier as the in-game HUD shows it (always signed, one
+    /// decimal): 2.0 -> "+100.0%", 1.5 -> "+50.0%".</summary>
+    public static string SpeedPct(double multiplier)
+    {
+        var delta = (multiplier - 1) * 100;
+        return delta >= 0 ? $"+{delta:0.0}%" : $"{delta:0.0}%";
+    }
+
     /// <summary>Multiplier delta as ±% from 100: 1.15 -> "+15%", 0.98 -> "-2%", 1.0 -> "±0%".</summary>
     public static string Pct(double x) => x switch
     {

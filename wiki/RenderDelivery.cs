@@ -30,7 +30,7 @@ internal static class RenderDelivery
 
         var recipeRows = new List<(string Inputs, string Output, string Time)>();
         foreach (var c in point.Configs)
-            recipeRows.Add((RenderCargos.InputText(c), OutputText(c, data), Format.Duration(c.TimeSeconds)));
+            recipeRows.Add((RenderCargos.InputText(c, data), OutputText(c, data), Format.Duration(c.TimeSeconds)));
         foreach (var s in point.PassiveSupplies)
             recipeRows.Add(("(passive)", CargoRefText(s, data), "—"));
 
@@ -47,9 +47,9 @@ internal static class RenderDelivery
         {
             sb.AppendLine();
             sb.AppendLine("==== Demand ====");
-            sb.AppendLine("^ Cargo ^ Payment Multiplier ^");
+            sb.AppendLine("^ Cargo ^ Payment Multiplier ^ Max Storage ^");
             foreach (var d in point.Demands)
-                sb.AppendLine($"| {CargoRefText(d, data)} | {d.PaymentMultiplier:F1}x |");
+                sb.AppendLine($"| {CargoRefText(d, data)} | {d.PaymentMultiplier:F1}x | {(d.MaxStorage is { } ms ? Format.N0(ms) : "—")} |");
         }
 
         sb.AppendLine();
@@ -64,20 +64,17 @@ internal static class RenderDelivery
     {
         var parts = new List<string>();
         foreach (var r in c.Outputs)
-            if (r.Key is { } k) parts.Add(CargoLink(data, k));
+            if (r.Key is { } k) parts.Add(RenderCargos.CargoLink(data, k));
         foreach (var r in c.OutputTypes)
             if (r.Key is { } k) parts.Add(Format.Tail(k));
-        return parts.Count == 0 ? "—" : string.Join(", ", parts);
+        if (parts.Count > 0) return string.Join(", ", parts);
+        // no output cargo: the input instead boosts the point's other recipes, matching the
+        // in-game production panel's "Production Speed: +100.0%" row
+        return c.SpeedMultiplier != 1 ? $"Production Speed: {Format.SpeedPct(c.SpeedMultiplier)}" : "—";
     }
 
     private static string CargoRefText(CargoRef r, Data data) =>
-        r.Key is { } k ? CargoLink(data, k) : r.Type ?? "?";
-
-    private static string CargoLink(Data data, string key)
-    {
-        var cargo = data.CargoByKey(key);
-        return cargo is not null ? $"[[cargos:{cargo.Key.ToLowerInvariant()}|{cargo.Name}]]" : key;
-    }
+        r.Key is { } k ? RenderCargos.CargoLink(data, k) : r.Type ?? "?";
 
     /// <summary>Joins cargo refs from several (key, typeTail) groups into one distinct,
     /// linked-when-possible list for the infobox Import/Export rows.</summary>
@@ -90,7 +87,7 @@ internal static class RenderDelivery
             if (key is { Length: > 0 })
             {
                 if (!seen.Add(key)) continue;
-                parts.Add(CargoLink(data, key));
+                parts.Add(RenderCargos.CargoLink(data, key));
             }
             else if (type is { Length: > 0 })
             {

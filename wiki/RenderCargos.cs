@@ -86,7 +86,7 @@ internal static class RenderCargos
                     : RefMatch(c.Inputs, cargo.Key) || TypeRefMatch(c.InputTypes, cargo.Type, c.InputTags, cargo.Tags);
                 if (!matches) continue;
                 matchedRecipe = true;
-                var inputs = InputText(c);
+                var inputs = InputText(c, data);
                 result.Add((point.En, pointText, inputs, Format.Duration(c.TimeSeconds)));
             }
             if (matchedRecipe) continue;
@@ -134,14 +134,23 @@ internal static class RenderCargos
         return false;
     }
 
-    internal static string InputText(ProductionConfig c)
+    internal static string InputText(ProductionConfig c, Data data)
     {
         var parts = new List<string>();
         foreach (var r in c.Inputs)
-            if (r.Key is { } k) parts.Add($"{Format.Num(r.Count)}× {k}");
+            if (r.Key is { } k) parts.Add($"{Format.Num(r.Count)}× {CargoLink(data, k)}");
         foreach (var r in c.InputTypes)
             if (r.Key is { } k) parts.Add($"{Format.Num(r.Count)}× {Format.Tail(k)}");
         return parts.Count == 0 ? "(passive)" : string.Join(", ", parts);
+    }
+
+    /// <summary>A cargo key as a link to its cargo page, plain text when the key doesn't
+    /// resolve to a known cargo (shared with RenderDelivery for Inputs/Output/Import/Export
+    /// cells).</summary>
+    internal static string CargoLink(Data data, string key)
+    {
+        var cargo = data.CargoByKey(key);
+        return cargo is not null ? $"[[cargos:{cargo.Key.ToLowerInvariant()}|{cargo.Name}]]" : key;
     }
 
     // ------------------------------------------------------------------ cargo space pages
