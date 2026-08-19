@@ -41,66 +41,79 @@ curatable content and are never split — always fully generated, single page.
   space after `=`).
 - **The heading + one-sentence intro** — `====== {Name} ======` and `**{Name}** is a ...`
   (`VehiclePageHeading`/`PartPageHeading`/`CargoPageHeading`/`DeliveryPointPageHeading`).
-  Generated **once**, as literal text straight into the bootstrap shell suggestion below —
-  never its own `:auto_*` subpage, so a curator is free to hand-edit it (or leave it
-  as-is) without the edit ever being clobbered by a later run.
+  Generated **once**, as literal text straight into the shell page (below) — never its
+  own `:auto_*` subpage, so a curator is free to hand-edit it (or leave it as-is) without
+  the edit ever being clobbered by a later run.
 - **`{ns}:{slug}:auto_details`** — Specifications (or Production, for delivery points)
   onward. Wiped and rewritten in full every run, exactly like every other generated page —
   a curator must never edit it directly, edits would be lost.
-- **`{ns}:{slug}`** — the live shell page a human owns. The generator **never writes to
-  this path**; it only exists on the live wiki. Its content:
+- **`{ns}:{slug}`** — the live shell page a human owns:
   ```
-  {{page>{ns}:{slug}:auto_infobox}}
+  {{page>{ns}:{slug}:auto_infobox&nodate&nomdate}}
 
   ====== {Name} ======
   **{Name}** is a ... in Motor Town.
 
   (hand-written prose goes here — anything at all)
 
-  {{page>{ns}:{slug}:auto_details}}
+  {{page>{ns}:{slug}:auto_details&nodate&nomdate}}
   ```
-- **`out/wiki-bootstrap/{ns}/{slug}.txt`** — the shell template above, **opt-in** (pass
-  `--bootstrap`; off by default, since it's only useful once per page at migration time —
-  regenerating all 1196 of them every run is noise once most pages are migrated). Paste it
-  as a page's initial live content once; from then on the generator only touches the
-  `:auto_infobox` and `:auto_details` subpages under it, never the shell itself.
+  `&nodate&nomdate` suppress the `include` plugin's own creation/modification-date footer
+  on each transcluded block (`https://www.dokuwiki.org/plugin:include#configuration_and_flags`)
+  — without them every transclusion prints a redundant timestamp line. A **normal run**
+  (no `--bootstrap`) never writes this path — only `--bootstrap` (opt-in, off by default)
+  writes it, at its **real** live-wiki path (`{ns}/{slug}.txt`, sibling of the
+  `{ns}/{slug}/` subpage directory — matching DokuWiki's own file-per-page layout exactly,
+  no separate staging namespace). `--bootstrap` is meant as a one-time deploy step: run it
+  once, drop the whole `out/wiki/` tree onto the live wiki's page directory (page and
+  subpage-namespace coexist under the same name in DokuWiki, so `vehicles/lobo.txt` and
+  `vehicles/lobo/auto_infobox.txt` sit side by side without conflict), and from then on
+  normal (non-bootstrap) runs only ever touch the two `:auto_*` subpages, never the shell
+  again — so any hand-written prose on the shell after that first deploy is permanent.
 
-**Migrating an existing hand-curated live page** (e.g. air_city): open it, cut everything
-that matches the generator's own template shape (infobox, heading, intro sentence,
-Specifications through In other languages) since that's now provided by the two
-includes plus the once-generated heading/intro; paste
-`out/wiki-bootstrap/vehicles/air_city.txt`'s content in; keep the hand paragraphs sitting
-between the heading and the final include. Verified end-to-end in a local
-DokuWiki+include preview against the real fetched air_city data: the infobox (with its
-real `image` field) renders from `:auto_infobox`, heading/intro/hand paragraphs render as
-shell-page literal text, Specifications-onward renders from `:auto_details`, and each
-transcluded block gets its own `[Edit]` link pointing straight at the subpage that owns
-it.
+**Migrating an already-hand-curated live page** (e.g. lobo, which had a full
+`===== History =====` sub-section with an embedded image and no `image =` infobox field —
+the always-on image-field fetch alone does not catch this): fetch the live page raw
+(`?do=export_raw`), locate the generator's own `====== {Name} ======` / intro-sentence
+pair, diff everything between it and the first `===== Specifications =====` (or
+`===== Production =====` for delivery points) heading to extract the hand-written zone,
+then write that page's shell manually — `--bootstrap`'s plain template with the extracted
+prose spliced in between the heading/intro and the closing transclusion — **overwriting**
+the bare `--bootstrap` output for that one page before the drop-in deploy. This is a
+one-off, per-page manual step done at migration time, not generator code (adding a
+permanent live-fetch-and-merge-the-whole-shell path was tried and explicitly rejected —
+fragile, an unnecessary permanent HTTP dependency for something that only needs to happen
+once per page, ever).
 
-**Exhaustive prose-content audit** (all 171 live vehicle pages, not just the 13 with an
-`image` field): fetched every `vehicles:{slug}?do=export_raw`, located the generator's own
-`====== {Name} ======` / intro-sentence pair, and diffed everything between it and the
-first `===== Specifications =====` heading. Only **3** vehicles carry hand-written prose
-there — **air_city** (2 paragraphs), **5t_tanker_trailer** (3 paragraphs), and **lobo** (a
-full `===== History =====` sub-section with an embedded image, ~4 KB of lore text). The
-other 10 `image`-field vehicles (ambi, atlas_4x2_semi, campy, eastwood, enfo_gt, flanker3,
-flanker3s, small_cage_trailer, spt1, tanko_40, vamos3) have **no** extra prose — the
-`image` field is their only hand content, already preserved by the always-on
-`LiveWiki.FetchImageLine`/`MergeImage` path. All 3 prose vehicles migrated to
-`out/wiki-migrated/vehicles/{slug}.txt` (shell content: infobox include, heading, intro,
-the extracted hand paragraphs verbatim, details include) and confirmed rendering correctly
-in the local preview (infobox, History section with its `{{ :logo_lobo.jpg?300|...}}`
-media reference, Specifications onward all present and in the right order).
-`out/wiki-migrated/` is a one-off manual-migration output, not written by a normal run.
+**Exhaustive prose-content audit** (2026-08-19, all live pages with a wiki precedent —
+171 vehicles, 758 parts, 87 cargos — not just the 13 vehicles with an `image` field):
+fetched every `{ns}:{slug}?do=export_raw` and ran the diff above. Only **3** pages carry
+hand-written prose beyond the intro sentence — vehicles **air_city** (2 paragraphs),
+**5t_tanker_trailer** (3 paragraphs), and **lobo** (the History section above, ~4 KB).
+Every part and every cargo page matches the generator's own template exactly in that
+zone — nothing to migrate there. The other 10 `image`-field vehicles (ambi,
+atlas_4x2_semi, campy, eastwood, enfo_gt, flanker3, flanker3s, small_cage_trailer, spt1,
+tanko_40, vamos3) have no extra prose either — the `image` field is their only hand
+content, and that's preserved automatically every run regardless of `--bootstrap` by the
+always-on `LiveWiki.FetchImageLine`/`MergeImage` path. All 3 prose vehicles' shells were
+hand-filled directly at `out/wiki/vehicles/{slug}.txt` for the 2026-08-19 deploy and
+confirmed rendering correctly in a local DokuWiki+include preview (infobox, History
+section with its `{{ :logo_lobo.jpg?300|...}}` media reference, Specifications onward all
+present, no stray include-plugin timestamps).
 
-**Deployment rule — this is the entire point of the feature:** when syncing generated
-output onto the live wiki, only ever push `{ns}/{slug}/auto_infobox.txt` and
-`auto_details.txt` (plus the untouched aggregate/list pages) — **never** a delete-capable
-sync of the top-level `{ns}/{slug}.txt` shell path once it exists on the live wiki. An
-`rsync --delete` (or equivalent) that includes shell paths in its scope will delete them,
-because the generator's own output tree no longer contains a flat `{ns}/{slug}.txt` for
-detail pages to compare against — confirmed by reproducing exactly that deletion against
-the local preview while building this feature.
+**Deployment**: run `--bootstrap` once, hand-fill any page with genuine live hand content
+found by the audit above (there are none outstanding as of 2026-08-19), then drop the
+whole `out/wiki/` tree onto the live wiki's page directory — full overwrite is safe for
+this one deploy, since every shell that had real hand content already carries it.
+`out/HANDOFF.md` (sibling of `out/wiki/`, survives the generator's `out/wiki/` wipe on the
+next run since only that subtree is deleted) is the maintainer-facing instructions —
+deliberately just "install the `include` plugin, drop `wiki/` into `data/pages/`", no
+generator internals. **After that first deploy**, go back to normal (non-`--bootstrap`)
+runs: they only write the two `:auto_*` subpages per detail page plus the untouched
+aggregate/list pages, never the shell paths — sync those, but never with a delete-capable
+sync (`rsync --delete` or equivalent) whose scope includes the shell paths, since a normal
+run's output tree no longer contains a shell file to compare against and would delete
+every hand-curated shell page it doesn't find a match for.
 
 ## Page inventory (3352 generated pages, all .txt, no json; + 1196 with `--bootstrap`)
 
@@ -114,7 +127,7 @@ the local preview while building this feature.
 | `cargo_space/` | 12 | one aggregate page per `EMTCargoSpaceType`, not split |
 | `cargo_type/` | 14 | one aggregate page per `EDeliveryCargoType`, not split (new, "None" excluded) |
 | `delivery_points/{slug}/auto_infobox.txt`, `auto_details.txt` | 180×2 | split delivery point page, one per real-world placement (new, no wiki precedent) |
-| `wiki-bootstrap/{ns}/{slug}.txt` (`--bootstrap` only) | 1196 | shell-page suggestion, one per detail-page entity — see above, never bulk-synced |
+| `{ns}/{slug}.txt` (`--bootstrap` only, `ns` ∈ vehicles/parts/cargos/delivery_points) | 1196 | the shell page itself, real path, sibling of `{ns}/{slug}/` — see above, one-time deploy |
 | `list_of_parts.txt` | 1 | 768 rows, 44 per-type sections |
 | `list_of_vehicles.txt` | 1 | 171 bullets, 12 per-type sections |
 | `list_of_cargos.txt` | 1 | 87 rows, 15 per-type sections + a trailing 14-bullet cargo type list |
