@@ -28,6 +28,8 @@ internal static class RenderDelivery
         sb.AppendLine();
         sb.AppendLine($"====== {point.En} ======");
         sb.AppendLine();
+        sb.AppendLine($"**{point.En}** is a delivery point in [[:motor_town|Motor Town]].");
+        sb.AppendLine();
         sb.AppendLine("===== Production =====");
 
         var recipeRows = new List<(string Inputs, string Output, string Time)>();

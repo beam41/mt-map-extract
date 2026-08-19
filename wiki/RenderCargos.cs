@@ -19,6 +19,8 @@ internal static class RenderCargos
         sb.AppendLine();
         sb.AppendLine($"====== {cargo.Name} ======");
         sb.AppendLine();
+        sb.AppendLine(IntroSentence(cargo, data));
+        sb.AppendLine();
         sb.AppendLine("===== Specifications =====");
         sb.AppendLine("^ Stat ^ Value ^");
         sb.AppendLine($"| Type | {CargoTypeText(data, cargo.Type)} |");
@@ -64,6 +66,17 @@ internal static class RenderCargos
             }
         }
         return sb.ToString();
+    }
+
+    /// <summary>"**{name}** is {a|an} {type} cargo in Motor Town" — same a/an-article idiom
+    /// as the part page's intro; "None"-type cargos (bulk/generic, no locres group) drop
+    /// the type clause entirely rather than reading "is a none cargo".</summary>
+    private static string IntroSentence(CargoInfo cargo, Data data)
+    {
+        if (cargo.Type == "None") return $"**{cargo.Name}** is a cargo in [[:motor_town|Motor Town]].";
+        var typeEnglish = data.CargoTypeEnglish(cargo.Type).ToLowerInvariant();
+        var article = "aeiou".Contains(typeEnglish[0]) ? "an" : "a";
+        return $"**{cargo.Name}** is {article} {typeEnglish} cargo in [[:motor_town|Motor Town]].";
     }
 
     /// <summary>Only these cargo types can be hand-picked up (user-confirmed game rule).</summary>

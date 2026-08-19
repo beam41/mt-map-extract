@@ -301,6 +301,8 @@ Payment = ${PaymentPer1Km}/km
 
 ====== {name} ======
 
+**{name}** is {a|an} {CargoTypeEnglish lower} cargo in [[:motor_town|Motor Town]].    # "None"-type cargos drop the type clause: "is a cargo in ..."
+
 ===== Specifications =====
 ^ Stat ^ Value ^
 | Type | {linked [[cargo_type:{slug}|{tail}]], "None" plain} |
@@ -368,6 +370,8 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
 }}
 
 ====== {en} ======
+
+**{en}** is a delivery point in [[:motor_town|Motor Town]].
 
 ===== Production =====
 
