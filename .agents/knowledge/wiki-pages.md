@@ -469,22 +469,23 @@ list_of_vehicles' per-type sections. `Resident` is excluded (no page).
 ```
 ====== {Type} Cargo Space ======           # raw enum tail, 6 equals
 
-Everything that provides or accepts the **{Type}** cargo space.
+Everything that uses or accepts the **{Type}** cargo space.      # "uses" = Cargos, "accepts" = Vehicles/Parts
 
-===== Cargos ({n}) =====
-  * [[cargos:{slug}|{name}}]]              # sorted by slug (case-insensitive)
-===== Vehicles ({n}) =====
-  * [[vehicles:{slug}|{name} (installable)]]  # pak row order; "(installable)" when the vehicle has no default space but fits a space-giving CargoBed part
-===== Parts ({n}) =====
-  * [[parts:{slug}|{name}}]]               # pak row order
+[===== Cargos ({n}) =====
+  * [[cargos:{slug}|{name}}]]]              # sorted by slug (case-insensitive)
+[===== Vehicles ({n}) =====
+  * [[vehicles:{slug}|{name} (installable)]]]  # pak row order; "(installable)" when the vehicle has no default space but fits a space-giving CargoBed part
+[===== Parts ({n}) =====
+  * [[parts:{slug}|{name}}]]]               # pak row order
 ```
 
-Empty sections render `_(none)_`. Vehicle/part space membership: blueprint
-`MTVehicleCargoSpaceComponent` first, else a real space in the default CargoBed part;
-the installable scan matches the part-side restrictions (the same fit rule) and takes
-**every** space-giving struct in the rendered stats: `CargoBed` (typed) and `RoofRack`
-(no `CargoSpaceType` in the pak — the enum default **Flatbed**, per user directive).
-Zeroed `CargoSpaceSize` structs are not real spaces.
+Each of the three sections is **omitted entirely** (no heading, no "(0)") when that
+group is empty — not shown as a bare count or `_(none)_`. Vehicle/part space membership:
+blueprint `MTVehicleCargoSpaceComponent` first, else a real space in the default CargoBed
+part; the installable scan matches the part-side restrictions (the same fit rule) and
+takes **every** space-giving struct in the rendered stats: `CargoBed` (typed) and
+`RoofRack` (no `CargoSpaceType` in the pak — the enum default **Flatbed**, per user
+directive). Zeroed `CargoSpaceSize` structs are not real spaces.
 
 ## List pages
 

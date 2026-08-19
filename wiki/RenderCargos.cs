@@ -198,25 +198,24 @@ internal static class RenderCargos
         var sb = new StringBuilder();
         sb.AppendLine($"====== {space.Type} Cargo Space ======");
         sb.AppendLine();
-        sb.AppendLine($"Everything that provides or accepts the **{space.Type}** cargo space.");
-        sb.AppendLine();
+        sb.AppendLine($"Everything that uses or accepts the **{space.Type}** cargo space.");
         Bullets(sb, "Cargos", space.Cargos.Count,
             space.Cargos.OrderBy(c => c.Key, Format.NaturalComparer.Instance).Select(c => ($"cargos:{c.Key.ToLowerInvariant()}", c.Name)));
-        sb.AppendLine();
         Bullets(sb, "Vehicles", space.Vehicles.Count,
             space.Vehicles.Select(e => ($"vehicles:{RenderVehicles.VehicleSlug(e.Vehicle)}", e.Vehicle.En + (e.Installable ? " (installable)" : ""))));
-        sb.AppendLine();
         Bullets(sb, "Parts", space.Parts.Count,
             space.Parts.Select(p => ($"parts:{p.Slug}", p.En)));
         return sb.ToString();
     }
 
+    /// <summary>An aggregate bullet section; omitted entirely (no heading, no "(0)") when
+    /// the group is empty rather than showing a bare count.</summary>
     private static void Bullets(StringBuilder sb, string heading, int count, IEnumerable<(string Slug, string Name)> items)
     {
+        if (count == 0) return;
+        sb.AppendLine();
         sb.AppendLine($"===== {heading} ({count}) =====");
-        var list = items.ToList();
-        if (list.Count == 0) return;  // empty section: heading with the count, no body
-        foreach (var (slug, name) in list)
+        foreach (var (slug, name) in items)
             sb.AppendLine($"  * [[{slug}|{name}]]");
     }
 
@@ -240,7 +239,6 @@ internal static class RenderCargos
             sb.AppendLine($"| [[cargos:{cargo.Key.ToLowerInvariant()}|{cargo.Name}]] | {CargoTypeText(data, cargo.Type)} | {weight} | ${cargo.PaymentPerKm} |");
         }
 
-        sb.AppendLine();
         Bullets(sb, "Cargo Types", types.Count,
             types.OrderBy(t => t.Type, Format.NaturalComparer.Instance).Select(t => ($"cargo_type:{t.Type.ToLowerInvariant()}", data.CargoTypeEnglish(t.Type))));
         return sb.ToString();
