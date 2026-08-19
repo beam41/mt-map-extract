@@ -1147,7 +1147,12 @@ internal sealed class Data(AssetSource assets, Localization localization)
             foreach (var t in cargo.SpaceTypes) Bucket(t).Cargos.Add(cargo);
         }
 
-        // vehicle spaces: blueprint component, else the default CargoBed part
+        // vehicle spaces: blueprint component, else the default CargoBed part. Both the
+        // default-space lookup and the installable-space derivation below go through the
+        // rendered stats (Stats["CargoBed"] is present exactly for real beds — CargoBed-type
+        // parts always carry it, unrelated parts only when their struct is non-default) and
+        // the single InstallableParts fit rule, so the cargo-space pages can never drift
+        // from the part pages or the installable-parts pages.
         foreach (var vehicle in Vehicles)
         {
             var space = vehicle.CargoSpace;
@@ -1156,10 +1161,9 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 foreach (var (slot, partKey) in vehicle.DefaultParts)
                 {
                     if (!slot.StartsWith("CargoBed", StringComparison.Ordinal)) continue;
-                    if (_partRowsByKey.TryGetValue(partKey, out var partRow)
-                        && partRow["CargoBed"] is JObject bed
-                        && SpaceSuffix((string?)bed["CargoSpaceType"]) is { } bedType
-                        && RealBed(bed, bedType))
+                    if (_partsByKey.TryGetValue(partKey, out var part)
+                        && part.Stats["CargoBed"] is JObject bed
+                        && SpaceSuffix((string?)bed["CargoSpaceType"]) is { } bedType)
                     {
                         space = PartCargoSpace(partKey, bed, bedType);
                         vehicle.CargoSpace = space;
@@ -1171,22 +1175,20 @@ internal sealed class Data(AssetSource assets, Localization localization)
         }
 
         // installable spaces: vehicles that ship with no cargo space but can fit a CargoBed
-        // part (the part's VehicleKeys/VehicleTypes/TruckClasses restrictions)
+        // part — derived from the same InstallableParts fit rule that generates the
+        // installable-parts pages (no separate filter)
         foreach (var vehicle in Vehicles)
         {
             if (vehicle.CargoSpace is not null) continue;
-            foreach (var (partKey, partRow) in _partRowsByKey)
+            foreach (var part in InstallableParts(vehicle))
             {
                 // CargoBedAttachment parts modify an existing bed — they don't add space
-                if (partRow["PartType"] is not JValue pt) continue;
-                if (pt.Value<string>()?.Contains("CargoBedAttachment", StringComparison.Ordinal) == true) continue;
-                if (partRow["CargoBed"] is not JObject bed) continue;
+                if (part.Type.Contains("CargoBedAttachment", StringComparison.Ordinal)) continue;
+                if (part.Stats["CargoBed"] is not JObject bed) continue;
                 if (SpaceSuffix((string?)bed["CargoSpaceType"]) is not { } bedType) continue;
-                if (!RealBed(bed, bedType)) continue;
-                if (!PartFitsVehicle(partRow, vehicle)) continue;
                 if (vehicle.InstallableSpaces.All(s => s.Type != bedType))
                 {
-                    vehicle.InstallableSpaces.Add(PartCargoSpace(partKey, bed, bedType));
+                    vehicle.InstallableSpaces.Add(PartCargoSpace(part.Key, bed, bedType));
                     Bucket(bedType).Vehicles.Add((vehicle, Installable: true));
                 }
             }
@@ -1204,31 +1206,22 @@ internal sealed class Data(AssetSource assets, Localization localization)
         Spaces.AddRange(spaces.Values);
     }
 
+    private readonly Dictionary<string, List<PartInfo>> _installableCache = new(StringComparer.Ordinal);
+
     /// <summary>Every part the vehicle can install, per the fit rule (Final Drive Ratio parts
-    /// always included). Order follows the pak row order.</summary>
+    /// always included). Order follows the pak row order. Memoized — the installable-parts
+    /// pages and the cargo-space derivation share one computation.</summary>
     public List<PartInfo> InstallableParts(VehicleInfo vehicle)
     {
+        if (_installableCache.TryGetValue(vehicle.Key, out var cached)) return cached;
         var result = new List<PartInfo>();
         foreach (var part in Parts)
         {
             if (!_partRowsByKey.TryGetValue(part.Key, out var row)) continue;
             if (PartFitsVehicle(row, vehicle)) result.Add(part);
         }
+        _installableCache[vehicle.Key] = result;
         return result;
-    }
-
-    /// <summary>True when the CargoBed struct is a real bed — not the editor-default
-    /// placeholder (100×100×100 cm Flatbed, no flags) that unrelated part rows carry
-    /// (DefaultBody, DefaultAttachment, "201"/"202", SmallRadiator_100).</summary>
-    private static bool RealBed(JObject bed, string type)
-    {
-        var size = bed["CargoSpaceSize"] as JObject;
-        var x = (double?)size?["X"] ?? 0;
-        var y = (double?)size?["Y"] ?? 0;
-        var z = (double?)size?["Z"] ?? 0;
-        if (x != 100 || y != 100 || z != 100 || type != "Flatbed") return true;
-        if ((bool?)bed["bFixCargo"] == true || (bool?)bed["bUnlimitedHeight"] == true) return true;
-        return (double?)bed["DumpVolume"] is { } dv && dv != 0;
     }
 
     /// <summary>Dimensions from the CargoBed part's CargoSpaceSize vector (cm).</summary>
