@@ -151,32 +151,3 @@ license its Normal type), and the resolved asset stats. The purely-default parts
 
 `Cost` is the garage purchase price; `LevelRequirementToBuy` gates it by career level
 (`CL_Driver`, `CL_Truck`, `CL_Racer`, `CL_Wrecker`, ...).
-
-## The extractor output
-
-Part extraction is the gather mode of the wiki pipeline (`wiki/validate/`, one project
-covering part + vehicle data and wiki validation), run from the repo root with
-`dotnet run -c Release --project wiki/validate`. It shares the main extractor's
-`resource/` conventions and writes four things under `wiki/out/`:
-
-- **`out_vehicle_part.json`** — keyed by part key. Per part: `name` (localized, 23
-  cultures), `type`, `cost`, `massKg`, `hidden`, `level` (career levels), `slots`,
-  `restrict` (`types`, `truckClasses`, `truckClassIncludeNone`, `keys`,
-  `overrideKeys`, `tagQuery`, `tags`), `stats` (as above). ≈ 560 KB.
-- **`parts/<key>.json`** — one page per part, the same data with only the part
-  `type` translated to plain English (`EMTVehiclePartType::Suspension_Damper` →
-  "Suspension Damper"); the whole `restrict` block and everything else stay exactly as
-  in `out_vehicle_part.json`. 768 files under `wiki/out/parts/`.
-- **`out_vehicle_part_type_name.json`** — keyed by `EMTVehiclePartType::*`; localized
-  names from the `Parts` namespace (e.g. `Suspension_Damper` → "Suspension Damper"),
-  falling back to a humanized enum tail.
-- **`out_vehicle.json`** — keyed by vehicle key. Per vehicle: `name`, `type`,
-  `truckClass`, `tags`, `cost`, `level`, `parts` (default part per slot), `partValues`,
-  `restrict` (`notSupportedTypes`, `notOptionalTypes`, `optionalTypes`,
-  `notOptionalSlots`, `slotQueries`), `typeFlags`, and the flag booleans (`taxiable`,
-  `limoable`, `busable`, `raceCar`, `trailerHauling`, `hasFuelPump`, `hidden`, `disabled`).
-
-Part keys and vehicle keys line up: `out_vehicle.json["Voltex"].parts["Engine"]` is a key
-into `out_vehicle_part.json`. Everything keeps the game's own enum spellings
-(`EMTVehiclePartType::`, `EMTVehicleType::`, `EMTVehiclePartSlot::`, `EMTTruckClass::`);
-the `--amc` renamer leaves these untouched.

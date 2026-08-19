@@ -4,6 +4,19 @@ C# (.NET 10) tool that reads Motor Town's `resource/MotorTown-Windows.pak` (UE 5
 and writes every `out/out_*.json` the map site needs, `out/map.png`, and the Leaflet tile pyramid
 `out/tiles/` in one pass. Replaces the old three-stage dump + Rust + Node pipeline.
 
+## Read before starting
+
+Any work on pak data or the wiki pages **must** start by reading the domain docs —
+they are the verified ground truth (layout, schemas, display rules, gotchas):
+
+- `docs/vehicle-parts.md` — the VehicleParts table, part→vehicle restrictions, per-type statistics
+- `docs/vehicles.md` — the Vehicles table, blueprint-derived stats (weight/drag/seats/fuel/axles), capabilities, default parts, cargo spaces
+- `docs/cargos.md` — the Cargos tables, cargo weights, cargo-space types, DeliveryPoint recipes
+- `docs/wiki-pages.md` — the exact DokuWiki templates + display rules the generator must reproduce
+- `docs/dokuwiki-syntax.md` — the DokuWiki markup reference (https://www.dokuwiki.org/wiki:syntax)
+
+Update the relevant doc whenever a schema or a display rule changes.
+
 ## Run
 
 Paths are relative to the **working directory** — run from the repo root:
@@ -11,8 +24,7 @@ Paths are relative to the **working directory** — run from the repo root:
 ```bash
 dotnet run -c Release                       # full run: data + map + tiles (~15s + ~1m AVIF)
 dotnet run -c Release -- --skip-tiles       # data only
-dotnet run -c Release --project wiki/validate   # wiki data: parts + vehicles + per-part pages (wiki/out/)
-dotnet run -c Release --project wiki/validate -- --validate   # also fetch wiki + validate it
+dotnet run -c Release --project wiki/generate   # wiki generator: every DokuWiki page as .txt (wiki/out/, no json)
 dotnet run -c Release --project richtags    # standalone rich-text tag finder
 ```
 
@@ -31,14 +43,19 @@ dotnet run -c Release --project richtags    # standalone rich-text tag finder
 | `CargoKeys.cs` | folds FName cargo keys onto the `Cargos` table spelling (case-insensitive match) |
 | `Localization.cs` | locres tables + `Text` FText helpers + `Output.WriteJson` |
 | `TileGenerator.cs` | libvips (NetVips) tile pyramid; `{z}_{x}_{y}.{ext}`, native zoom = 4096px map at z4 |
-| `wiki/validate/` | wiki pipeline (`mt-wiki`): `Program.cs` (gather + validate modes), `PartExtractor.cs` (vehicle parts + per-part pages), `Validator.cs` (wiki checks); links in `AssetSource.cs`, `Options.cs`, `Localization.cs`, `CargoKeys.cs` from the root via `<Compile Include="../../…">` — shared code changes affect it |
+|`wiki/generate/`|the DokuWiki generator (`mt-wiki-generate`): reads the pak directly and writes every generated page as .txt — `vehicles/`, `parts/`, `cargos/`, `cargo_space/`, `list_of_*.txt`, `vehicle_comparison.txt` (no intermediate json); links `AssetSource.cs`, `Options.cs`, `Localization.cs`, `CargoKeys.cs`, `TableExtractor.cs` from the root via `<Compile Include="../../…">`|
 | `richtags/` | standalone rich-text tag scanner; own mounting, no shared files |
 | `tools/explore/` | throwaway exploration harness for parts data (`find`, `table`, `rows`, `grep`, `stats`, …); keep hacky |
 | `docs/vehicle-parts.md` | full data map of VehicleParts/Vehicles tables; update when part fields change |
+| `docs/vehicles.md` | vehicle domain: Vehicles table, blueprint stats, axles, capabilities, cargo spaces |
+| `docs/cargos.md` | cargo domain: Cargos tables, weights, space types, DeliveryPoint recipes |
+| `docs/wiki-pages.md` | the exact DokuWiki templates, display rules, and pak→wiki field map the generator must reproduce |
+| `docs/mt-pak-extract-review.md` | read-only review of the mt-pak-extract extraction pipeline (deviations found 2026-08-19) |
 
 `richtags/`, `tools/` are excluded from the main project's compile glob in
-`MtExtract.csproj`; each has its own csproj. The wiki pipeline writes only under `wiki/out/`
-(out/ is the map extractor's output).
+`MtExtract.csproj`; each has its own csproj. The wiki generator owns `wiki/out/` (it wipes the
+directory and writes only .txt pages); `out/` is the map extractor's output. `wiki/assertions/`
+holds a snapshot of the wiki pages for diffing generated output.
 
 ## Inputs (`resource/`, gitignored)
 

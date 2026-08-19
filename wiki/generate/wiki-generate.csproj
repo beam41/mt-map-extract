@@ -5,8 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>mt-wiki</AssemblyName>
-    <RootNamespace>WikiValidate</RootNamespace>
+    <AssemblyName>mt-wiki-generate</AssemblyName>
+    <RootNamespace>WikiGenerate</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
@@ -23,6 +23,8 @@
     <Compile Include="../../Options.cs" Link="Shared/Options.cs" />
     <Compile Include="../../Localization.cs" Link="Shared/Localization.cs" />
     <Compile Include="../../CargoKeys.cs" Link="Shared/CargoKeys.cs" />
+    <Compile Include="../../TableExtractor.cs" Link="Shared/TableExtractor.cs" />
+    <Compile Include="../../WorldExtractor.cs" Link="Shared/WorldExtractor.cs" />
   </ItemGroup>
 
 </Project>
