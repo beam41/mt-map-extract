@@ -36,8 +36,8 @@ internal static class RenderDelivery
         $"====== {point.En} ======\n\n**{point.En}** is a delivery point in [[:motor_town|Motor Town]].";
 
     /// <summary>Production through In other languages — transcluded second
-    /// ({{page>delivery_points:{slug}:auto_info}}).</summary>
-    public static string DeliveryPointPageInfo(DeliveryPointInfo point, Data data)
+    /// ({{page>delivery_points:{slug}:auto_details}}).</summary>
+    public static string DeliveryPointPageDetails(DeliveryPointInfo point, Data data)
     {
         var sb = new StringBuilder();
         sb.AppendLine("===== Production =====");

@@ -44,8 +44,8 @@ internal static class RenderVehicles
         $"====== {v.En} ======\n**{v.En}** is a {Format.IntroType(v.Type, v.TruckClass)} vehicle in [[:motor_town|Motor Town]]";
 
     /// <summary>Specifications through In other languages — transcluded second
-    /// ({{page>vehicles:{slug}:auto_info}}).</summary>
-    public static string VehiclePageInfo(VehicleInfo v, Data data)
+    /// ({{page>vehicles:{slug}:auto_details}}).</summary>
+    public static string VehiclePageDetails(VehicleInfo v, Data data)
     {
         var sb = new StringBuilder();
         var enginePart = EnginePart(v, data);

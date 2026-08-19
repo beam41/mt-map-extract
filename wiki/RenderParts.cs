@@ -29,8 +29,8 @@ internal static class RenderParts
     }
 
     /// <summary>Specifications through In other languages — transcluded second
-    /// ({{page>parts:{slug}:auto_info}}).</summary>
-    public static string PartPageInfo(PartInfo part)
+    /// ({{page>parts:{slug}:auto_details}}).</summary>
+    public static string PartPageDetails(PartInfo part)
     {
         var sb = new StringBuilder();
         sb.AppendLine("===== Specifications =====");

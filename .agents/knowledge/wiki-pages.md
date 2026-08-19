@@ -44,7 +44,7 @@ curatable content and are never split — always fully generated, single page.
   Generated **once**, as literal text straight into the bootstrap shell suggestion below —
   never its own `:auto_*` subpage, so a curator is free to hand-edit it (or leave it
   as-is) without the edit ever being clobbered by a later run.
-- **`{ns}:{slug}:auto_info`** — Specifications (or Production, for delivery points)
+- **`{ns}:{slug}:auto_details`** — Specifications (or Production, for delivery points)
   onward. Wiped and rewritten in full every run, exactly like every other generated page —
   a curator must never edit it directly, edits would be lost.
 - **`{ns}:{slug}`** — the live shell page a human owns. The generator **never writes to
@@ -57,13 +57,13 @@ curatable content and are never split — always fully generated, single page.
 
   (hand-written prose goes here — anything at all)
 
-  {{page>{ns}:{slug}:auto_info}}
+  {{page>{ns}:{slug}:auto_details}}
   ```
 - **`out/wiki-bootstrap/{ns}/{slug}.txt`** — the shell template above, **opt-in** (pass
   `--bootstrap`; off by default, since it's only useful once per page at migration time —
   regenerating all 1196 of them every run is noise once most pages are migrated). Paste it
   as a page's initial live content once; from then on the generator only touches the
-  `:auto_infobox` and `:auto_info` subpages under it, never the shell itself.
+  `:auto_infobox` and `:auto_details` subpages under it, never the shell itself.
 
 **Migrating an existing hand-curated live page** (e.g. air_city): open it, cut everything
 that matches the generator's own template shape (infobox, heading, intro sentence,
@@ -73,13 +73,13 @@ includes plus the once-generated heading/intro; paste
 between the heading and the final include. Verified end-to-end in a local
 DokuWiki+include preview against the real fetched air_city data: the infobox (with its
 real `image` field) renders from `:auto_infobox`, heading/intro/hand paragraphs render as
-shell-page literal text, Specifications-onward renders from `:auto_info`, and each
+shell-page literal text, Specifications-onward renders from `:auto_details`, and each
 transcluded block gets its own `[Edit]` link pointing straight at the subpage that owns
 it.
 
 **Deployment rule — this is the entire point of the feature:** when syncing generated
 output onto the live wiki, only ever push `{ns}/{slug}/auto_infobox.txt` and
-`auto_info.txt` (plus the untouched aggregate/list pages) — **never** a delete-capable
+`auto_details.txt` (plus the untouched aggregate/list pages) — **never** a delete-capable
 sync of the top-level `{ns}/{slug}.txt` shell path once it exists on the live wiki. An
 `rsync --delete` (or equivalent) that includes shell paths in its scope will delete them,
 because the generator's own output tree no longer contains a flat `{ns}/{slug}.txt` for
@@ -90,14 +90,14 @@ the local preview while building this feature.
 
 | Directory / file | Count | Content |
 |---|---|---|
-| `vehicles/{slug}/auto_infobox.txt`, `auto_info.txt` | 171×2 | split vehicle page (see above); incl. trailers and the 5 broken assets |
+| `vehicles/{slug}/auto_infobox.txt`, `auto_details.txt` | 171×2 | split vehicle page (see above); incl. trailers and the 5 broken assets |
 | `vehicles/{slug}/installable_parts.txt` | 171 | fit-rule subset of list_of_parts, one per vehicle |
-| `parts/{slug}/auto_infobox.txt`, `auto_info.txt` | 758×2 | split part page; `RideHeight_-1..-10` have none (not on the wiki) |
+| `parts/{slug}/auto_infobox.txt`, `auto_details.txt` | 758×2 | split part page; `RideHeight_-1..-10` have none (not on the wiki) |
 | `parts/{slug}/installable_vehicles.txt` | 758 | fit-rule inverse, one per part |
-| `cargos/{key}/auto_infobox.txt`, `auto_info.txt` | 87×2 | split cargo page (active, non-deprecated only) — plural namespace |
+| `cargos/{key}/auto_infobox.txt`, `auto_details.txt` | 87×2 | split cargo page (active, non-deprecated only) — plural namespace |
 | `cargo_space/` | 12 | one aggregate page per `EMTCargoSpaceType`, not split |
 | `cargo_type/` | 14 | one aggregate page per `EDeliveryCargoType`, not split (new, "None" excluded) |
-| `delivery_points/{slug}/auto_infobox.txt`, `auto_info.txt` | 180×2 | split delivery point page, one per real-world placement (new, no wiki precedent) |
+| `delivery_points/{slug}/auto_infobox.txt`, `auto_details.txt` | 180×2 | split delivery point page, one per real-world placement (new, no wiki precedent) |
 | `wiki-bootstrap/{ns}/{slug}.txt` (`--bootstrap` only) | 1196 | shell-page suggestion, one per detail-page entity — see above, never bulk-synced |
 | `list_of_parts.txt` | 1 | 768 rows, 44 per-type sections |
 | `list_of_vehicles.txt` | 1 | 171 bullets, 12 per-type sections |
@@ -115,7 +115,7 @@ placements share a display name (13 pairs, e.g. `burgerjoint_jeju`/`burgerjoint_
 ## Vehicle page
 
 Splits into `vehicles:{slug}:auto_infobox` (⟨A⟩ below), a once-generated heading (⟨B⟩),
-and `vehicles:{slug}:auto_info` (⟨C⟩) — see "Hand-curated content survives regeneration"
+and `vehicles:{slug}:auto_details` (⟨C⟩) — see "Hand-curated content survives regeneration"
 above. `image = ...` is not pak data; live-fetched and merged into ⟨A⟩ after `name`.
 
 ```
@@ -140,7 +140,7 @@ Drag coefficient = {drag:0.0##}           # CDO AirDragCoeff ?? 1.0 (always)
 ====== {en} ======
 **{en}** is a {introType} vehicle in [[:motor_town|Motor Town]]     # no trailing period
 ⟨B: end of the once-generated heading⟩
-⟨C: start of auto_info⟩
+⟨C: start of auto_details⟩
 ===== Specifications =====
 ^ Stat ^ Value ^
 [| Engine | [[parts:{slug}|{name}]] ({hp} HP) |]
@@ -257,7 +257,7 @@ Return to [[parts:{slug}|{en}]].
 
 ## Part page
 
-Splits into `parts:{slug}:auto_infobox` / a once-generated heading / `parts:{slug}:auto_info` (⟨A⟩/⟨B⟩/⟨C⟩ below), same rule as the vehicle page.
+Splits into `parts:{slug}:auto_infobox` / a once-generated heading / `parts:{slug}:auto_details` (⟨A⟩/⟨B⟩/⟨C⟩ below), same rule as the vehicle page.
 
 ```
 {{infobox>
@@ -271,7 +271,7 @@ Cost = {cost:N0}
 ====== {en} ======
 
 **{en}** is {an|a} {typeEnglish lower} part for vehicles in [[:motor_town|Motor Town]].   # "an" for a/e/i/o/u
-⟨B/C: end of heading, start of auto_info⟩
+⟨B/C: end of heading, start of auto_details⟩
 ===== Specifications =====
 ^ Stat ^ Value ^
 | Type | {typeEnglish} |
@@ -375,7 +375,7 @@ retune; `FD_15_HM` → 13.15). When the name text doesn't numerically match the
 
 ## Cargo page
 
-Splits into `cargos:{slug}:auto_infobox` / a once-generated heading / `cargos:{slug}:auto_info` (⟨A⟩/⟨B⟩/⟨C⟩ below), same rule as the vehicle page.
+Splits into `cargos:{slug}:auto_infobox` / a once-generated heading / `cargos:{slug}:auto_details` (⟨A⟩/⟨B⟩/⟨C⟩ below), same rule as the vehicle page.
 
 ```
 {{infobox>
@@ -390,7 +390,7 @@ Payment = ${PaymentPer1Km}/km
 ====== {name} ======
 
 **{name}** is {a|an} {CargoTypeEnglish lower} cargo in [[:motor_town|Motor Town]].    # "None"-type cargos drop the type clause: "is a cargo in ..."
-⟨B/C: end of heading, start of auto_info⟩
+⟨B/C: end of heading, start of auto_details⟩
 ===== Specifications =====
 ^ Stat ^ Value ^
 | Type | {linked [[cargo_type:{slug}|{tail}]], "None" plain} |
@@ -438,7 +438,7 @@ Payment = ${PaymentPer1Km}/km
 One page per real-world placement of a delivery-point blueprint (180 pages; the 223
 `Resident_C` placements are excluded, see above). Splits into
 `delivery_points:{slug}:auto_infobox` / a once-generated heading /
-`delivery_points:{slug}:auto_info` (⟨A⟩/⟨B⟩/⟨C⟩ below), same rule as the vehicle page.
+`delivery_points:{slug}:auto_details` (⟨A⟩/⟨B⟩/⟨C⟩ below), same rule as the vehicle page.
 
 ```
 {{infobox>
@@ -463,7 +463,7 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
 ====== {en} ======
 
 **{en}** is a delivery point in [[:motor_town|Motor Town]].
-⟨B/C: end of heading, start of auto_info⟩
+⟨B/C: end of heading, start of auto_details⟩
 ===== Production =====
 
 [==== Recipes ====

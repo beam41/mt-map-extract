@@ -27,8 +27,8 @@ internal static class RenderCargos
         $"====== {cargo.Name} ======\n\n{IntroSentence(cargo, data)}";
 
     /// <summary>Specifications through Production — transcluded second
-    /// ({{page>cargos:{slug}:auto_info}}).</summary>
-    public static string CargoPageInfo(CargoInfo cargo, Data data)
+    /// ({{page>cargos:{slug}:auto_details}}).</summary>
+    public static string CargoPageDetails(CargoInfo cargo, Data data)
     {
         var sb = new StringBuilder();
         sb.AppendLine("===== Specifications =====");

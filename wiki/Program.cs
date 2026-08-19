@@ -9,7 +9,7 @@ namespace WikiGenerator;
 /// generated page as plain .txt files — no intermediate JSON.
 ///
 /// The four "detail" page types (vehicles, parts, cargos, delivery points) split into two
-/// bot-owned subpages each — {slug}:auto_infobox (just the infobox) and {slug}:auto_info
+/// bot-owned subpages each — {slug}:auto_infobox (just the infobox) and {slug}:auto_details
 /// (specs onward), both fully regenerated every run — plus a heading+intro that's
 /// generated once into a live shell page a human curator owns:
 ///
@@ -20,7 +20,7 @@ namespace WikiGenerator;
 ///
 ///   (hand-written prose goes here — anything at all)
 ///
-///   {{page>{ns}:{slug}:auto_info}}
+///   {{page>{ns}:{slug}:auto_details}}
 ///
 /// via the DokuWiki `include` plugin's {{page>}} transclusion, so a curator's prose (and
 /// heading/intro edits) are never clobbered by a regeneration. The `image = ...` infobox
@@ -38,10 +38,10 @@ namespace WikiGenerator;
 /// and stay single-page, fully generator-owned.
 ///
 ///   wiki/generate/                this program, LiveWiki.cs (image fetch/merge)
-///   wiki/out/vehicles/{slug}/     auto_infobox.txt, auto_info.txt, installable_parts.txt
-///   wiki/out/parts/{slug}/        auto_infobox.txt, auto_info.txt, installable_vehicles.txt
-///   wiki/out/cargos/{key}/        auto_infobox.txt, auto_info.txt
-///   wiki/out/delivery_points/{slug}/  auto_infobox.txt, auto_info.txt
+///   wiki/out/vehicles/{slug}/     auto_infobox.txt, auto_details.txt, installable_parts.txt
+///   wiki/out/parts/{slug}/        auto_infobox.txt, auto_details.txt, installable_vehicles.txt
+///   wiki/out/cargos/{key}/        auto_infobox.txt, auto_details.txt
+///   wiki/out/delivery_points/{slug}/  auto_infobox.txt, auto_details.txt
 ///   wiki/out/cargo_space/, cargo_type/, list_of_*.txt, vehicle_comparison.txt
 ///   wiki/out/wiki-bootstrap/      (--bootstrap only) one flat {slug}.txt shell per detail page
 ///
@@ -138,7 +138,7 @@ internal static class Program
 
         // A "detail" page (vehicle/part/cargo/delivery point) writes two bot-owned
         // subpages ({slug}:auto_infobox with the live image field merged back in,
-        // {slug}:auto_info) plus, with --bootstrap, a flat shell suggestion under
+        // {slug}:auto_details) plus, with --bootstrap, a flat shell suggestion under
         // wiki-bootstrap/{ns}/{slug}.txt — an infobox transclusion, the heading+intro
         // generated once as literal text, and an info transclusion, ready to paste as the
         // live page's initial content.
@@ -148,14 +148,14 @@ internal static class Program
             var subDir = Path.Combine(pagesDir, slug);
             Directory.CreateDirectory(subDir);
             File.WriteAllText(Path.Combine(subDir, "auto_infobox.txt"), mergedInfobox);
-            File.WriteAllText(Path.Combine(subDir, "auto_info.txt"), info);
+            File.WriteAllText(Path.Combine(subDir, "auto_details.txt"), info);
 
             if (!opts.Bootstrap) return;
             var nsBootstrapDir = Path.Combine(bootstrapDir, ns);
             Directory.CreateDirectory(nsBootstrapDir);
             var shell = "{{page>" + ns + ":" + slug + ":auto_infobox}}\n\n"
                         + heading + "\n\n"
-                        + "{{page>" + ns + ":" + slug + ":auto_info}}\n";
+                        + "{{page>" + ns + ":" + slug + ":auto_details}}\n";
             File.WriteAllText(Path.Combine(nsBootstrapDir, slug + ".txt"), shell);
         }
 
@@ -164,7 +164,7 @@ internal static class Program
         {
             var slug = RenderVehicles.VehicleSlug(v);
             WriteDetailPage(vehicleDir, "vehicles", slug,
-                RenderVehicles.VehiclePageInfobox(v, data), RenderVehicles.VehiclePageHeading(v), RenderVehicles.VehiclePageInfo(v, data));
+                RenderVehicles.VehiclePageInfobox(v, data), RenderVehicles.VehiclePageHeading(v), RenderVehicles.VehiclePageDetails(v, data));
             File.WriteAllText(Path.Combine(vehicleDir, slug, "installable_parts.txt"),
                 RenderParts.InstallablePartsPage(v, data.InstallableParts(v)));
         }
@@ -174,7 +174,7 @@ internal static class Program
         {
             if (!p.HasPage) continue;
             WriteDetailPage(partDir, "parts", p.Slug,
-                RenderParts.PartPageInfobox(p), RenderParts.PartPageHeading(p), RenderParts.PartPageInfo(p));
+                RenderParts.PartPageInfobox(p), RenderParts.PartPageHeading(p), RenderParts.PartPageDetails(p));
             File.WriteAllText(Path.Combine(partDir, p.Slug, "installable_vehicles.txt"),
                 RenderParts.InstallableVehiclesPage(p, data.InstallableVehicles(p)));
         }
@@ -182,7 +182,7 @@ internal static class Program
         // cargo pages (active only)
         foreach (var c in data.Cargos.Where(c => !c.Deprecated))
             WriteDetailPage(cargoDir, "cargos", c.Key.ToLowerInvariant(),
-                RenderCargos.CargoPageInfobox(c, data), RenderCargos.CargoPageHeading(c, data), RenderCargos.CargoPageInfo(c, data));
+                RenderCargos.CargoPageInfobox(c, data), RenderCargos.CargoPageHeading(c, data), RenderCargos.CargoPageDetails(c, data));
 
         // cargo space pages (aggregate — no curatable seam, single page)
         foreach (var s in data.Spaces)
@@ -195,7 +195,7 @@ internal static class Program
         // delivery point pages (one per real-world placement with a resolvable name)
         foreach (var p in data.Points.Where(p => p.HasPage))
             WriteDetailPage(deliveryDir, "delivery_points", p.Slug,
-                RenderDelivery.DeliveryPointPageInfobox(p, data), RenderDelivery.DeliveryPointPageHeading(p), RenderDelivery.DeliveryPointPageInfo(p, data));
+                RenderDelivery.DeliveryPointPageInfobox(p, data), RenderDelivery.DeliveryPointPageHeading(p), RenderDelivery.DeliveryPointPageDetails(p, data));
 
         // list pages (aggregate — always fully generated, no curatable seam)
         File.WriteAllText(Path.Combine(outDir, "list_of_parts.txt"), RenderParts.ListOfParts(data.Parts));
