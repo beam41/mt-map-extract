@@ -210,7 +210,7 @@ internal static class RenderVehicles
         var sb = new StringBuilder();
         sb.AppendLine("====== List of Vehicles ======");
         sb.AppendLine();
-        sb.AppendLine($"There are {vehicles.Count} vehicles in [[:motor_town|Motor Town]]. For the full data see [[:vehicle_comparison|vehicle comparison table]].");
+        sb.AppendLine($"There are {vehicles.Count} vehicles in [[:motor_town|Motor Town]]. For the **extended comparison** see [[:vehicle_comparison|vehicle comparison table]].");
         sb.AppendLine();
         foreach (var group in vehicles
                      .GroupBy(v => Format.HumanizeType(v.Type))
