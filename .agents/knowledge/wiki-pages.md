@@ -432,6 +432,9 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
   generator bug — those parts are unused), (c) formula_scm has no LSD/WheelSpacer
   (pak `NotSupportedPartTypes`; the wiki lists them), (d) identical "Inventory" names sort
   in pak order (wiki's tie order is unstable).
+- **Family-grouped #N part order** (directive): "#N (Family)" parts sort with the family
+  first — "#1 (Dabo)", "#2 (Dabo)", "#3 (Dabo)" adjacent — instead of all "#1"s together.
+  The wiki's list order shows all "#1" parts first.
 - **Collapsed #N owner names** (directive): a "#N" part whose owners share a brand shows
   only the brand — "#1 (Brutus)" instead of "#1 (Brutus Wrecker / Brutus Tanker / Brutus
   Ambulance / Brutus Fire Engine)"; unrelated owners keep the " / " join. The wiki shows

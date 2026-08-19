@@ -527,25 +527,12 @@ internal sealed class Data(AssetSource assets, Localization localization)
             var typeEnglish = PartTypeEnglish(type);
             var stats = Stats(row);
 
-            // Bandaid: the pak's final-drive-ratio name text can be stale (FD_10.65's text says
-            // "10.65" but its ratio field is 9.4 after a retune). When the text does not match
-            // the ratio field, use the field for both the name and the slug. Matching texts
-            // (101 -> "2.73", 105 -> "4.0") are kept verbatim.
+            // The FinalDriveRatio field (used for the vehicle page's ratio row) may differ
+            // from the pak's name text (fd_10.65 is named "10.65" in-game while its field is
+            // 9.4 after a retune) — the name and slug follow the game UI's name text.
             double? fdrValue = row["FinalDriveRatio"] is JValue fv && Convert.ToDouble(fv.Value) != -1
                 ? Convert.ToDouble(fv.Value)
                 : null;
-            if (typeEnglish == "Final Drive Ratio" && fdrValue is { } ratio)
-            {
-                var en = names.GetValueOrDefault("en") ?? "";
-                var matches = double.TryParse(en, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var enNum)
-                    && Math.Abs(enNum - ratio) < 1e-5;
-                if (!matches)
-                {
-                    var ratioName = Format.Num(ratio);
-                    foreach (var lang in names.Keys.ToList()) names[lang] = ratioName;
-                }
-            }
 
             var part = new PartInfo
             {
@@ -562,7 +549,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 Cost = (long?)row["Cost"] ?? 0,
                 MassKg = (double?)row["MassKg"] is { } m && m != 0 ? m : null,
                 Hidden = (bool?)row["bIsHidden"] == true,
-                Slug = FdrSlug(key, typeEnglish, names.GetValueOrDefault("en") ?? ""),
+                Slug = Format.PartSlug(key),
                 HasPage = !Regex.IsMatch(key, @"^RideHeight_-\d+$"),
                 Row = row,
                 Stats = stats,
@@ -1025,15 +1012,6 @@ internal sealed class Data(AssetSource assets, Localization localization)
             if (source[field] is JValue { Type: JTokenType.String } value && !string.IsNullOrEmpty((string?)value))
                 target[field] = value.DeepClone();
         }
-    }
-
-    /// <summary>The slug of a final-drive-ratio part: numeric keys keep their page ("101"),
-    /// "FD_*" keys derive from the ratio name ("fd_1_33", "fd_9_4").</summary>
-    private static string FdrSlug(string key, string typeEnglish, string enName)
-    {
-        if (typeEnglish != "Final Drive Ratio") return Format.PartSlug(key);
-        if (Regex.IsMatch(key, @"^\d+$")) return key;
-        return "fd_" + enName.Replace('.', '_');
     }
 
     private static string Humanize(string name)

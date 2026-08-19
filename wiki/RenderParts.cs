@@ -380,7 +380,7 @@ internal static class RenderParts
         sb.AppendLine();
         var groups = parts.GroupBy(p => p.TypeEnglish)
             .OrderBy(g => g.Key, Format.NaturalComparer.Instance)
-            .Select(g => (Type: g.Key, Parts: g.OrderBy(p => p.En, Format.NaturalComparer.Instance).ToList()))
+            .Select(g => (Type: g.Key, Parts: g.OrderBy(p => Format.PartSortKey(p.En), Format.NaturalComparer.Instance).ToList()))
             .ToList();
         var total = groups.Sum(g => g.Parts.Count);
         sb.AppendLine($"All vehicle parts that can be installed on the **{v.En}** ({groups.Count} part type{(groups.Count == 1 ? "" : "s")}, {total} part{(total == 1 ? "" : "s")} in total).");
@@ -445,7 +445,7 @@ internal static class RenderParts
         {
             sb.AppendLine($"===== {group.Key} =====");
             sb.AppendLine("^ Part ^ Cost ^ Mass ^");
-            foreach (var part in group.OrderBy(p => p.En, Format.NaturalComparer.Instance))
+            foreach (var part in group.OrderBy(p => Format.PartSortKey(p.En), Format.NaturalComparer.Instance))
             {
                 var mass = part.MassKg is { } m ? $"{Format.N0(m)} kg" : "—";
                 sb.AppendLine($"| [[parts:{part.Slug}|{part.En}]] | {Format.N0(part.Cost)} | {mass} |");

@@ -95,6 +95,12 @@ internal static class Format
         return slug.TrimStart('_');
     }
 
+    /// <summary>Sort key that moves a "#N (Family)" owner suffix ahead of the number, so parts
+    /// group by family — "#1 (Dabo)", "#2 (Dabo)" adjacent — instead of all "#1"s first.
+    /// Names without a family suffix ("#1") sort unchanged.</summary>
+    public static string PartSortKey(string name) =>
+        Regex.Replace(name, @"^#(\d+)\s*\((.+)\)$", "$2 #$1");
+
     /// <summary>Case-insensitive natural sort: digit runs compare as integers; names that are
     /// pure numbers (with an optional unit) sort numerically before everything else.</summary>
     public sealed class NaturalComparer : IComparer<string>
