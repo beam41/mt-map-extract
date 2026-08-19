@@ -74,8 +74,11 @@ Worked examples from the data:
   that is not an EV.
 - `SmallRadiator_100` / `BasicTire_65` / `I4_150HP`: `OverrideAllowedVehicleKeys: [FormulaSCM]`
   → usable on the Formula SCM no matter what its type/tags say.
-- `RearWing_A`: `VehicleKeys: ["None"]` → a literal key named "None" (data as-is; likely
-  the catch-all the game matches when a vehicle row has no key).
+- `RearWing_A/B/C/D`: `VehicleKeys: ["None"]` → "None" is a key no vehicle row has — the
+  part is UNUSED (none of the four generic rear wings appears in any vehicle's slots; the
+  real ones are `Vista_RearWing_01` etc.). `Muhan_FrontBumper_02`: `["Muhan", "None"]` →
+  fits only the Muhan ("None" inert). Verified 2026-08-19; the wiki's generator instead
+  treated "None" as a catch-all and listed these five parts on every vehicle page.
 
 ### Vehicle side (`Vehicles` rows)
 

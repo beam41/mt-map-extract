@@ -52,6 +52,10 @@ internal sealed class VehicleInfo
     public double? PaymentMultiplier { get; set; }
     public List<string> Tags { get; } = [];
 
+    /// <summary>Part types this vehicle cannot take at all (raw `EMTVehiclePartType::` values,
+    /// e.g. Formula SCM: [LSD, WheelSpacer]) — the vehicle-side fit exclusion.</summary>
+    public List<string> NotSupportedPartTypes { get; } = [];
+
     /// <summary>Broken/unused assets with no usable drivetrain; the wiki's "Rear-wheel drive"
     /// display for them is the established convention.</summary>
     public static readonly HashSet<string> BrokenAssets = new(StringComparer.Ordinal)
@@ -288,6 +292,8 @@ internal sealed class Data(AssetSource assets, Localization localization)
             if (row["GameplayTags"] is JArray tags)
                 foreach (var t in tags.OfType<JValue>())
                     if (t.Value is string s) vehicle.Tags.Add(s);
+            foreach (var t in (row["NotSupportedPartTypes"] as JArray ?? []).OfType<JValue>())
+                if (t.Value is string s) vehicle.NotSupportedPartTypes.Add(s);
 
             // ordered default parts (the wiki renders the pak array order)
             foreach (var entry in (row["Parts"] as JArray ?? []).OfType<JObject>())
@@ -642,20 +648,103 @@ internal sealed class Data(AssetSource assets, Localization localization)
         return array.OfType<JValue>().Select(v => (string?)v.Value ?? "").Where(k => k.Length > 0).ToList();
     }
 
-    /// <summary>The documented part→vehicle fit rule (vehicle-parts.md): an override key wins;
-    /// else VehicleKeys when non-empty; else the VehicleTypes / TruckClasses filters.</summary>
+    /// <summary>The part→vehicle fit rule (vehicle-parts.md): the override key wins; otherwise
+    /// ALL of VehicleTypes / TruckClasses / VehicleKeys / tag query / NotSupportedPartTypes.
+    /// Final Drive Ratio parts fit every vehicle (user directive — the bandaid renamed some).</summary>
     private static bool PartFitsVehicle(JObject partRow, VehicleInfo vehicle)
     {
+        if ((string?)partRow["PartType"] == "EMTVehiclePartType::FinalDriveRatio") return true;
         if (OverrideKeys(partRow["OverrideAllowedVehicleKeys"])?.Contains(vehicle.Key) == true) return true;
         var keys = VehicleKeys(partRow);
-        if (keys is { Count: > 0 }) return keys.Contains(vehicle.Key);
+        // a literal "None" key is a key no vehicle row has — the part is UNUSED (the generic
+        // RearWing_A/B/C/D, which the wiki wrongly treats as a catch-all and lists on all 171
+        // vehicles). Real keys alongside it (Muhan_FrontBumper_02: ["Muhan", "None"]) filter
+        // as usual with "None" inert.
+        if (keys is { Count: > 0 })
+        {
+            var real = keys.Where(k => k != "None").ToList();
+            if (real.Count == 0) return false;
+            if (!real.Contains(vehicle.Key)) return false;
+        }
         var types = (partRow["VehicleTypes"] as JArray ?? []).OfType<JValue>().Select(v => (string?)v.Value).Where(v => v is not null).ToList();
         if (types.Count > 0 && !types.Contains(vehicle.Type)) return false;
         var classes = (partRow["TruckClasses"] as JArray ?? []).OfType<JValue>().Select(v => (string?)v.Value).Where(v => v is not null).ToList();
         if (classes.Count > 0 && !classes.Contains(vehicle.TruckClass)
             && !((bool?)partRow["bTruckClassIncludeNone"] == true && vehicle.TruckClass == "EMTTruckClass::None"))
             return false;
+        if (!TagQueryMatches(partRow["VehicleRowGameplayTagQuery"], vehicle.Tags)) return false;
+        if (vehicle.NotSupportedPartTypes.Contains((string?)partRow["PartType"] ?? "")) return false;
         return true;
+    }
+
+    /// <summary>Evaluates a part's VehicleRowGameplayTagQuery against the vehicle's
+    /// GameplayTags. Token stream ([version][hasRoot=1][expr…]) mirrors CUE4Parse's
+    /// FQueryEvaluator: op 1/2/3 = Any/All/No TagsMatch with [count][indices…], 4/5/6 = the
+    /// expression variants. Tag matching uses UE's hierarchy rule (the query tag matches the
+    /// vehicle tag itself or any child, e.g. Vehicle.Bike matches Vehicle.Bike.SportBike).
+    /// An absent or empty query always fits.</summary>
+    private static bool TagQueryMatches(JToken? query, List<string> vehicleTags)
+    {
+        if (query is not JObject obj) return true;
+        var tokens = (obj["QueryTokenStream"] as JArray ?? []).OfType<JValue>()
+            .Select(v => Convert.ToByte(v.Value)).ToList();
+        var dict = (obj["TagDictionary"] as JArray ?? []).OfType<JObject>()
+            .Select(o => (string?)o["TagName"] ?? "").ToList();
+        if (tokens.Count == 0) return true;
+
+        var i = 0;
+        byte Next() => i < tokens.Count ? tokens[i++] : byte.MaxValue;
+        bool MatchTag(string queryTag) =>
+            vehicleTags.Any(tag => tag == queryTag
+                || tag.StartsWith(queryTag + ".", StringComparison.Ordinal));
+
+        bool EvalExpr() => Next() switch
+        {
+            1 => EvalTags(matchAll: false, invert: false),
+            2 => EvalTags(matchAll: true, invert: false),
+            3 => EvalTags(matchAll: false, invert: true),
+            4 => EvalExprs(matchAll: false, invert: false),
+            5 => EvalExprs(matchAll: true, invert: false),
+            6 => EvalExprs(matchAll: false, invert: true),
+            _ => false,
+        };
+
+        bool EvalTags(bool matchAll, bool invert)
+        {
+            var n = Next();
+            if (n == byte.MaxValue) return false;
+            var found = false;
+            var all = true;
+            for (var k = 0; k < n; k++)
+            {
+                var tagIdx = Next();
+                if (tagIdx == byte.MaxValue) return false;
+                var hit = tagIdx < dict.Count && MatchTag(dict[tagIdx]);
+                found |= hit;
+                all &= hit;
+            }
+            return invert ? !found : matchAll ? all : found;
+        }
+
+        bool EvalExprs(bool matchAll, bool invert)
+        {
+            var n = Next();
+            if (n == byte.MaxValue) return false;
+            var found = false;
+            var all = true;
+            for (var k = 0; k < n; k++)
+            {
+                var hit = EvalExpr();
+                found |= hit;
+                all &= hit;
+            }
+            return invert ? !found : matchAll ? all : found;
+        }
+
+        _ = Next();                       // stream version
+        if (Next() != 1) return false;    // hasRootExpression marker
+        var result = EvalExpr();
+        return result && i == tokens.Count;
     }
 
     private static List<(string, long)> Levels(JToken? levels)
@@ -1113,6 +1202,19 @@ internal sealed class Data(AssetSource assets, Localization localization)
         }
 
         Spaces.AddRange(spaces.Values);
+    }
+
+    /// <summary>Every part the vehicle can install, per the fit rule (Final Drive Ratio parts
+    /// always included). Order follows the pak row order.</summary>
+    public List<PartInfo> InstallableParts(VehicleInfo vehicle)
+    {
+        var result = new List<PartInfo>();
+        foreach (var part in Parts)
+        {
+            if (!_partRowsByKey.TryGetValue(part.Key, out var row)) continue;
+            if (PartFitsVehicle(row, vehicle)) result.Add(part);
+        }
+        return result;
     }
 
     /// <summary>True when the CargoBed struct is a real bed — not the editor-default

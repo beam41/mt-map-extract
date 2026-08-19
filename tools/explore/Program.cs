@@ -57,6 +57,23 @@ internal static class Program
                 foreach (var (name, _) in rows) Console.WriteLine(name);
                 return 0;
             }
+            case "nonekeys":
+            {
+                var package = assets.Package(args[1]);
+                if (package is null) { Console.Error.WriteLine($"package not found: {args[1]}"); return 1; }
+                var rows = package.First()["Rows"] as JObject ?? [];
+                foreach (var (name, row) in rows)
+                {
+                    if (row is not JObject obj) continue;
+                    var keys = (obj["VehicleKeys"] as JArray ?? []).OfType<JValue>()
+                        .Select(v => (string?)v.Value).Where(v => v is not null).ToList();
+                    if (keys.Count == 0 || !keys.Contains("None")) continue;
+                    var slots = (obj["Slots"] as JArray ?? []).OfType<JValue>()
+                        .Select(v => ((string?)v.Value ?? "").Replace("EMTVehiclePartSlot::", "")).ToList();
+                    Console.WriteLine($"{name}\t{(string?)obj["PartType"]}\tkeys=[{string.Join(",", keys)}]\tslots=[{string.Join(",", slots)}]\tcost={(long?)obj["Cost"]}\thidden={(bool?)obj["bIsHidden"]}");
+                }
+                return 0;
+            }
             case "dump":
             {
                 var package = assets.Package(args[1]);

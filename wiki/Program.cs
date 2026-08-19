@@ -77,6 +77,10 @@ internal static class Program
         {
             var slug = RenderVehicles.VehicleSlug(v);
             File.WriteAllText(Path.Combine(vehicleDir, slug + ".txt"), RenderVehicles.VehiclePage(v, data));
+            var subDir = Path.Combine(vehicleDir, slug);
+            Directory.CreateDirectory(subDir);
+            File.WriteAllText(Path.Combine(subDir, "installable_parts.txt"),
+                RenderParts.InstallablePartsPage(v, data.InstallableParts(v)));
         }
 
         // part pages (RideHeight_-N have no page, matching the wiki)

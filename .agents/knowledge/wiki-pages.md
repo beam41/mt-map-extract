@@ -94,6 +94,35 @@ Drag coefficient = {drag:0.0##}           # CDO AirDragCoeff ?? 1.0 (always)
 
 See [[vehicles:{slug}:installable_parts|Installable parts for {en}]].
 
+## Installable parts page (`vehicles:{slug}:installable_parts`)
+
+A subset of list_of_parts filtered by the part→vehicle fit rule, one page per vehicle:
+
+```
+====== Installable Parts for {en} ======
+
+All vehicle parts that can be installed on the **{en}** ({n} part types, {m} parts in total).
+
+Return to [[vehicles:{slug}|{en}]].
+
+===== {TypeEnglish} ({count}) =====
+
+^ Part ^ Cost ^ Mass ^
+| [[parts:{slug}|{en}]] | {cost:N0} | {mass} |
+```
+
+- Sections grouped by `TypeEnglish`, ordered naturally; rows per type by `En` naturally;
+  Mass like list_of_parts (`0.1 kg` / `—`). No trailing blank line after the last section.
+- **Fit rule** (same as the wiki's installable_vehicles pages, from vehicle-parts.md):
+  FDR parts always fit (user directive — the bandaid renamed some); the override key wins;
+  otherwise ALL of VehicleTypes / TruckClasses (None when `bTruckClassIncludeNone`) /
+  VehicleKeys / `VehicleRowGameplayTagQuery` (CUE4Parse-style token evaluation, UE
+  hierarchy matching) / vehicle `NotSupportedPartTypes`.
+- **`VehicleKeys: ["None"]`** = the part is UNUSED — fits no vehicle (the generic
+  RearWing_A/B/C/D). Real keys alongside it filter as usual (`["Muhan", "None"]` fits the
+  Muhan). The wiki's generator instead treated "None" as a catch-all and listed the generic
+  rear wings + Muhan bumper on all 171 vehicles — reproduced as a deviation, not a bug.
+
 [===== Axle info =====
 ^ Axle ^ Break Ratio ^ Driven ^ Dual Wheels ^ Liftable ^
 | {Front|Middle|Rear…} | {0% | 0.0%} | {No|**Yes**} | {No|**Yes**} | {No|**Yes**} |]
@@ -372,6 +401,12 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
   fit a space-giving CargoBed part render "(installable)" in the infobox and in the
   cargo-space page's vehicle list (scooty, gunthoo → Box). The wiki shows them with no
   space at all — its data source only sees default parts.
+- **Installable parts pages** (new, generated 2026-08-19): per-vehicle pages matching the
+  wiki except: (a) the FD bandaid slugs (fd_9_4/fd_13_15 — approved), (b) the generic
+  RearWing_A/B/C/D + Muhan_FrontBumper_02 excluded (wiki's "None"-key catch-all is a
+  generator bug — those parts are unused), (c) formula_scm has no LSD/WheelSpacer
+  (pak `NotSupportedPartTypes`; the wiki lists them), (d) identical "Inventory" names sort
+  in pak order (wiki's tie order is unstable).
 - **Cargo Location names** (directive): the Production/Consumed At Location column shows
   the location's actual name ("Gwangjin Coal Storage") instead of the blueprint key
   ("CoalWarehouse"); the wiki currently shows the keys.

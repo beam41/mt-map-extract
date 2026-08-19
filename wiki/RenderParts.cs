@@ -370,6 +370,39 @@ internal static class RenderParts
 
     // ------------------------------------------------------------------ list page
 
+    /// <summary>The per-vehicle installable parts page (vehicles:{slug}:installable_parts):
+    /// a subset of list_of_parts filtered by the part→vehicle fit rule, with per-type counts
+    /// and a "Return to" link.</summary>
+    public static string InstallablePartsPage(VehicleInfo v, List<PartInfo> parts)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"====== Installable Parts for {v.En} ======");
+        sb.AppendLine();
+        var groups = parts.GroupBy(p => p.TypeEnglish)
+            .OrderBy(g => g.Key, Format.NaturalComparer.Instance)
+            .Select(g => (Type: g.Key, Parts: g.OrderBy(p => p.En, Format.NaturalComparer.Instance).ToList()))
+            .ToList();
+        var total = groups.Sum(g => g.Parts.Count);
+        sb.AppendLine($"All vehicle parts that can be installed on the **{v.En}** ({groups.Count} part type{(groups.Count == 1 ? "" : "s")}, {total} part{(total == 1 ? "" : "s")} in total).");
+        sb.AppendLine();
+        sb.AppendLine($"Return to [[vehicles:{RenderVehicles.VehicleSlug(v)}|{v.En}]].");
+        sb.AppendLine();
+        for (var gi = 0; gi < groups.Count; gi++)
+        {
+            var (type, list) = groups[gi];
+            sb.AppendLine($"===== {type} ({list.Count}) =====");
+            sb.AppendLine();
+            sb.AppendLine("^ Part ^ Cost ^ Mass ^");
+            foreach (var part in list)
+            {
+                var mass = part.MassKg is { } m ? $"{Format.N0(m)} kg" : "—";
+                sb.AppendLine($"| [[parts:{part.Slug}|{part.En}]] | {Format.N0(part.Cost)} | {mass} |");
+            }
+            if (gi < groups.Count - 1) sb.AppendLine();   // no trailing blank after the last section
+        }
+        return sb.ToString();
+    }
+
     public static string ListOfParts(List<PartInfo> parts)
     {
         var sb = new StringBuilder();
