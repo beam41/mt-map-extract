@@ -111,6 +111,108 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
     {
         var points = new List<JObject>();
 
+        foreach (var p in Placements())
+        {
+            var maxStorage = MaxStorage(p.WorldObj) ?? p.MainMaxStorage;
+            var storageConfigs = Flatten(FirstNonEmpty(
+                StorageConfigs(p.WorldObj), StorageConfigs(p.Main),
+                p.Template is null ? [] : StorageConfigs(p.Template)));
+
+            var demandConfigs = MapDemandConfigs(p.WorldObj, p.Main, p.Template, storageConfigs, maxStorage);
+            var (production, demandStorage, supplyStorage) =
+                MapProductionConfigs(p.WorldObj, p.Main, p.Template, storageConfigs, demandConfigs, maxStorage);
+
+            foreach (var cargo in demandConfigs)
+            {
+                var key = cargo.CargoKey ?? cargo.CargoType;
+                if (key is null || cargo.MaxStorage is null || demandStorage.ContainsKey(key)) continue;
+                demandStorage[key] = cargo.MaxStorage;
+            }
+
+            var demand = new JObject();
+            foreach (var cargo in demandConfigs)
+            {
+                var key = cargo.CargoKey ?? cargo.CargoType;
+                if (key is not null) demand[key] = cargo.PaymentMultiplier.DeepClone();
+            }
+
+            var dropPoints = new JArray();
+            foreach (var share in Props(p.WorldObj)?["InputInventoryShare"] as JArray ?? [])
+            {
+                var shareIndex = ObjectIndex(share);
+                if (shareIndex is null) continue;
+                if (DeliveryPointGuid(World.Json(shareIndex.Value)) is { } guid) dropPoints.Add(guid);
+            }
+
+            var point = new JObject
+            {
+                ["type"] = ExportType(p.WorldObj),
+                ["name"] = LocalizedName(Name(p.WorldObj) ?? p.MainName),
+                ["coord"] = p.Coord,
+                ["guid"] = DeliveryPointGuid(p.WorldObj) ?? DeliveryPointGuid(p.Main),
+                ["supplyStorage"] = supplyStorage,
+            };
+
+            if (production.Count > 0) point["prod"] = production;
+            if (demand.Count > 0) point["demand"] = demand;
+            if (demandStorage.Count > 0) point["demandStorage"] = demandStorage;
+            if (dropPoints.Count > 0) point["dropPoint"] = dropPoints;
+
+            if ((Props(p.WorldObj)?["MaxDeliveryDistance"] ?? Props(p.Main)?["MaxDeliveryDistance"]) is { } maxDist)
+                point["maxDist"] = maxDist.DeepClone();
+
+            if ((Props(p.WorldObj)?["MaxDeliveryReceiveDistance"]
+                 ?? Props(p.Main)?["MaxDeliveryReceiveDistance"]) is { } maxReceiveDist)
+                point["maxReceiveDist"] = maxReceiveDist.DeepClone();
+
+            points.Add(point);
+        }
+
+        InheritDropPointStorage(points);
+
+        var output = new JArray();
+        foreach (var point in points) output.Add(Reorder(point));
+        return (JArray)Output.JsNumbers(output);
+    }
+
+    /// <summary>Per-placement delivery point detail for callers that want the raw config
+    /// structures before DeliveryPoints() flattens them into cargo-key -> number maps (the
+    /// wiki generator's per-point production pages need Key vs Type kept separate, and its
+    /// own CargoRef parsing already understands this raw shape). Same worldObj -> main ->
+    /// template fallback DeliveryPoints() uses.</summary>
+    public IEnumerable<DeliveryPointDetail> DeliveryPointDetails()
+    {
+        foreach (var p in Placements())
+        {
+            yield return new DeliveryPointDetail(
+                BlueprintKey: p.BlueprintKey,
+                Type: ExportType(p.WorldObj),
+                NameTexts: Name(p.WorldObj) ?? p.MainName ?? [],
+                Coord: p.Coord,
+                Guid: DeliveryPointGuid(p.WorldObj) ?? DeliveryPointGuid(p.Main),
+                ProductionConfigs: FirstNonEmpty(ProductionConfigs(p.WorldObj), ProductionConfigs(p.Main),
+                    p.Template is null ? [] : ProductionConfigs(p.Template)),
+                DemandConfigsRaw: FirstNonEmptyArray(
+                    Props(p.WorldObj)?["DemandConfigs"] as JArray, Props(p.Main)?["DemandConfigs"] as JArray,
+                    p.Template is null ? null : Props(p.Template)?["DemandConfigs"] as JArray),
+                PassiveSuppliesRaw: FirstNonEmptyArray(
+                    Props(p.WorldObj)?["PassiveSupplies"] as JArray, Props(p.Main)?["PassiveSupplies"] as JArray,
+                    p.Template is null ? null : Props(p.Template)?["PassiveSupplies"] as JArray));
+        }
+    }
+
+    private static JArray? FirstNonEmptyArray(params JArray?[] candidates) =>
+        candidates.FirstOrDefault(a => a is { Count: > 0 });
+
+    /// <summary>One placed world actor of a delivery-point blueprint, with the blueprint's CDO
+    /// and (optional) template resolved for the worldObj -> main -> template fallback every
+    /// field derived from a placement uses.</summary>
+    private readonly record struct Placement(
+        string BlueprintKey, JObject WorldObj, JObject Main, JObject? Template, JToken Coord,
+        List<JObject>? MainName, long? MainMaxStorage);
+
+    private IEnumerable<Placement> Placements()
+    {
         foreach (var file in assets.Files(DeliveryPointDir).Where(f => f.Extension == "uasset"))
         {
             var package = assets.RequirePackage(file.PathWithoutExtension);
@@ -120,9 +222,9 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
 
             var main = package.Json(mainIndex.Value);
             var template = Template(main);
-
             var mainName = Name(main) ?? (template is null ? null : Name(template));
             var mainMaxStorage = MaxStorage(main) ?? (template is null ? 100 : MaxStorage(template));
+            var blueprintKey = file.PathWithoutExtension[(file.PathWithoutExtension.LastIndexOf('/') + 1)..];
 
             foreach (var index in ExportsOfType(ExportType(main)))
             {
@@ -130,69 +232,10 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
                 var sceneIndex = ObjectIndex(Props(worldObj)?["RootComponent"]);
                 if (sceneIndex is null) continue;
 
-                var maxStorage = MaxStorage(worldObj) ?? mainMaxStorage;
-                var storageConfigs = Flatten(FirstNonEmpty(
-                    StorageConfigs(worldObj), StorageConfigs(main),
-                    template is null ? [] : StorageConfigs(template)));
-
-                var demandConfigs = MapDemandConfigs(worldObj, main, template, storageConfigs, maxStorage);
-                var (production, demandStorage, supplyStorage) =
-                    MapProductionConfigs(worldObj, main, template, storageConfigs, demandConfigs, maxStorage);
-
-                foreach (var cargo in demandConfigs)
-                {
-                    var key = cargo.CargoKey ?? cargo.CargoType;
-                    if (key is null || cargo.MaxStorage is null || demandStorage.ContainsKey(key)) continue;
-                    demandStorage[key] = cargo.MaxStorage;
-                }
-
-                var demand = new JObject();
-                foreach (var cargo in demandConfigs)
-                {
-                    var key = cargo.CargoKey ?? cargo.CargoType;
-                    if (key is not null) demand[key] = cargo.PaymentMultiplier.DeepClone();
-                }
-
-                var dropPoints = new JArray();
-                foreach (var share in Props(worldObj)?["InputInventoryShare"] as JArray ?? [])
-                {
-                    var shareIndex = ObjectIndex(share);
-                    if (shareIndex is null) continue;
-                    if (DeliveryPointGuid(World.Json(shareIndex.Value)) is { } guid) dropPoints.Add(guid);
-                }
-
-                var point = new JObject
-                {
-                    ["type"] = ExportType(worldObj),
-                    ["name"] = LocalizedName(Name(worldObj) ?? mainName),
-                    ["coord"] = Coord(World.Json(sceneIndex.Value)),
-                    // A placed actor that kept the blueprint's guid never serializes one of its
-                    // own, so fall back to the class default the way the game does.
-                    ["guid"] = DeliveryPointGuid(worldObj) ?? DeliveryPointGuid(main),
-                    ["supplyStorage"] = supplyStorage,
-                };
-
-                if (production.Count > 0) point["prod"] = production;
-                if (demand.Count > 0) point["demand"] = demand;
-                if (demandStorage.Count > 0) point["demandStorage"] = demandStorage;
-                if (dropPoints.Count > 0) point["dropPoint"] = dropPoints;
-
-                if ((Props(worldObj)?["MaxDeliveryDistance"] ?? Props(main)?["MaxDeliveryDistance"]) is { } maxDist)
-                    point["maxDist"] = maxDist.DeepClone();
-
-                if ((Props(worldObj)?["MaxDeliveryReceiveDistance"]
-                     ?? Props(main)?["MaxDeliveryReceiveDistance"]) is { } maxReceiveDist)
-                    point["maxReceiveDist"] = maxReceiveDist.DeepClone();
-
-                points.Add(point);
+                yield return new Placement(blueprintKey, worldObj, main, template,
+                    Coord(World.Json(sceneIndex.Value)), mainName, mainMaxStorage);
             }
         }
-
-        InheritDropPointStorage(points);
-
-        var output = new JArray();
-        foreach (var point in points) output.Add(Reorder(point));
-        return (JArray)Output.JsNumbers(output);
     }
 
     /// <summary>Field order the Rust struct serialized in, kept so the files diff cleanly.</summary>
@@ -580,3 +623,10 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
 
     private record ProductionCargo(string? CargoKey, string? CargoType, long? MaxStorage, long Value);
 }
+
+/// <summary>One placed delivery-point world actor with its raw config structures (Key vs
+/// Type kept separate, unlike DeliveryPoints()'s flattened JSON), for consumers that parse
+/// ProductionConfigs/DemandConfigs/PassiveSupplies themselves.</summary>
+public sealed record DeliveryPointDetail(
+    string BlueprintKey, string Type, List<JObject> NameTexts, JToken Coord, string? Guid,
+    List<JToken> ProductionConfigs, JArray? DemandConfigsRaw, JArray? PassiveSuppliesRaw);

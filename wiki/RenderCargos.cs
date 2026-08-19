@@ -74,10 +74,10 @@ internal static class RenderCargos
 
     private static List<(string Point, string Inputs, string Time)> ConfigsFor(Data data, CargoInfo cargo, bool isOutput)
     {
-        var result = new List<(string Point, string Inputs, string Time)>();
-        foreach (var (pointKey, point) in data.Points)
+        var result = new List<(string SortKey, string Point, string Inputs, string Time)>();
+        foreach (var point in data.Points)
         {
-            var pointName = data.PointName(pointKey);
+            var pointText = point.HasPage ? $"[[delivery_points:{point.Slug}|{point.En}]]" : point.En;
             var matchedRecipe = false;
             foreach (var c in point.Configs)
             {
@@ -87,7 +87,7 @@ internal static class RenderCargos
                 if (!matches) continue;
                 matchedRecipe = true;
                 var inputs = InputText(c);
-                result.Add((pointName, inputs, $"{Format.Num(c.TimeSeconds)}s"));
+                result.Add((point.En, pointText, inputs, $"{Format.Num(c.TimeSeconds)}s"));
             }
             if (matchedRecipe) continue;
 
@@ -96,7 +96,7 @@ internal static class RenderCargos
                 foreach (var s in point.PassiveSupplies)
                 {
                     if (!RefEntryMatch(s, cargo)) continue;
-                    result.Add((pointName, "(passive)", "—"));
+                    result.Add((point.En, pointText, "(passive)", "—"));
                     break;
                 }
             }
@@ -105,13 +105,14 @@ internal static class RenderCargos
                 foreach (var d in point.Demands)
                 {
                     if (!RefEntryMatch(d, cargo)) continue;
-                    result.Add((pointName, "—", "—"));
+                    result.Add((point.En, pointText, "—", "—"));
                     break;
                 }
             }
         }
-        // the wiki orders rows by point, keeping each point's config order
-        return result.OrderBy(r => r.Point, StringComparer.Ordinal).ToList();
+        // the wiki orders rows by point name, keeping each point's config order
+        return result.OrderBy(r => r.SortKey, StringComparer.Ordinal)
+            .Select(r => (r.Point, r.Inputs, r.Time)).ToList();
     }
 
     private static bool RefMatch(List<CargoRef> refs, string key) =>
@@ -133,7 +134,7 @@ internal static class RenderCargos
         return false;
     }
 
-    private static string InputText(ProductionConfig c)
+    internal static string InputText(ProductionConfig c)
     {
         var parts = new List<string>();
         foreach (var r in c.Inputs)

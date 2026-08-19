@@ -11,23 +11,29 @@ generator reads the pak directly and must produce exactly these pages. "Identica
 wiki" is the goal; the exceptions (drift, staleness, deliberate choices) are listed at
 the end.
 
-## Page inventory (1032 pages, all .txt, no json)
+## Page inventory (2142 pages, all .txt, no json)
 
 | Directory / file | Count | Content |
 |---|---|---|
 | `vehicles/` | 171 | one page per pak vehicle (incl. trailers and the 5 broken assets) |
+| `vehicles/{slug}/installable_parts.txt` | 171 | fit-rule subset of list_of_parts, one per vehicle |
 | `parts/` | 758 | one page per part; `RideHeight_-1..-10` have none (not on the wiki) |
+| `parts/{slug}/installable_vehicles.txt` | 758 | fit-rule inverse, one per part |
 | `cargos/` | 87 | one page per active (non-deprecated) cargo — plural namespace |
 | `cargo_space/` | 12 | one aggregate page per `EMTCargoSpaceType` |
+| `delivery_points/` | 180 | one page per real-world placement (new, no wiki precedent) |
 | `list_of_parts.txt` | 1 | 768 rows, 44 per-type sections |
 | `list_of_vehicles.txt` | 1 | 171 bullets, 12 per-type sections |
 | `list_of_cargos.txt` | 1 | 87 rows, 15 per-type sections |
+| `list_of_delivery_points.txt` | 1 | 180 bullets, 7 zone sections |
 | `vehicle_comparison.txt` | 1 | one row per vehicle |
 
 Slugs: part slugs = lowercased pak key with `.`→`_`, `RideHeight_+N`→`rideheight_pN`,
 leading `_` stripped (`_Deprecated_…`→`deprecated_…`); FD parts (bandaid) = `fd_` +
 ratio-name; vehicle slugs = the display name (`"Elisa Taxi"`→`elisa_taxi`,
-`"Goliath-4"`→`goliath_4`); cargo slugs = lowercased canonical key.
+`"Goliath-4"`→`goliath_4`); cargo slugs = lowercased canonical key; delivery point slugs
+= `Format.Slug(name)` (same rule as vehicles), with `_2`/`_3`… appended when two real
+placements share a display name (13 pairs, e.g. `burgerjoint_jeju`/`burgerjoint_jeju_2`).
 
 ## Vehicle page
 
@@ -313,20 +319,90 @@ Payment = ${PaymentPer1Km}/km
 [===== Production =====                     # when any producer/consumer exists
 ==== Produced At ====
 ^ Location ^ Inputs ^ Time ^
-| {point} | {inputs} | {time}s |
+| [[delivery_points:{slug}|{point}]] | {inputs} | {time}s |
 [==== Consumed At ====
 ^ Location ^ Inputs ^ Time ^
-| {point} | {inputs} | {time}s |]
+| [[delivery_points:{slug}|{point}]] | {inputs} | {time}s |]
 ```
 
 - **Weight**: `WeightRange` when nonzero (single `X kg` when X=Y, `X–Y kg` when
   variable), else the actor blueprint mass sum, else `0 kg`.
-- **Production rows**: per DeliveryPoint, config order kept; rows sorted by point only.
-  `inputs` = `N× {canonical cargo key}` joined; `(passive)` when a config has no inputs;
-  demand rows render `| {point} | — | — |`. Points with a matching recipe skip their
-  passive/demand rows.
+- **Production rows**: one row per real-world **placement** (not per blueprint) whose
+  effective config matches, `Points` is `Data`'s per-placement list built from
+  `WorldExtractor.DeliveryPointDetails()` — a blueprint reused at many locations (a
+  generic drop point, a construction site) gets one row per placement, each linking its
+  own `delivery_points:{slug}` page; config order kept per placement, rows sorted by
+  placement name. `inputs` = `N× {canonical cargo key}` joined; `(passive)` when a config
+  has no inputs; demand rows render `| {point} | — | — |`. Placements with a matching
+  recipe skip their passive/demand rows. The 223 anonymous residential placements
+  (`Resident_C`, no per-instance name) collapse to one unlinked `Resident` row instead of
+  223 duplicates.
 - One blank line before `===== Production =====`, `==== Produced At ====` and
   `==== Consumed At ====` (the wiki has none there — normalized).
+
+## Delivery point page (`delivery_points:{slug}`, new — no wiki precedent)
+
+One page per real-world placement of a delivery-point blueprint (180 pages; the 223
+`Resident_C` placements are excluded, see above).
+
+```
+{{infobox>
+name = {en}
+[Import = {cargo1}, {cargo2}, …]            # distinct cargos/types this point consumes:
+                                             # recipe inputs ∪ demand cargos, key refs
+                                             # linked [[cargos:{slug}|{name}]], bare type
+                                             # refs (tag-only demand, no CargoKey) plain text
+[Export = {cargo1}, {cargo2}, …]            # recipe outputs ∪ passive supplies, same rule
+Location = {ZoneNameEn}
+External Link = https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&delivery={guid}
+}}
+
+====== {en} ======
+
+===== Production =====
+
+[==== Recipes ====
+^ Inputs ^ Output ^ Time ^
+| {inputs or (passive)} | {linked output cargo or —} | {time}s |]   # ProductionConfigs
+                                                                     # + PassiveSupplies
+                                                                     # ((passive), no time)
+
+[==== Demand =====
+^ Cargo ^ Payment Multiplier ^
+| {linked cargo or bare type} | {mult:F1}x |]                       # DemandConfigs
+
+===== In other languages =====
+^ Language ^ Name ^
+… (22 languages)
+```
+
+- **Location** = the enclosing **Zone**-flagged area (point-in-polygon ray-cast against
+  `WorldExtractor.AreaVolumes()`'s `TopViewLines`, C# port of amc-web's
+  `area.ts` `getLocationAtPoint`/`getLocationNearPoint`), falling back to the nearest
+  zone edge when the point sits inside none — same algorithm, verified zero mismatches
+  against a from-scratch port for all 180 points. Only the 7 `Zone`-flag areas are
+  considered (not `SmallArea`/`LargeArea`/`RaceTrack`, which nest inside zones).
+- **External Link** guid is the placement's own `DeliveryPointGuid` (falls back to the
+  blueprint's when the world actor doesn't serialize its own — same rule
+  `WorldExtractor.DeliveryPoints()` uses for the map site).
+- A placement whose name collides with another real placement (13 pairs, e.g. two
+  "BurgerJoint Jeju" locations) gets `_2`/`_3`… appended to the slug (guid-ordinal
+  order); the display name (`name =`/page title) is unchanged.
+
+## List of delivery points page (`list_of_delivery_points`, new)
+
+```
+====== List of Delivery Points ======
+
+There are {n} delivery points in [[:motor_town|Motor Town]].
+
+===== {ZoneNameEn} =====
+  * [[delivery_points:{slug}|{en}]]
+```
+
+Grouped by zone (natural sort on the zone name, 7 sections), bullets sorted by name
+**ordinal** (case-sensitive, matching list_of_vehicles) — same structure as
+list_of_vehicles' per-type sections. `Resident` is excluded (no page).
 
 ## Cargo space page
 
@@ -363,6 +439,8 @@ Zeroed `CargoSpaceSize` structs are not real spaces.
 - **vehicle_comparison**: `^ Name ^ Type ^ Cost ^ Drivetrain ^ Chassis Weight ^ Total
   Weight ^ Drag ^`; type cell = humanized tail (`Racecar`, `Semi Tractor`); rows sorted
   by type then name (ordinal).
+- **list_of_delivery_points** (new): `There are 180 delivery points …`; 7 sections by
+  zone name (natural), bullets by name ordinal — full template above.
 
 ## Number formatting rules
 
@@ -457,3 +535,17 @@ Zeroed `CargoSpaceSize` structs are not real spaces.
 - **Cargo Location names** (directive): the Production/Consumed At Location column shows
   the location's actual name ("Gwangjin Coal Storage") instead of the blueprint key
   ("CoalWarehouse"); the wiki currently shows the keys.
+- **Delivery point pages** (new feature, 2026-08-19, no wiki precedent): `delivery_points:`
+  pages (180) and `list_of_delivery_points` are new namespaces the live wiki doesn't have.
+  Reading recipes per **real-world placement** (via `WorldExtractor.DeliveryPointDetails()`)
+  instead of per blueprint file also fixed a latent correctness bug in the
+  Produced/Consumed At tables: a blueprint reused at many locations (`ComonDrop_C` ×13,
+  `ConstructionSite_C` ×10, …) previously collapsed every row to the *first* placement's
+  name regardless of which specific site the config actually belonged to (concrete's
+  Consumed At showed "Jeju Construction Site" twice instead of all 10 real sites; an
+  H-Beam demand at "Terra Factory H-Beam Drop" showed as "Tank Factory Coil Drop"). Every
+  row is now the correct specific placement, linked. `common/WorldExtractor.cs` gained
+  `DeliveryPointDetails()` (raw per-placement config structures, Key vs Type kept
+  separate) alongside the existing `DeliveryPoints()` (flattened JSON for the map site) —
+  both share one `Placements()` walker; `DeliveryPoints()`'s JSON output is
+  byte-for-byte unchanged (verified).

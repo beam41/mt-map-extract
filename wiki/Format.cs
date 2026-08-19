@@ -95,6 +95,11 @@ internal static class Format
         return slug.TrimStart('_');
     }
 
+    /// <summary>Generic display-name slug: lowercase, non-alphanumeric runs -> "_", trimmed —
+    /// the same rule VehicleSlug applies ("Elisa Taxi" -> "elisa_taxi").</summary>
+    public static string Slug(string name) =>
+        Regex.Replace(name.ToLowerInvariant(), "[^a-z0-9]+", "_").Trim('_');
+
     /// <summary>Sort key that moves a "#N (Family)" owner suffix ahead of the number, so parts
     /// group by family — "#1 (Dabo)", "#2 (Dabo)" adjacent — instead of all "#1"s first.
     /// Names without a family suffix ("#1") sort unchanged.</summary>

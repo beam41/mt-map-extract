@@ -69,7 +69,8 @@ internal static class Program
         var partDir = Path.Combine(outDir, "parts");
         var cargoDir = Path.Combine(outDir, "cargos");
         var spaceDir = Path.Combine(outDir, "cargo_space");
-        foreach (var dir in new[] { vehicleDir, partDir, cargoDir, spaceDir })
+        var deliveryDir = Path.Combine(outDir, "delivery_points");
+        foreach (var dir in new[] { vehicleDir, partDir, cargoDir, spaceDir, deliveryDir })
             Directory.CreateDirectory(dir);
 
         // vehicle pages (every vehicle, incl. the broken assets and trailers)
@@ -102,11 +103,16 @@ internal static class Program
         foreach (var s in data.Spaces)
             File.WriteAllText(Path.Combine(spaceDir, s.Type.ToLowerInvariant() + ".txt"), RenderCargos.CargoSpacePage(s));
 
+        // delivery point pages (one per real-world placement with a resolvable name)
+        foreach (var p in data.Points.Where(p => p.HasPage))
+            File.WriteAllText(Path.Combine(deliveryDir, p.Slug + ".txt"), RenderDelivery.DeliveryPointPage(p, data));
+
         // list pages
         File.WriteAllText(Path.Combine(outDir, "list_of_parts.txt"), RenderParts.ListOfParts(data.Parts));
         File.WriteAllText(Path.Combine(outDir, "list_of_vehicles.txt"), RenderVehicles.ListOfVehicles(data.Vehicles));
         File.WriteAllText(Path.Combine(outDir, "list_of_cargos.txt"), RenderCargos.ListOfCargos(data.Cargos));
         File.WriteAllText(Path.Combine(outDir, "vehicle_comparison.txt"), RenderVehicles.Comparison(data.Vehicles, data));
+        File.WriteAllText(Path.Combine(outDir, "list_of_delivery_points.txt"), RenderDelivery.ListOfDeliveryPoints(data.Points));
 
         var txtFiles = Directory.EnumerateFiles(outDir, "*.txt", SearchOption.AllDirectories).Count();
         Console.WriteLine($"  wrote {txtFiles} DokuWiki pages to {outDir}/");

@@ -177,10 +177,35 @@ internal sealed class CargoInfo
 
 internal sealed class DeliveryPointInfo
 {
-    public required string Key { get; init; }
+    public required string Guid { get; init; }
+    public required string BlueprintKey { get; init; }
+    public required Dictionary<string, string> Names { get; init; }
+    public string En => Names.GetValueOrDefault("en") ?? BlueprintKey;
+    public required double X { get; init; }
+    public required double Y { get; init; }
+    public required string Zone { get; init; }
+
+    /// <summary>False only for the single collapsed "Resident" entry — 223 anonymous,
+    /// identically-configured residential consumers share one blueprint-level name with no
+    /// per-instance override, so they collapse to one unlinked entry instead of 223 duplicate
+    /// rows. Every other placement gets its own page.</summary>
+    public required bool HasPage { get; init; }
+
+    /// <summary>Set once during gathering, after duplicate-name disambiguation.</summary>
+    public string Slug { get; set; } = "";
+
     public List<ProductionConfig> Configs { get; } = [];
     public List<CargoRef> Demands { get; } = [];
     public List<CargoRef> PassiveSupplies { get; } = [];
+}
+
+internal sealed class AreaInfo
+{
+    public required string NameEn { get; init; }
+
+    /// <summary>Flat list of 2-point segments (pairs at i, i+1) — the pak's TopViewLines /
+    /// area.ts's vertex convention, not a closed ring.</summary>
+    public required List<(double X, double Y)> Segments { get; init; }
 }
 
 internal sealed class ProductionConfig
@@ -200,6 +225,9 @@ internal sealed class CargoRef
     public string? Type { get; init; }
     public List<string> Tags { get; } = [];
     public double Count { get; init; } = 1;
+
+    /// <summary>Demand-only: the buy price multiplier (unused by recipe inputs/outputs).</summary>
+    public double PaymentMultiplier { get; init; } = 1;
 }
 
 internal sealed class SpaceInfo
@@ -222,7 +250,6 @@ internal sealed class Data(AssetSource assets, Localization localization)
     private const string VehiclePartsPath = "MotorTown/Content/DataAsset/VehicleParts/VehicleParts";
     private const string CargosPath = "MotorTown/Content/DataAsset/Cargos";
     private const string CargosScheduleIPath = "MotorTown/Content/DataAsset/Cargos_ScheduleI";
-    private const string DeliveryPointDir = "MotorTown/Content/Objects/Mission/Delivery/DeliveryPoint/";
     private const string PartTypePrefix = "EMTVehiclePartType::";
     private const string SlotPrefix = "EMTVehiclePartSlot::";
     private const string CargoTypePrefix = "EDeliveryCargoType::";
@@ -232,12 +259,11 @@ internal sealed class Data(AssetSource assets, Localization localization)
     public List<VehicleInfo> Vehicles { get; } = [];
     public List<CargoInfo> Cargos { get; } = [];
     public List<SpaceInfo> Spaces { get; } = [];
-    public Dictionary<string, DeliveryPointInfo> Points { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Blueprint CDO type -> localized English name of the location, from the world
-    /// actors via WorldExtractor.DeliveryPoints() (the map site's reference resolution).</summary>
-    private readonly Dictionary<string, string> _pointNames = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _pointTypes = new(StringComparer.Ordinal);
+    /// <summary>One entry per real-world placement (not per blueprint) — a blueprint reused
+    /// at many locations (e.g. a generic drop point) gets one entry per placement, each with
+    /// its own name, coordinates and effective production/demand config.</summary>
+    public List<DeliveryPointInfo> Points { get; } = [];
 
     private readonly Dictionary<string, JObject?> _dataAssets = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, JArray?> _curves = new(StringComparer.OrdinalIgnoreCase);
@@ -256,7 +282,6 @@ internal sealed class Data(AssetSource assets, Localization localization)
         GatherCargos();
         GatherSpaces();
         GatherDeliveryPoints();
-        GatherPointNames();
     }
 
     // ------------------------------------------------------------------ vehicles
@@ -1278,60 +1303,60 @@ internal sealed class Data(AssetSource assets, Localization localization)
 
     private void GatherDeliveryPoints()
     {
-        foreach (var file in assets.Files(DeliveryPointDir)
-                     .Where(f => f.Path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase)))
+        var extractor = new WorldExtractor(assets, localization);
+
+        var zones = extractor.AreaVolumes()
+            .OfType<JObject>()
+            .Where(a => Format.Tail((string?)a["flag"]) == "Zone")
+            .Select(a => new AreaInfo
+            {
+                NameEn = (string?)(a["name"] as JObject)?["en"] ?? "",
+                Segments = (a["vertex"] as JArray ?? [])
+                    .Select(v => ((double?)v["x"] ?? 0, (double?)v["y"] ?? 0))
+                    .ToList(),
+            })
+            .ToList();
+
+        var slugCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var residentSeen = false;
+
+        foreach (var detail in extractor.DeliveryPointDetails().OrderBy(d => d.Guid, StringComparer.Ordinal))
         {
-            var path = file.Path[..^".uasset".Length];
-            var point = DeliveryConfigs(path);
-            if (point is null) continue;
-            var key = path[(path.LastIndexOf('/') + 1)..];
-            Points[key] = point;
-            var pkg = assets.Package(path);
-            if (pkg is not null && ObjectIndex(pkg.First()["ClassDefaultObject"]) is { } cdoIndex)
-                _pointTypes[key] = (string?)pkg.Json(cdoIndex)?["Type"] ?? "";
-        }
-    }
+            if (detail.ProductionConfigs.Count == 0
+                && (detail.DemandConfigsRaw?.Count ?? 0) == 0
+                && (detail.PassiveSuppliesRaw?.Count ?? 0) == 0)
+                continue;
 
-    /// <summary>The location name for a delivery point in the cargo pages: the world actor's
-    /// localized name (via WorldExtractor), falling back to the blueprint key.</summary>
-    public string PointName(string blueprintKey)
-    {
-        var type = _pointTypes.GetValueOrDefault(blueprintKey);
-        if (type.Length > 0 && _pointNames.TryGetValue(type, out var name) && name.Length > 0)
-            return name;
-        return blueprintKey;
-    }
+            // 223 residences share one blueprint-level MissionPointName and an identical
+            // config (no per-instance override) - one collapsed, unlinked entry instead of
+            // 223 duplicate rows across every cargo page they touch.
+            var isResident = detail.BlueprintKey == "Resident";
+            if (isResident && residentSeen) continue;
+            if (isResident) residentSeen = true;
 
-    private void GatherPointNames()
-    {
-        var points = new WorldExtractor(assets, localization).DeliveryPoints();
-        foreach (var p in points.OfType<JObject>())
-        {
-            var type = (string?)p["type"];
-            if (type is null || _pointNames.ContainsKey(type)) continue;
-            _pointNames[type] = (string?)(p["name"] as JObject)?["en"] ?? "";
-        }
-    }
+            var x = (double?)(detail.Coord as JObject)?["x"] ?? 0;
+            var y = (double?)(detail.Coord as JObject)?["y"] ?? 0;
 
-    private static int? ObjectIndex(JToken? objectPath)
-    {
-        var path = (string?)objectPath?["ObjectPath"];
-        var dot = path?.LastIndexOf('.') ?? -1;
-        return dot >= 0 && int.TryParse(path![(dot + 1)..], out var index) ? index : null;
-    }
+            var point = new DeliveryPointInfo
+            {
+                Guid = detail.Guid ?? detail.BlueprintKey,
+                BlueprintKey = detail.BlueprintKey,
+                Names = DeliveryPointName(detail.NameTexts),
+                X = x,
+                Y = y,
+                Zone = isResident ? "" : ZoneFor(x, y, zones),
+                HasPage = !isResident,
+            };
 
-    private DeliveryPointInfo? DeliveryConfigs(string packagePath)
-    {
-        var pkg = assets.Package(packagePath);
-        if (pkg is null) return null;
-        for (var i = 0; i < pkg.Exports.Count; i++)
-        {
-            var json = pkg.Json(i);
-            var props = json?["Properties"];
-            if (props?["ProductionConfigs"] is null && props?["DemandConfigs"] is null) continue;
+            if (point.HasPage)
+            {
+                var slug = Format.Slug(point.En);
+                slugCounts.TryGetValue(slug, out var n);
+                slugCounts[slug] = n + 1;
+                point.Slug = n == 0 ? slug : $"{slug}_{n + 1}";
+            }
 
-            var point = new DeliveryPointInfo { Key = packagePath[(packagePath.LastIndexOf('/') + 1)..] };
-            foreach (var c in (props["ProductionConfigs"] as JArray ?? []).OfType<JObject>())
+            foreach (var c in detail.ProductionConfigs.OfType<JObject>())
             {
                 var config = new ProductionConfig { TimeSeconds = (double?)c["ProductionTimeSeconds"] ?? 0 };
                 config.Inputs.AddRange(CargoRefs(c["InputCargos"]));
@@ -1342,18 +1367,19 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 config.OutputTags.AddRange(QueryTags(c["OutputCargoRowGameplayTagQuery"]));
                 point.Configs.Add(config);
             }
-            foreach (var d in (props["DemandConfigs"] as JArray ?? []).OfType<JObject>())
+            foreach (var d in (detail.DemandConfigsRaw ?? []).OfType<JObject>())
             {
                 var dKey = (string?)d["CargoKey"] is { Length: > 0 } dk && dk != "None" ? _cargoKeys.Canonical(dk) : null;
                 var demand = new CargoRef
                 {
                     Key = dKey,
                     Type = TypeSuffix((string?)d["CargoType"]) is { Length: > 0 } t && t != "None" ? t : null,
+                    PaymentMultiplier = (double?)d["PaymentMultiplier"] ?? 1,
                 };
                 demand.Tags.AddRange(QueryTags(d["CargoGameplayTagQuery"]));
                 point.Demands.Add(demand);
             }
-            foreach (var s in (props["PassiveSupplies"] as JArray ?? []).OfType<JObject>())
+            foreach (var s in (detail.PassiveSuppliesRaw ?? []).OfType<JObject>())
             {
                 var sKey = (string?)s["CargoKey"] is { Length: > 0 } sk && sk != "None" ? _cargoKeys.Canonical(sk) : null;
                 point.PassiveSupplies.Add(new CargoRef
@@ -1362,9 +1388,74 @@ internal sealed class Data(AssetSource assets, Localization localization)
                     Type = TypeSuffix((string?)s["CargoType"]) is { Length: > 0 } t && t != "None" ? t : null,
                 });
             }
-            return point;
+
+            Points.Add(point);
         }
-        return null;
+    }
+
+    /// <summary>Full per-language name for a delivery point placement: the locres-joined
+    /// PointName / DeliveryPointName+number / MissionPointName texts WorldExtractor already
+    /// resolved (worldObj -> blueprint fallback), English fallback per language - the same
+    /// idiom as VehicleName/PartName.</summary>
+    private Dictionary<string, string> DeliveryPointName(List<JObject> texts)
+    {
+        var names = new Dictionary<string, string>();
+        foreach (var language in localization.Languages)
+        {
+            names[language] = string.Join(" ", texts.Select(text =>
+                localization.LookupOrEnglish(language, Text.Namespace(text), Text.Key(text))
+                ?? Text.Localized(text)
+                ?? ""));
+        }
+        if (Blank(names.GetValueOrDefault("en")))
+            names["en"] = texts.Count > 0 ? Text.Source(texts[0]) ?? "" : "";
+        return names;
+    }
+
+    /// <summary>Point-in-polygon zone lookup, ported from amc-web's area.ts
+    /// getLocationAtPoint/getLocationNearPoint: ray-cast against each Zone's 2-point
+    /// TopViewLines segments (not a closed ring), falling back to the nearest zone edge when
+    /// the point sits inside none.</summary>
+    private static string ZoneFor(double px, double py, List<AreaInfo> zones)
+    {
+        foreach (var zone in zones)
+        {
+            var inside = false;
+            for (var i = 0; i + 1 < zone.Segments.Count; i += 2)
+            {
+                var (x1, y1) = zone.Segments[i];
+                var (x2, y2) = zone.Segments[i + 1];
+                if ((y1 > py) != (y2 > py) && x1 + (py - y1) * (x2 - x1) / (y2 - y1) > px)
+                    inside = !inside;
+            }
+            if (inside) return zone.NameEn;
+        }
+
+        string? nearest = null;
+        var nearestDist = double.MaxValue;
+        foreach (var zone in zones)
+        {
+            for (var i = 0; i + 1 < zone.Segments.Count; i += 2)
+            {
+                var d = DistanceToSegment(px, py, zone.Segments[i], zone.Segments[i + 1]);
+                if (d >= nearestDist) continue;
+                nearestDist = d;
+                nearest = zone.NameEn;
+            }
+        }
+        return nearest ?? "";
+    }
+
+    private static double DistanceToSegment(double px, double py, (double X, double Y) a, (double X, double Y) b)
+    {
+        var dx = b.X - a.X;
+        var dy = b.Y - a.Y;
+        var lengthSq = dx * dx + dy * dy;
+        if (lengthSq == 0) return Math.Sqrt((px - a.X) * (px - a.X) + (py - a.Y) * (py - a.Y));
+        var t = Math.Clamp(((px - a.X) * dx + (py - a.Y) * dy) / lengthSq, 0, 1);
+        var cx = a.X + t * dx;
+        var cy = a.Y + t * dy;
+        return Math.Sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
     }
 
     private List<CargoRef> CargoRefs(JToken? token)
@@ -1397,4 +1488,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
 
     public VehicleInfo? VehicleByKey(string key) =>
         Vehicles.FirstOrDefault(v => string.Equals(v.Key, key, StringComparison.OrdinalIgnoreCase));
+
+    public CargoInfo? CargoByKey(string key) =>
+        Cargos.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
 }
