@@ -7,7 +7,7 @@ using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Versions;
 
-namespace Richtags;
+namespace RichTagsScanner;
 
 /// <summary>
 /// Standalone rich-text tag finder for Motor Town. Mounts the pak, scans every

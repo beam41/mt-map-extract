@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>richtags</AssemblyName>
-    <RootNamespace>Richtags</RootNamespace>
+    <RootNamespace>RichTagsScanner</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
     <NoWarn>$(NoWarn);NU1903</NoWarn>
   </PropertyGroup>
