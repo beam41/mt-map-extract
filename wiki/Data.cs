@@ -245,6 +245,16 @@ internal sealed class SpaceInfo
     public List<PartInfo> Parts { get; } = [];
 }
 
+internal sealed class CargoTypeInfo
+{
+    public required string Type { get; init; }
+    public List<CargoInfo> Cargos { get; } = [];
+
+    /// <summary>Delivery points that reference this type generically (a type-ref recipe
+    /// input/output, demand, or passive supply) rather than a specific cargo key.</summary>
+    public List<DeliveryPointInfo> Points { get; } = [];
+}
+
 /// <summary>
 /// Reads every wiki-relevant fact directly from the pak: the VehicleParts / Vehicles / Cargos
 /// data tables, per-vehicle blueprint stats (weight, seats, drag, fuel, axles, cargo space),
@@ -266,6 +276,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
     public List<VehicleInfo> Vehicles { get; } = [];
     public List<CargoInfo> Cargos { get; } = [];
     public List<SpaceInfo> Spaces { get; } = [];
+    public List<CargoTypeInfo> CargoTypes { get; } = [];
 
     /// <summary>One entry per real-world placement (not per blueprint) — a blueprint reused
     /// at many locations (e.g. a generic drop point) gets one entry per placement, each with
@@ -289,6 +300,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
         GatherCargos();
         GatherSpaces();
         GatherDeliveryPoints();
+        GatherCargoTypes();
     }
 
     // ------------------------------------------------------------------ vehicles
@@ -1403,6 +1415,41 @@ internal sealed class Data(AssetSource assets, Localization localization)
 
             Points.Add(point);
         }
+    }
+
+    /// <summary>The type-based cargo pages (`cargo_type:{slug}`): one per real
+    /// EDeliveryCargoType value that any active cargo or delivery point actually uses
+    /// ("None" is not a group). Lists the cargos of that type plus the delivery points that
+    /// reference it generically (a type-ref recipe input/output, demand, or passive supply,
+    /// as opposed to a specific cargo key).</summary>
+    private void GatherCargoTypes()
+    {
+        var byType = new Dictionary<string, CargoTypeInfo>(StringComparer.Ordinal);
+        CargoTypeInfo Get(string type) =>
+            byType.TryGetValue(type, out var info) ? info : byType[type] = new CargoTypeInfo { Type = type };
+
+        foreach (var cargo in Cargos.Where(c => !c.Deprecated && c.Type != "None"))
+            Get(cargo.Type).Cargos.Add(cargo);
+
+        foreach (var point in Points.Where(p => p.HasPage))
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            void Touch(string? type)
+            {
+                if (type is not { Length: > 0 } || type == "None" || !seen.Add(type)) return;
+                Get(type).Points.Add(point);
+            }
+
+            foreach (var c in point.Configs)
+            {
+                foreach (var r in c.InputTypes) Touch(TypeSuffix(r.Key));
+                foreach (var r in c.OutputTypes) Touch(TypeSuffix(r.Key));
+            }
+            foreach (var d in point.Demands) Touch(d.Type);
+            foreach (var s in point.PassiveSupplies) Touch(s.Type);
+        }
+
+        CargoTypes.AddRange(byType.Values.OrderBy(t => t.Type, StringComparer.Ordinal));
     }
 
     /// <summary>Full per-language name for a delivery point placement: the locres-joined

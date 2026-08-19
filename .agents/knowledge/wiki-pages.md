@@ -11,7 +11,7 @@ generator reads the pak directly and must produce exactly these pages. "Identica
 wiki" is the goal; the exceptions (drift, staleness, deliberate choices) are listed at
 the end.
 
-## Page inventory (2142 pages, all .txt, no json)
+## Page inventory (2156 pages, all .txt, no json)
 
 | Directory / file | Count | Content |
 |---|---|---|
@@ -21,10 +21,11 @@ the end.
 | `parts/{slug}/installable_vehicles.txt` | 758 | fit-rule inverse, one per part |
 | `cargos/` | 87 | one page per active (non-deprecated) cargo — plural namespace |
 | `cargo_space/` | 12 | one aggregate page per `EMTCargoSpaceType` |
+| `cargo_type/` | 14 | one aggregate page per `EDeliveryCargoType` (new, "None" excluded) |
 | `delivery_points/` | 180 | one page per real-world placement (new, no wiki precedent) |
 | `list_of_parts.txt` | 1 | 768 rows, 44 per-type sections |
 | `list_of_vehicles.txt` | 1 | 171 bullets, 12 per-type sections |
-| `list_of_cargos.txt` | 1 | 87 rows, 15 per-type sections |
+| `list_of_cargos.txt` | 1 | 87 rows, 15 per-type sections + a trailing 14-bullet cargo type list |
 | `list_of_delivery_points.txt` | 1 | 180 bullets, 7 zone sections |
 | `vehicle_comparison.txt` | 1 | one row per vehicle |
 
@@ -292,7 +293,7 @@ retune; `FD_15_HM` → 13.15). When the name text doesn't numerically match the
 ```
 {{infobox>
 name = {locres name}
-Cargo Type = {EDeliveryCargoType tail}      # "None" shown as-is
+Cargo Type = {linked [[cargo_type:{slug}|{tail}]], "None" plain}
 Volume = {VolumeSize}
 Weight = {weight text}
 Payment = ${PaymentPer1Km}/km
@@ -302,7 +303,7 @@ Payment = ${PaymentPer1Km}/km
 
 ===== Specifications =====
 ^ Stat ^ Value ^
-| Type | {type} |
+| Type | {linked [[cargo_type:{slug}|{tail}]], "None" plain} |
 | Weight | {weight text} |
 | Payment per km | ${payment} |
 [| Payment multiplier | {F1} |]             # when != 1
@@ -332,8 +333,9 @@ Payment = ${PaymentPer1Km}/km
   `WorldExtractor.DeliveryPointDetails()` — a blueprint reused at many locations (a
   generic drop point, a construction site) gets one row per placement, each linking its
   own `delivery_points:{slug}` page; config order kept per placement, rows sorted by
-  placement name. `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs plain
-  tail text — `RenderCargos.InputText`/`CargoLink`); `(passive)` when a config has no
+  placement name. `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs
+  linked to `[[cargo_type:{slug}|{name}]]` — `RenderCargos.InputText`/`CargoLink`/
+  `CargoTypeText`); `(passive)` when a config has no
   inputs; demand rows render `| {point} | — | — |`. Time via `Format.Duration` (`90s` ->
   `"1m 30s"`, `120s` -> `"2m"`). Placements with a matching recipe skip their
   passive/demand rows. The 223 anonymous residential placements (`Resident_C`, no
@@ -351,8 +353,8 @@ One page per real-world placement of a delivery-point blueprint (180 pages; the 
 name = {en}
 [Import = {cargo1}, {cargo2}, …]            # distinct cargos/types this point consumes:
                                              # recipe inputs ∪ demand cargos, key refs
-                                             # linked [[cargos:{slug}|{name}]], bare type
-                                             # refs (tag-only demand, no CargoKey) plain text
+                                             # linked [[cargos:{slug}|{name}]], type refs
+                                             # linked [[cargo_type:{slug}|{name}]]
 [Export = {cargo1}, {cargo2}, …]            # recipe outputs ∪ passive supplies, same rule
 Location = {ZoneNameEn}
 External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&delivery={guid}|View on map]]
@@ -363,13 +365,14 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
 ===== Production =====
 
 [==== Recipes ====
-^ Inputs ^ Output ^ Time ^
-| {inputs or (passive)} | {linked output cargo, "Production Speed: +X.X%", or —} | {time}s |]
+^ Inputs ^ Output ^ Space Type ^ Time ^
+| {inputs or (passive)} | {linked output cargo, "Production Speed: +X.X%", or —} | {linked cargo_space types or —} | {time}s |]
 ```
 
-- `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs render as their plain
-  tail, same as the cargo page's own Inputs column — one shared `RenderCargos.InputText` /
-  `CargoLink`); `(passive)` for `PassiveSupplies` rows (no time).
+- `inputs` = `N× [[cargos:{slug}|{name}]]` joined (linked; type refs linked to
+  `[[cargo_type:{slug}|{name}]]` — one shared `RenderCargos.InputText`/`CargoLink`/
+  `CargoTypeText`, also used by the cargo page's own Inputs column); `(passive)` for
+  `PassiveSupplies` rows (no time).
 - **Output** = the linked produced cargo(s), or — when the recipe has **no output cargo**
   and a `ProductionSpeedMultiplier != 1` — `Production Speed: +100.0%` (`Format.SpeedPct`,
   always one decimal, matches the in-game production panel exactly: these recipes consume
@@ -377,22 +380,32 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
   feeding Fuel/Pallets/Quicklime for +100%/+50%/+30% speed with no output row). Falls back
   to `—` only when the multiplier is exactly 1 (not observed in practice — every real
   no-output config carries a nonzero multiplier).
+- **Space Type** = the cargo space type(s) a vehicle needs to carry the produced output
+  away — the in-game production panel's own requirement, derived from the resolved output
+  cargo's own `Compatible Cargo Space Types` (recipes carry no separate space-type field
+  of their own). `—` for Production Speed rows and type-ref outputs (no single cargo to
+  resolve).
 - Time: `Format.Duration` — plain seconds under a minute, else `Nm` / `Nm Ss` (`90s` ->
   `"1m 30s"`).
 
 ```
 [==== Demand ====
-^ Cargo ^ Payment Multiplier ^ Max Storage ^
-| {linked cargo or bare type} | {mult:F1}x | {MaxStorage or —} |]   # DemandConfigs
+^ Cargo ^ Payment Multiplier ^
+| {linked cargo or type} | {mult:F1}x |]                             # DemandConfigs
+
+[==== Storage ====
+^ Cargo ^ Max Storage ^
+| {linked cargo or type} | {MaxStorage or —} |]                      # DemandConfigs, same rows
 
 ===== In other languages =====
 ^ Language ^ Name ^
 … (22 languages)
 ```
 
-- **Max Storage** = `DemandConfigs[].MaxStorage` (present on every raw entry alongside
-  `PaymentMultiplier`; the cap the point holds of that cargo before it stops accepting
-  deliveries — the in-game production panel's `n/MaxStorage` storage column).
+- **Demand**/**Storage** are two separate tables over the same `DemandConfigs` rows —
+  `PaymentMultiplier` and `MaxStorage` (the cap the point holds of that cargo before it
+  stops accepting deliveries — the in-game panel's `n/MaxStorage` storage column) are
+  logically distinct facts, not combined into one table.
 - **Location** = the enclosing **Zone**-flagged area (point-in-polygon ray-cast against
   `WorldExtractor.AreaVolumes()`'s `TopViewLines`, C# port of amc-web's
   `area.ts` `getLocationAtPoint`/`getLocationNearPoint`), falling back to the nearest
@@ -405,6 +418,30 @@ External Link = [[https://www.aseanmotorclub.com/map?menu=deliveries/{guid}&deli
 - A placement whose name collides with another real placement (13 pairs, e.g. two
   "BurgerJoint Jeju" locations) gets `_2`/`_3`… appended to the slug (guid-ordinal
   order); the display name (`name =`/page title) is unchanged.
+
+## Cargo type page (`cargo_type:{slug}`, new — no wiki precedent)
+
+One aggregate page per real `EDeliveryCargoType` value (14 pages; "None" is not a group).
+Every bare type reference elsewhere (a delivery point's type-ref recipe input/output,
+demand, passive supply, or Import/Export cell) links here instead of showing plain text.
+
+```
+====== {Type} Cargo Type ======
+
+Everything of the **{Type}** cargo type.
+
+===== Cargos ({n}) =====
+  * [[cargos:{slug}|{name}]]                  # active cargos whose own CargoType == this
+===== Delivery Points ({n}) =====
+  * [[delivery_points:{slug}|{name}]]         # points that reference this type generically
+```
+
+- **Cargos** = every active cargo whose own `Type` field equals this type (sorted by slug,
+  case-insensitive natural — same as `cargo_space:` pages).
+- **Delivery Points** = every placement whose recipes/demand/passive-supplies reference
+  this type via `InputCargoTypes`/`OutputCargoTypes`/`CargoType` (not a specific
+  `CargoKey`); the unlinked collapsed `Resident` entry is excluded (sorted by name,
+  ordinal — same as `list_of_delivery_points`).
 
 ## List of delivery points page (`list_of_delivery_points`, new)
 
@@ -452,7 +489,8 @@ Zeroed `CargoSpaceSize` structs are not real spaces.
   bullets sorted by name **ordinal** (case-sensitive: `SPT1` < `Small Cage Trailer`,
   `Goliath-10` < `Goliath-4`).
 - **list_of_cargos**: `There are 87 active cargos …`; grouped by type (natural), rows by
-  name (natural); payment plain (`$2600`, no separator).
+  name (natural); payment plain (`$2600`, no separator); Type cells linked to
+  `cargo_type:`; a trailing `===== Cargo Types (14) =====` bullet list links every type.
 - **vehicle_comparison**: `^ Name ^ Type ^ Cost ^ Drivetrain ^ Chassis Weight ^ Total
   Weight ^ Drag ^`; type cell = humanized tail (`Racecar`, `Semi Tractor`); rows sorted
   by type then name (ordinal).

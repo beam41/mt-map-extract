@@ -11,7 +11,7 @@ internal static class RenderCargos
         var sb = new StringBuilder();
         sb.AppendLine("{{infobox>");
         sb.AppendLine($"name = {cargo.Name}");
-        sb.AppendLine($"Cargo Type = {cargo.Type}");
+        sb.AppendLine($"Cargo Type = {CargoTypeText(cargo.Type)}");
         sb.AppendLine($"Volume = {Format.Num(cargo.Volume)}");
         if (cargo.WeightText() is { } weight) sb.AppendLine($"Weight = {weight}");
         sb.AppendLine($"Payment = ${cargo.PaymentPerKm}/km");
@@ -21,7 +21,7 @@ internal static class RenderCargos
         sb.AppendLine();
         sb.AppendLine("===== Specifications =====");
         sb.AppendLine("^ Stat ^ Value ^");
-        sb.AppendLine($"| Type | {cargo.Type} |");
+        sb.AppendLine($"| Type | {CargoTypeText(cargo.Type)} |");
         if (cargo.WeightText() is { } w2) sb.AppendLine($"| Weight | {w2} |");
         sb.AppendLine($"| Payment per km | ${cargo.PaymentPerKm} |");
         if (cargo.PaymentMultiplier != 1) sb.AppendLine($"| Payment multiplier | {cargo.PaymentMultiplier:F1} |");
@@ -140,7 +140,7 @@ internal static class RenderCargos
         foreach (var r in c.Inputs)
             if (r.Key is { } k) parts.Add($"{Format.Num(r.Count)}× {CargoLink(data, k)}");
         foreach (var r in c.InputTypes)
-            if (r.Key is { } k) parts.Add($"{Format.Num(r.Count)}× {Format.Tail(k)}");
+            if (r.Key is { } k) parts.Add($"{Format.Num(r.Count)}× {CargoTypeText(Format.Tail(k))}");
         return parts.Count == 0 ? "(passive)" : string.Join(", ", parts);
     }
 
@@ -151,6 +151,28 @@ internal static class RenderCargos
     {
         var cargo = data.CargoByKey(key);
         return cargo is not null ? $"[[cargos:{cargo.Key.ToLowerInvariant()}|{cargo.Name}]]" : key;
+    }
+
+    /// <summary>An EDeliveryCargoType tail as a link to its aggregate cargo_type page;
+    /// "None" (not a real group) and empty stay plain text.</summary>
+    internal static string CargoTypeText(string type) =>
+        type is "None" or "" ? type : $"[[cargo_type:{type.ToLowerInvariant()}|{type}]]";
+
+    // ------------------------------------------------------------------ cargo type pages
+
+    public static string CargoTypePage(CargoTypeInfo type)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"====== {type.Type} Cargo Type ======");
+        sb.AppendLine();
+        sb.AppendLine($"Everything of the **{type.Type}** cargo type.");
+        sb.AppendLine();
+        Bullets(sb, "Cargos", type.Cargos.Count,
+            type.Cargos.OrderBy(c => c.Key, Format.NaturalComparer.Instance).Select(c => ($"cargos:{c.Key.ToLowerInvariant()}", c.Name)));
+        sb.AppendLine();
+        Bullets(sb, "Delivery Points", type.Points.Count,
+            type.Points.OrderBy(p => p.En, StringComparer.Ordinal).Select(p => ($"delivery_points:{p.Slug}", p.En)));
+        return sb.ToString();
     }
 
     // ------------------------------------------------------------------ cargo space pages
@@ -184,7 +206,7 @@ internal static class RenderCargos
 
     // ------------------------------------------------------------------ list page
 
-    public static string ListOfCargos(List<CargoInfo> cargos)
+    public static string ListOfCargos(List<CargoInfo> cargos, List<CargoTypeInfo> types)
     {
         var active = cargos.Where(c => !c.Deprecated).ToList();
         var sb = new StringBuilder();
@@ -199,8 +221,12 @@ internal static class RenderCargos
                      .SelectMany(g => g.OrderBy(c => c.Name, Format.NaturalComparer.Instance)))
         {
             var weight = cargo.WeightText() ?? "";
-            sb.AppendLine($"| [[cargos:{cargo.Key.ToLowerInvariant()}|{cargo.Name}]] | {cargo.Type} | {weight} | ${cargo.PaymentPerKm} |");
+            sb.AppendLine($"| [[cargos:{cargo.Key.ToLowerInvariant()}|{cargo.Name}]] | {CargoTypeText(cargo.Type)} | {weight} | ${cargo.PaymentPerKm} |");
         }
+
+        sb.AppendLine();
+        Bullets(sb, "Cargo Types", types.Count,
+            types.OrderBy(t => t.Type, Format.NaturalComparer.Instance).Select(t => ($"cargo_type:{t.Type.ToLowerInvariant()}", t.Type)));
         return sb.ToString();
     }
 }

@@ -28,28 +28,35 @@ internal static class RenderDelivery
         sb.AppendLine();
         sb.AppendLine("===== Production =====");
 
-        var recipeRows = new List<(string Inputs, string Output, string Time)>();
+        var recipeRows = new List<(string Inputs, string Output, string SpaceType, string Time)>();
         foreach (var c in point.Configs)
-            recipeRows.Add((RenderCargos.InputText(c, data), OutputText(c, data), Format.Duration(c.TimeSeconds)));
+            recipeRows.Add((RenderCargos.InputText(c, data), OutputText(c, data),
+                SpaceTypeText(data, c.Outputs.Select(r => r.Key)), Format.Duration(c.TimeSeconds)));
         foreach (var s in point.PassiveSupplies)
-            recipeRows.Add(("(passive)", CargoRefText(s, data), "—"));
+            recipeRows.Add(("(passive)", CargoRefText(s, data), SpaceTypeText(data, [s.Key]), "—"));
 
         if (recipeRows.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine("==== Recipes ====");
-            sb.AppendLine("^ Inputs ^ Output ^ Time ^");
-            foreach (var (inputs, output, time) in recipeRows)
-                sb.AppendLine($"| {inputs} | {output} | {time} |");
+            sb.AppendLine("^ Inputs ^ Output ^ Space Type ^ Time ^");
+            foreach (var (inputs, output, spaceType, time) in recipeRows)
+                sb.AppendLine($"| {inputs} | {output} | {spaceType} | {time} |");
         }
 
         if (point.Demands.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine("==== Demand ====");
-            sb.AppendLine("^ Cargo ^ Payment Multiplier ^ Max Storage ^");
+            sb.AppendLine("^ Cargo ^ Payment Multiplier ^");
             foreach (var d in point.Demands)
-                sb.AppendLine($"| {CargoRefText(d, data)} | {d.PaymentMultiplier:F1}x | {(d.MaxStorage is { } ms ? Format.N0(ms) : "—")} |");
+                sb.AppendLine($"| {CargoRefText(d, data)} | {d.PaymentMultiplier:F1}x |");
+
+            sb.AppendLine();
+            sb.AppendLine("==== Storage ====");
+            sb.AppendLine("^ Cargo ^ Max Storage ^");
+            foreach (var d in point.Demands)
+                sb.AppendLine($"| {CargoRefText(d, data)} | {(d.MaxStorage is { } ms ? Format.N0(ms) : "—")} |");
         }
 
         sb.AppendLine();
@@ -66,15 +73,34 @@ internal static class RenderDelivery
         foreach (var r in c.Outputs)
             if (r.Key is { } k) parts.Add(RenderCargos.CargoLink(data, k));
         foreach (var r in c.OutputTypes)
-            if (r.Key is { } k) parts.Add(Format.Tail(k));
+            if (r.Key is { } k) parts.Add(RenderCargos.CargoTypeText(Format.Tail(k)));
         if (parts.Count > 0) return string.Join(", ", parts);
         // no output cargo: the input instead boosts the point's other recipes, matching the
         // in-game production panel's "Production Speed: +100.0%" row
         return c.SpeedMultiplier != 1 ? $"Production Speed: {Format.SpeedPct(c.SpeedMultiplier)}" : "—";
     }
 
+    /// <summary>The cargo space type(s) needed to carry the produced output away — the
+    /// in-game production panel's own requirement, derived from the resolved output
+    /// cargo(s)' own Compatible Cargo Space Types (recipes have no separate space-type
+    /// field of their own). Type-ref outputs (no specific cargo key) can't resolve to one
+    /// cargo's space types and render "—".</summary>
+    private static string SpaceTypeText(Data data, IEnumerable<string?> outputKeys)
+    {
+        var types = new List<string>();
+        foreach (var key in outputKeys)
+        {
+            if (key is not { } k) continue;
+            var cargo = data.CargoByKey(k);
+            if (cargo is null) continue;
+            foreach (var t in cargo.SpaceTypes)
+                if (!types.Contains(t, StringComparer.Ordinal)) types.Add(t);
+        }
+        return types.Count == 0 ? "—" : string.Join(", ", types.Select(t => $"[[cargo_space:{t.ToLowerInvariant()}|{t}]]"));
+    }
+
     private static string CargoRefText(CargoRef r, Data data) =>
-        r.Key is { } k ? RenderCargos.CargoLink(data, k) : r.Type ?? "?";
+        r.Key is { } k ? RenderCargos.CargoLink(data, k) : RenderCargos.CargoTypeText(r.Type ?? "?");
 
     /// <summary>Joins cargo refs from several (key, typeTail) groups into one distinct,
     /// linked-when-possible list for the infobox Import/Export rows.</summary>
@@ -92,7 +118,7 @@ internal static class RenderDelivery
             else if (type is { Length: > 0 })
             {
                 if (!seen.Add(type)) continue;
-                parts.Add(type);
+                parts.Add(RenderCargos.CargoTypeText(type));
             }
         }
         return string.Join(", ", parts);
