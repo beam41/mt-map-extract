@@ -619,21 +619,42 @@ internal sealed class Data(AssetSource assets, Localization localization)
         if (Blank(names.GetValueOrDefault("en")))
             names["en"] = name is null ? key : Text.Source(name) ?? key;
 
-        // Generic "#N" names are ambiguous on their own; append the vehicles that use the part.
+        // Generic "#N" names are ambiguous on their own; append the vehicles that use the
+        // part. When all owners share a brand (leading words), collapse to the brand —
+        // "Brutus Wrecker / Brutus Tanker / Brutus Ambulance / Brutus Fire Engine" ->
+        // "Brutus" (user directive); unrelated owners keep the full " / " join.
         if (Regex.IsMatch(names.GetValueOrDefault("en") ?? "", @"^#\d+$")
             && VehicleKeys(row) is { Count: > 0 } keys)
         {
             foreach (var language in localization.Languages)
             {
                 if (!names.TryGetValue(language, out var value) || Blank(value)) continue;
-                var suffix = string.Join(" / ", keys
+                var owners = keys
                     .Where(vk => vk != "None")
                     .Select(vk => vehicleNames.GetValueOrDefault(vk)?.GetValueOrDefault(language) ?? vk)
-                    .Where(v => !Blank(v)));
+                    .Where(v => !Blank(v))
+                    .ToList();
+                var suffix = Brand(owners) ?? string.Join(" / ", owners);
                 if (!Blank(suffix)) names[language] = $"{value} ({suffix})";
             }
         }
         return names;
+    }
+
+    /// <summary>The brand shared by all owner names — the longest common leading words
+    /// ("Brutus Wrecker", "Brutus Tanker" -> "Brutus"); null when they share none.</summary>
+    private static string? Brand(List<string> owners)
+    {
+        if (owners.Count == 0) return null;
+        var words = owners.Select(n => n.Split(' ')).ToList();
+        var common = new List<string>();
+        for (var i = 0; ; i++)
+        {
+            var w = words[0].Length > i ? words[0][i] : null;
+            if (w is null || words.Any(ws => ws.Length <= i || ws[i] != w)) break;
+            common.Add(w);
+        }
+        return common.Count == 0 ? null : string.Join(" ", common);
     }
 
     private static List<string>? VehicleKeys(JObject row)
