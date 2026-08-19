@@ -129,9 +129,9 @@ The inverse — one page per part, listing every vehicle that fits it, grouped b
 type like list_of_vehicles:
 
 ```
-====== Installable Vehicles for {en} ======
+====== Installable Vehicles for {en} ({TypeEnglish}) ======
 
-All vehicles that can install the **{en}** ({n} vehicles in total).
+All vehicles that can install the **{en} ({TypeEnglish})** ({n} vehicles in total).
 
 Return to [[parts:{slug}|{en}]].
 
@@ -432,6 +432,7 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
   generator bug — those parts are unused), (c) formula_scm has no LSD/WheelSpacer
   (pak `NotSupportedPartTypes`; the wiki lists them), (d) identical "Inventory" names sort
   in pak order (wiki's tie order is unstable).
+- **Part type in titles** (directive): the part page heading renders `====== {en} ({TypeEnglish}) ======` and the installable_vehicles title/intro carry the type — `Installable Vehicles for 2.73 (Final Drive Ratio)`; the wiki titles have the bare name.
 - **Installable vehicles pages** (new, generated 2026-08-19): per-part pages matching the
   wiki except: (a) the Jemusi vehicle links point at our `vehicles:jemusi_logger` page
   (the wiki still links the old `vehicles:jemusi` slug), (b) the 4 generic rear wings show

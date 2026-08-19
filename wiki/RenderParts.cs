@@ -16,7 +16,7 @@ internal static class RenderParts
         if (part.MassKg is { } mass) sb.AppendLine($"Mass = {Format.N0(mass)} kg");
         sb.AppendLine("}}");
         sb.AppendLine();
-        sb.AppendLine($"====== {part.En} ======");
+        sb.AppendLine($"====== {part.En} ({part.TypeEnglish}) ======");
         sb.AppendLine();
         var article = "aeiou".Contains(char.ToLowerInvariant(part.TypeEnglish[0])) ? "an" : "a";
         sb.AppendLine($"**{part.En}** is {article} {part.TypeEnglish.ToLowerInvariant()} part for vehicles in [[:motor_town|Motor Town]].");
@@ -409,9 +409,9 @@ internal static class RenderParts
     public static string InstallableVehiclesPage(PartInfo part, List<VehicleInfo> vehicles)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"====== Installable Vehicles for {part.En} ======");
+        sb.AppendLine($"====== Installable Vehicles for {part.En} ({part.TypeEnglish}) ======");
         sb.AppendLine();
-        sb.AppendLine($"All vehicles that can install the **{part.En}** ({vehicles.Count} vehicle{(vehicles.Count == 1 ? "" : "s")} in total).");
+        sb.AppendLine($"All vehicles that can install the **{part.En} ({part.TypeEnglish})** ({vehicles.Count} vehicle{(vehicles.Count == 1 ? "" : "s")} in total).");
         sb.AppendLine();
         sb.AppendLine($"Return to [[parts:{part.Slug}|{part.En}]].");
         sb.AppendLine();
