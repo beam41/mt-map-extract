@@ -123,6 +123,31 @@ Return to [[vehicles:{slug}|{en}]].
   Muhan). The wiki's generator instead treated "None" as a catch-all and listed the generic
   rear wings + Muhan bumper on all 171 vehicles — reproduced as a deviation, not a bug.
 
+## Installable vehicles page (`parts:{slug}:installable_vehicles`)
+
+The inverse — one page per part, listing every vehicle that fits it, grouped by vehicle
+type like list_of_vehicles:
+
+```
+====== Installable Vehicles for {en} ======
+
+All vehicles that can install the **{en}** ({n} vehicles in total).
+
+Return to [[parts:{slug}|{en}]].
+
+===== {HumanizeType} =====
+  * [[vehicles:{slug}|{en}]]
+```
+
+- Groups by `Format.HumanizeType(v.Type)`, ordered naturally; within a group by `En`
+  **case-insensitive ordinal** (`Small Cage Trailer` < `SPT1`; `Goliath-10` < `Goliath-4`)
+  — the wiki's installable_vehicles pages sort differently from its list_of_vehicles
+  (case-sensitive ordinal). No trailing blank line after the last group.
+- Same fit rule as installable parts (memoized `InstallableVehicles(part)` — a vehicle can
+  install the part iff the part is in the vehicle's installable list). Parts with no
+  fitting vehicle (the unused `None`-key parts) render "(0 vehicles in total)" with no
+  groups; the wiki never has that case.
+
 [===== Axle info =====
 ^ Axle ^ Break Ratio ^ Driven ^ Dual Wheels ^ Liftable ^
 | {Front|Middle|Rear…} | {0% | 0.0%} | {No|**Yes**} | {No|**Yes**} | {No|**Yes**} |]
@@ -407,6 +432,12 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
   generator bug — those parts are unused), (c) formula_scm has no LSD/WheelSpacer
   (pak `NotSupportedPartTypes`; the wiki lists them), (d) identical "Inventory" names sort
   in pak order (wiki's tie order is unstable).
+- **Installable vehicles pages** (new, generated 2026-08-19): per-part pages matching the
+  wiki except: (a) the Jemusi vehicle links point at our `vehicles:jemusi_logger` page
+  (the wiki still links the old `vehicles:jemusi` slug), (b) the 4 generic rear wings show
+  "(0 vehicles in total)" (wiki's "None" bug lists 171), (c) formula_scm missing from the
+  LSD/wheelspacer lists (pak `NotSupportedPartTypes`), (d) the bandaid FDR pages exist
+  under fd_9_4/fd_13_15 instead of fd_10_65/fd_15_hm.
 - **Cargo Location names** (directive): the Production/Consumed At Location column shows
   the location's actual name ("Gwangjin Coal Storage") instead of the blueprint key
   ("CoalWarehouse"); the wiki currently shows the keys.

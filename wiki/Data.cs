@@ -1207,6 +1207,20 @@ internal sealed class Data(AssetSource assets, Localization localization)
     }
 
     private readonly Dictionary<string, List<PartInfo>> _installableCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<VehicleInfo>> _installableVehiclesCache = new(StringComparer.Ordinal);
+
+    /// <summary>Every vehicle the part fits, per the same fit rule (the inverse of
+    /// InstallableParts — a vehicle can install the part iff the part is in its installable
+    /// list). Memoized; used by the per-part installable_vehicles pages.</summary>
+    public List<VehicleInfo> InstallableVehicles(PartInfo part)
+    {
+        if (_installableVehiclesCache.TryGetValue(part.Key, out var cached)) return cached;
+        var result = new List<VehicleInfo>();
+        if (_partRowsByKey.TryGetValue(part.Key, out var row))
+            result.AddRange(Vehicles.Where(v => PartFitsVehicle(row, v)));
+        _installableVehiclesCache[part.Key] = result;
+        return result;
+    }
 
     /// <summary>Every part the vehicle can install, per the fit rule (Final Drive Ratio parts
     /// always included). Order follows the pak row order. Memoized — the installable-parts

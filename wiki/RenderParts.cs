@@ -403,6 +403,35 @@ internal static class RenderParts
         return sb.ToString();
     }
 
+    /// <summary>The per-part installable vehicles page (parts:{slug}:installable_vehicles):
+    /// the vehicles that fit the part, grouped by vehicle type like list_of_vehicles
+    /// (natural type order, ordinal name order within each type).</summary>
+    public static string InstallableVehiclesPage(PartInfo part, List<VehicleInfo> vehicles)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"====== Installable Vehicles for {part.En} ======");
+        sb.AppendLine();
+        sb.AppendLine($"All vehicles that can install the **{part.En}** ({vehicles.Count} vehicle{(vehicles.Count == 1 ? "" : "s")} in total).");
+        sb.AppendLine();
+        sb.AppendLine($"Return to [[parts:{part.Slug}|{part.En}]].");
+        sb.AppendLine();
+        var groups = vehicles
+            .GroupBy(v => Format.HumanizeType(v.Type))
+            .OrderBy(g => g.Key, Format.NaturalComparer.Instance)
+            .ToList();
+        for (var gi = 0; gi < groups.Count; gi++)
+        {
+            sb.AppendLine($"===== {groups[gi].Key} =====");
+            // the wiki's installable_vehicles pages sort case-insensitively ("Small Cage
+            // Trailer" < "SPT1") with ordinal digits ("Goliath-10" < "Goliath-4") — unlike
+            // list_of_vehicles, which is case-sensitive ordinal
+            foreach (var v in groups[gi].OrderBy(v => v.En, StringComparer.OrdinalIgnoreCase))
+                sb.AppendLine($"  * [[vehicles:{RenderVehicles.VehicleSlug(v)}|{v.En}]]");
+            if (gi < groups.Count - 1) sb.AppendLine();   // no trailing blank after the last group
+        }
+        return sb.ToString();
+    }
+
     public static string ListOfParts(List<PartInfo> parts)
     {
         var sb = new StringBuilder();

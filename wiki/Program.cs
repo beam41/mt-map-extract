@@ -88,6 +88,10 @@ internal static class Program
         {
             if (!p.HasPage) continue;
             File.WriteAllText(Path.Combine(partDir, p.Slug + ".txt"), RenderParts.PartPage(p));
+            var subDir = Path.Combine(partDir, p.Slug);
+            Directory.CreateDirectory(subDir);
+            File.WriteAllText(Path.Combine(subDir, "installable_vehicles.txt"),
+                RenderParts.InstallableVehiclesPage(p, data.InstallableVehicles(p)));
         }
 
         // cargo pages (active only)
