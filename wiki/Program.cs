@@ -23,27 +23,32 @@ namespace WikiGenerator;
 ///   {{page>{ns}:{slug}:auto_details}}
 ///
 /// via the DokuWiki `include` plugin's {{page>}} transclusion, so a curator's prose (and
-/// heading/intro edits) are never clobbered by a regeneration. The `image = ...` infobox
 /// field is hand-curated too (no pak source) — every run fetches the live wiki's current
 /// page for every detail-page entity (the new auto_infobox subpage if it exists, else the
 /// legacy flat page, since most pages haven't been migrated to this structure yet) and
 /// merges whatever image line it finds back into the freshly rendered infobox before
-/// writing it. `out/wiki-bootstrap/` (opt-in, --bootstrap; off by default — it's only
-/// useful once per page, at migration time) holds the shell suggestion (the block above)
-/// for each detail page — paste it as a page's initial live content once; the generator
-/// never writes to that live page path again, only to its two `:auto_*` subpages. Never
-/// bulk-sync wiki-bootstrap/ itself onto the live wiki — it would clobber hand edits made
-/// directly on a live shell page. List/aggregate pages (list_of_*, vehicle_comparison,
-/// cargo_space, cargo_type, installable_parts/installable_vehicles) have no curatable seam
-/// and stay single-page, fully generator-owned.
+/// writing it. `--bootstrap` (off by default — a one-time deployment step, not a normal
+/// run) additionally writes the shell page itself, at its real live-wiki path
+/// (`{ns}/{slug}.txt`, sibling of the `{ns}/{slug}/` subpage directory — exactly how
+/// DokuWiki's own file-per-page layout works): an infobox transclusion, the heading+intro
+/// generated once as literal text, and a details transclusion. Deploy it by dropping the
+/// whole `out/wiki/` tree onto the live wiki's page directory once; after that the
+/// generator's normal (non-bootstrap) runs never touch the shell path again, only the two
+/// `:auto_*` subpages, so any hand-written prose added to a shell after deployment is
+/// permanent. List/aggregate pages (list_of_*, vehicle_comparison, cargo_space,
+/// cargo_type, installable_parts/installable_vehicles) have no curatable seam and stay
+/// single-page, fully generator-owned, with or without --bootstrap.
 ///
 ///   wiki/generate/                this program, LiveWiki.cs (image fetch/merge)
 ///   wiki/out/vehicles/{slug}/     auto_infobox.txt, auto_details.txt, installable_parts.txt
+///   wiki/out/vehicles/{slug}.txt  (--bootstrap only) the shell page, real path
 ///   wiki/out/parts/{slug}/        auto_infobox.txt, auto_details.txt, installable_vehicles.txt
+///   wiki/out/parts/{slug}.txt     (--bootstrap only)
 ///   wiki/out/cargos/{key}/        auto_infobox.txt, auto_details.txt
+///   wiki/out/cargos/{key}.txt     (--bootstrap only)
 ///   wiki/out/delivery_points/{slug}/  auto_infobox.txt, auto_details.txt
+///   wiki/out/delivery_points/{slug}.txt  (--bootstrap only)
 ///   wiki/out/cargo_space/, cargo_type/, list_of_*.txt, vehicle_comparison.txt
-///   wiki/out/wiki-bootstrap/      (--bootstrap only) one flat {slug}.txt shell per detail page
 ///
 /// Run: dotnet run -c Release --project wiki/generate [--bootstrap]
 /// </summary>
@@ -65,7 +70,7 @@ internal static class Program
         if (opts.ShowHelp)
         {
             Console.WriteLine("wiki generator: read the pak and write every DokuWiki page as .txt");
-            Console.WriteLine("  --bootstrap   also (re)generate out/wiki-bootstrap/ shell suggestions");
+            Console.WriteLine("  --bootstrap   also (re)generate the shell page itself at its real path (one-time deploy step)");
             return 0;
         }
 
@@ -125,23 +130,21 @@ internal static class Program
         if (Directory.Exists(outDir)) Directory.Delete(outDir, recursive: true);
         Directory.CreateDirectory(outDir);
 
-        var bootstrapDir = Path.Combine(outDir, "wiki-bootstrap");
         var vehicleDir = Path.Combine(outDir, "vehicles");
         var partDir = Path.Combine(outDir, "parts");
         var cargoDir = Path.Combine(outDir, "cargos");
         var spaceDir = Path.Combine(outDir, "cargo_space");
         var typeDir = Path.Combine(outDir, "cargo_type");
         var deliveryDir = Path.Combine(outDir, "delivery_points");
-        var dirs = new List<string> { vehicleDir, partDir, cargoDir, spaceDir, typeDir, deliveryDir };
-        if (opts.Bootstrap) dirs.Add(bootstrapDir);
-        foreach (var dir in dirs) Directory.CreateDirectory(dir);
+        foreach (var dir in new[] { vehicleDir, partDir, cargoDir, spaceDir, typeDir, deliveryDir })
+            Directory.CreateDirectory(dir);
 
         // A "detail" page (vehicle/part/cargo/delivery point) writes two bot-owned
         // subpages ({slug}:auto_infobox with the live image field merged back in,
-        // {slug}:auto_details) plus, with --bootstrap, a flat shell suggestion under
-        // wiki-bootstrap/{ns}/{slug}.txt — an infobox transclusion, the heading+intro
-        // generated once as literal text, and an info transclusion, ready to paste as the
-        // live page's initial content.
+        // {slug}:auto_details) plus, with --bootstrap, the shell page itself at its real
+        // live-wiki path ({ns}/{slug}.txt, sibling of the {ns}/{slug}/ subpage directory):
+        // an infobox transclusion, the heading+intro generated once as literal text, and
+        // a details transclusion — ready to drop straight onto the live wiki once.
         void WriteDetailPage(string pagesDir, string ns, string slug, string infobox, string heading, string info)
         {
             var mergedInfobox = LiveWiki.MergeImage(infobox, imageLines.GetValueOrDefault((ns, slug)));
@@ -151,12 +154,10 @@ internal static class Program
             File.WriteAllText(Path.Combine(subDir, "auto_details.txt"), info);
 
             if (!opts.Bootstrap) return;
-            var nsBootstrapDir = Path.Combine(bootstrapDir, ns);
-            Directory.CreateDirectory(nsBootstrapDir);
             var shell = "{{page>" + ns + ":" + slug + ":auto_infobox}}\n\n"
                         + heading + "\n\n"
                         + "{{page>" + ns + ":" + slug + ":auto_details}}\n";
-            File.WriteAllText(Path.Combine(nsBootstrapDir, slug + ".txt"), shell);
+            File.WriteAllText(Path.Combine(pagesDir, slug + ".txt"), shell);
         }
 
         // vehicle pages (every vehicle, incl. the broken assets and trailers)
@@ -204,11 +205,11 @@ internal static class Program
         File.WriteAllText(Path.Combine(outDir, "vehicle_comparison.txt"), RenderVehicles.Comparison(data.Vehicles, data));
         File.WriteAllText(Path.Combine(outDir, "list_of_delivery_points.txt"), RenderDelivery.ListOfDeliveryPoints(data.Points));
 
-        var bootstrapFiles = opts.Bootstrap ? Directory.EnumerateFiles(bootstrapDir, "*.txt", SearchOption.AllDirectories).Count() : 0;
+        var bootstrapFiles = opts.Bootstrap ? detailTargets.Count : 0;
         var txtFiles = Directory.EnumerateFiles(outDir, "*.txt", SearchOption.AllDirectories).Count() - bootstrapFiles;
         Console.WriteLine(opts.Bootstrap
-            ? $"  wrote {txtFiles} DokuWiki pages + {bootstrapFiles} bootstrap shells to {outDir}/"
-            : $"  wrote {txtFiles} DokuWiki pages to {outDir}/ (pass --bootstrap for shell suggestions)");
+            ? $"  wrote {txtFiles} DokuWiki pages + {bootstrapFiles} shell pages (real paths, one-time deploy) to {outDir}/"
+            : $"  wrote {txtFiles} DokuWiki pages to {outDir}/ (pass --bootstrap to also write the shell pages once)");
         return 0;
     }
 }
