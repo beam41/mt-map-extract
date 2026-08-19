@@ -44,9 +44,10 @@ internal sealed class VehicleInfo
     public List<(string Name, long Value)> Levels { get; } = [];
     public CargoSpaceInfo? CargoSpace { get; set; }
 
-    /// <summary>True when the cargo space comes from the default CargoBed part, not from a
-    /// chassis cargo-space component — rendered as "(installable)".</summary>
-    public bool CargoSpaceInstallable { get; set; }
+    /// <summary>Cargo spaces the vehicle can acquire only by installing a CargoBed part
+    /// (it ships with no cargo space) — rendered as "(installable)". One entry per distinct
+    /// space type, from the first fitting part.</summary>
+    public List<CargoSpaceInfo> InstallableSpaces { get; } = [];
     public long? BasePayment { get; set; }
     public double? PaymentMultiplier { get; set; }
     public List<string> Tags { get; } = [];
@@ -201,7 +202,7 @@ internal sealed class SpaceInfo
 {
     public required string Type { get; init; }
     public List<CargoInfo> Cargos { get; } = [];
-    public List<VehicleInfo> Vehicles { get; } = [];
+    public List<(VehicleInfo Vehicle, bool Installable)> Vehicles { get; } = [];
     public List<PartInfo> Parts { get; } = [];
 }
 
@@ -635,6 +636,28 @@ internal sealed class Data(AssetSource assets, Localization localization)
         return array.OfType<JValue>().Select(v => (string?)v.Value ?? "").Where(k => k.Length > 0).ToList();
     }
 
+    private static List<string>? OverrideKeys(JToken? token)
+    {
+        if (token is not JArray array || array.Count == 0) return null;
+        return array.OfType<JValue>().Select(v => (string?)v.Value ?? "").Where(k => k.Length > 0).ToList();
+    }
+
+    /// <summary>The documented part→vehicle fit rule (vehicle-parts.md): an override key wins;
+    /// else VehicleKeys when non-empty; else the VehicleTypes / TruckClasses filters.</summary>
+    private static bool PartFitsVehicle(JObject partRow, VehicleInfo vehicle)
+    {
+        if (OverrideKeys(partRow["OverrideAllowedVehicleKeys"])?.Contains(vehicle.Key) == true) return true;
+        var keys = VehicleKeys(partRow);
+        if (keys is { Count: > 0 }) return keys.Contains(vehicle.Key);
+        var types = (partRow["VehicleTypes"] as JArray ?? []).OfType<JValue>().Select(v => (string?)v.Value).Where(v => v is not null).ToList();
+        if (types.Count > 0 && !types.Contains(vehicle.Type)) return false;
+        var classes = (partRow["TruckClasses"] as JArray ?? []).OfType<JValue>().Select(v => (string?)v.Value).Where(v => v is not null).ToList();
+        if (classes.Count > 0 && !classes.Contains(vehicle.TruckClass)
+            && !((bool?)partRow["bTruckClassIncludeNone"] == true && vehicle.TruckClass == "EMTTruckClass::None"))
+            return false;
+        return true;
+    }
+
     private static List<(string, long)> Levels(JToken? levels)
     {
         var result = new List<(string, long)>();
@@ -1036,7 +1059,6 @@ internal sealed class Data(AssetSource assets, Localization localization)
         }
 
         // vehicle spaces: blueprint component, else the default CargoBed part
-        var partRows = _partRowsByKey;
         foreach (var vehicle in Vehicles)
         {
             var space = vehicle.CargoSpace;
@@ -1045,18 +1067,40 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 foreach (var (slot, partKey) in vehicle.DefaultParts)
                 {
                     if (!slot.StartsWith("CargoBed", StringComparison.Ordinal)) continue;
-                    if (partRows.TryGetValue(partKey, out var partRow)
+                    if (_partRowsByKey.TryGetValue(partKey, out var partRow)
                         && partRow["CargoBed"] is JObject bed
-                        && SpaceSuffix((string?)bed["CargoSpaceType"]) is { } bedType)
+                        && SpaceSuffix((string?)bed["CargoSpaceType"]) is { } bedType
+                        && RealBed(bed, bedType))
                     {
                         space = PartCargoSpace(partKey, bed, bedType);
                         vehicle.CargoSpace = space;
-                        vehicle.CargoSpaceInstallable = true;
                         break;
                     }
                 }
             }
-            if (space is not null) Bucket(space.Type).Vehicles.Add(vehicle);
+            if (space is not null) Bucket(space.Type).Vehicles.Add((vehicle, Installable: false));
+        }
+
+        // installable spaces: vehicles that ship with no cargo space but can fit a CargoBed
+        // part (the part's VehicleKeys/VehicleTypes/TruckClasses restrictions)
+        foreach (var vehicle in Vehicles)
+        {
+            if (vehicle.CargoSpace is not null) continue;
+            foreach (var (partKey, partRow) in _partRowsByKey)
+            {
+                // CargoBedAttachment parts modify an existing bed — they don't add space
+                if (partRow["PartType"] is not JValue pt) continue;
+                if (pt.Value<string>()?.Contains("CargoBedAttachment", StringComparison.Ordinal) == true) continue;
+                if (partRow["CargoBed"] is not JObject bed) continue;
+                if (SpaceSuffix((string?)bed["CargoSpaceType"]) is not { } bedType) continue;
+                if (!RealBed(bed, bedType)) continue;
+                if (!PartFitsVehicle(partRow, vehicle)) continue;
+                if (vehicle.InstallableSpaces.All(s => s.Type != bedType))
+                {
+                    vehicle.InstallableSpaces.Add(PartCargoSpace(partKey, bed, bedType));
+                    Bucket(bedType).Vehicles.Add((vehicle, Installable: true));
+                }
+            }
         }
 
         // part spaces: CargoBed parts
@@ -1069,6 +1113,20 @@ internal sealed class Data(AssetSource assets, Localization localization)
         }
 
         Spaces.AddRange(spaces.Values);
+    }
+
+    /// <summary>True when the CargoBed struct is a real bed — not the editor-default
+    /// placeholder (100×100×100 cm Flatbed, no flags) that unrelated part rows carry
+    /// (DefaultBody, DefaultAttachment, "201"/"202", SmallRadiator_100).</summary>
+    private static bool RealBed(JObject bed, string type)
+    {
+        var size = bed["CargoSpaceSize"] as JObject;
+        var x = (double?)size?["X"] ?? 0;
+        var y = (double?)size?["Y"] ?? 0;
+        var z = (double?)size?["Z"] ?? 0;
+        if (x != 100 || y != 100 || z != 100 || type != "Flatbed") return true;
+        if ((bool?)bed["bFixCargo"] == true || (bool?)bed["bUnlimitedHeight"] == true) return true;
+        return (double?)bed["DumpVolume"] is { } dv && dv != 0;
     }
 
     /// <summary>Dimensions from the CargoBed part's CargoSpaceSize vector (cm).</summary>

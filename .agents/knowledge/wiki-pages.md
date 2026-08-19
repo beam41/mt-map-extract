@@ -40,7 +40,8 @@ Cost = {cost:N0}
 Weight = {weightKg:N0} kg
 [Engine = {hp} HP]                        # hp from the default engine part name (\d+ HP)
 [Drivetrain = Front/Rear/All-wheel drive] # broken assets -> "Rear-wheel drive"
-[Cargo space = [[cargo_space:{type}|{type}]] (installable)]  # "(installable)" when the space comes from the default CargoBed part, not a chassis component
+[Cargo space = [[cargo_space:{type}|{type}]]]
+[Cargo space = [[cargo_space:{type}|{type}]] (installable)]  # only when the vehicle ships with NO cargo space but can install a CargoBed part (scooty: Box, gunthoo: Box); multiple types join with ", "
 Drag coefficient = {drag:0.0##}           # CDO AirDragCoeff ?? 1.0 (always)
 [Comfort = {stars}]                       # Math.Round(comfort); only when comfort > 0
 [Fuel = {n}L ({fuelType})]               # tank > 0
@@ -283,13 +284,16 @@ Everything that provides or accepts the **{Type}** cargo space.
 ===== Cargos ({n}) =====
   * [[cargos:{slug}|{name}}]]              # sorted by slug (case-insensitive)
 ===== Vehicles ({n}) =====
-  * [[vehicles:{slug}|{name} (installable)]]  # pak row order; "(installable)" when the space comes from the default CargoBed part
+  * [[vehicles:{slug}|{name} (installable)]]  # pak row order; "(installable)" when the vehicle has no default space but fits a space-giving CargoBed part
 ===== Parts ({n}) =====
   * [[parts:{slug}|{name}}]]               # pak row order
 ```
 
 Empty sections render `_(none)_`. Vehicle/part space membership: blueprint
-`MTVehicleCargoSpaceComponent` first, else the default CargoBed part's struct.
+`MTVehicleCargoSpaceComponent` first, else the default CargoBed part's struct; the
+installable scan matches the part-side restrictions (`VehicleKeys`/`VehicleTypes`/
+`TruckClasses`, same rule the wiki's installable_vehicles pages use) and skips the
+editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
 
 ## List pages
 
@@ -364,9 +368,10 @@ Empty sections render `_(none)_`. Vehicle/part space membership: blueprint
   lists using raw keys instead of names.
 - **UE5 float rounding** (directive): gears render 1.32 / 2.11 where the wiki shows
   1.31 / 2.1 (the wiki rounded the JSON round-trip text).
-- **Installable cargo space** (directive): vehicles whose space comes only from the
-  default CargoBed part render "(installable)" in the infobox and in the cargo-space
-  page's vehicle list (voltex, kira_flatbed, kira_box, kira_tanker).
+- **Installable cargo space** (directive): vehicles that ship with no cargo space but can
+  fit a space-giving CargoBed part render "(installable)" in the infobox and in the
+  cargo-space page's vehicle list (scooty, gunthoo → Box). The wiki shows them with no
+  space at all — its data source only sees default parts.
 - **Cargo Location names** (directive): the Production/Consumed At Location column shows
   the location's actual name ("Gwangjin Coal Storage") instead of the blueprint key
   ("CoalWarehouse"); the wiki currently shows the keys.

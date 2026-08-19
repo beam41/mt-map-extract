@@ -20,7 +20,9 @@ internal static class RenderVehicles
         var drive = v.Drivetrain(spelledOut: true);
         if (drive.Length > 0) sb.AppendLine($"Drivetrain = {drive}");
         if (v.CargoSpace is { } space)
-            sb.AppendLine($"Cargo space = [[cargo_space:{space.Type.ToLowerInvariant()}|{space.Type}]]{(v.CargoSpaceInstallable ? " (installable)" : "")}");
+            sb.AppendLine($"Cargo space = [[cargo_space:{space.Type.ToLowerInvariant()}|{space.Type}]]");
+        else if (v.InstallableSpaces.Count > 0)
+            sb.AppendLine($"Cargo space = {string.Join(", ", v.InstallableSpaces.Select(s => $"[[cargo_space:{s.Type.ToLowerInvariant()}|{s.Type}]]"))} (installable)");
         // the wiki renders the default 1.0 when the CDO carries no AirDragCoeff
         sb.AppendLine($"Drag coefficient = {Format.Drag(v.DragCoeff ?? 1.0)}");
         if (v.Comfort > 0) sb.AppendLine($"Comfort = {Format.Stars(v.Comfort)}");
