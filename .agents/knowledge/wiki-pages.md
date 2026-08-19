@@ -432,6 +432,10 @@ editor-default CargoBed placeholder structs (100×100×100 cm Flatbed).
   generator bug — those parts are unused), (c) formula_scm has no LSD/WheelSpacer
   (pak `NotSupportedPartTypes`; the wiki lists them), (d) identical "Inventory" names sort
   in pak order (wiki's tie order is unstable).
+- **Collapsed #N owner names** (directive): a "#N" part whose owners share a brand shows
+  only the brand — "#1 (Brutus)" instead of "#1 (Brutus Wrecker / Brutus Tanker / Brutus
+  Ambulance / Brutus Fire Engine)"; unrelated owners keep the " / " join. The wiki shows
+  the full join.
 - **Part type in titles** (directive): the part page heading renders `====== {en} ({TypeEnglish}) ======` and the installable_vehicles title/intro carry the type — `Installable Vehicles for 2.73 (Final Drive Ratio)`; the wiki titles have the bare name.
 - **Installable vehicles pages** (new, generated 2026-08-19): per-part pages matching the
   wiki except: (a) the Jemusi vehicle links point at our `vehicles:jemusi_logger` page
