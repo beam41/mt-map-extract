@@ -40,7 +40,7 @@ Cost = {cost:N0}
 Weight = {weightKg:N0} kg
 [Engine = {hp} HP]                        # hp from the default engine part name (\d+ HP)
 [Drivetrain = Front/Rear/All-wheel drive] # broken assets -> "Rear-wheel drive"
-[Cargo space = [[cargo_space:{type}|{type}]]]
+[Cargo space = [[cargo_space:{type}|{type}]] (installable)]  # "(installable)" when the space comes from the default CargoBed part, not a chassis component
 Drag coefficient = {drag:0.0##}           # CDO AirDragCoeff ?? 1.0 (always)
 [Comfort = {stars}]                       # Math.Round(comfort); only when comfort > 0
 [Fuel = {n}L ({fuelType})]               # tank > 0
@@ -283,7 +283,7 @@ Everything that provides or accepts the **{Type}** cargo space.
 ===== Cargos ({n}) =====
   * [[cargos:{slug}|{name}}]]              # sorted by slug (case-insensitive)
 ===== Vehicles ({n}) =====
-  * [[vehicles:{slug}|{name}}]]            # pak row order
+  * [[vehicles:{slug}|{name} (installable)]]  # pak row order; "(installable)" when the space comes from the default CargoBed part
 ===== Parts ({n}) =====
   * [[parts:{slug}|{name}}]]               # pak row order
 ```
@@ -364,6 +364,9 @@ Empty sections render `_(none)_`. Vehicle/part space membership: blueprint
   lists using raw keys instead of names.
 - **UE5 float rounding** (directive): gears render 1.32 / 2.11 where the wiki shows
   1.31 / 2.1 (the wiki rounded the JSON round-trip text).
+- **Installable cargo space** (directive): vehicles whose space comes only from the
+  default CargoBed part render "(installable)" in the infobox and in the cargo-space
+  page's vehicle list (voltex, kira_flatbed, kira_box, kira_tanker).
 - **Cargo Location names** (directive): the Production/Consumed At Location column shows
   the location's actual name ("Gwangjin Coal Storage") instead of the blueprint key
   ("CoalWarehouse"); the wiki currently shows the keys.

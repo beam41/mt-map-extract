@@ -43,6 +43,10 @@ internal sealed class VehicleInfo
     public List<(string Slot, string Part)> DefaultParts { get; } = [];
     public List<(string Name, long Value)> Levels { get; } = [];
     public CargoSpaceInfo? CargoSpace { get; set; }
+
+    /// <summary>True when the cargo space comes from the default CargoBed part, not from a
+    /// chassis cargo-space component — rendered as "(installable)".</summary>
+    public bool CargoSpaceInstallable { get; set; }
     public long? BasePayment { get; set; }
     public double? PaymentMultiplier { get; set; }
     public List<string> Tags { get; } = [];
@@ -1047,6 +1051,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
                     {
                         space = PartCargoSpace(partKey, bed, bedType);
                         vehicle.CargoSpace = space;
+                        vehicle.CargoSpaceInstallable = true;
                         break;
                     }
                 }

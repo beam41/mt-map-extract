@@ -156,7 +156,7 @@ internal static class RenderCargos
             space.Cargos.OrderBy(c => c.Key, Format.NaturalComparer.Instance).Select(c => ($"cargos:{c.Key.ToLowerInvariant()}", c.Name)));
         sb.AppendLine();
         Bullets(sb, "Vehicles", space.Vehicles.Count,
-            space.Vehicles.Select(v => ($"vehicles:{RenderVehicles.VehicleSlug(v)}", v.En)));
+            space.Vehicles.Select(v => ($"vehicles:{RenderVehicles.VehicleSlug(v)}", v.En + (v.CargoSpaceInstallable ? " (installable)" : ""))));
         sb.AppendLine();
         Bullets(sb, "Parts", space.Parts.Count,
             space.Parts.Select(p => ($"parts:{p.Slug}", p.En)));
