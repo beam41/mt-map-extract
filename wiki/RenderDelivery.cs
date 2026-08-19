@@ -74,7 +74,7 @@ internal static class RenderDelivery
         foreach (var r in c.Outputs)
             if (r.Key is { } k) parts.Add(RenderCargos.CargoLink(data, k));
         foreach (var r in c.OutputTypes)
-            if (r.Key is { } k) parts.Add(RenderCargos.CargoTypeText(Format.Tail(k)));
+            if (r.Key is { } k) parts.Add(RenderCargos.CargoTypeText(data, Format.Tail(k)));
         if (parts.Count > 0) return string.Join(", ", parts);
         // no output cargo: the input instead boosts the point's other recipes, matching the
         // in-game production panel's "Production Speed: +100.0%" row
@@ -103,7 +103,7 @@ internal static class RenderDelivery
     }
 
     private static string CargoRefText(CargoRef r, Data data) =>
-        r.Key is { } k ? RenderCargos.CargoLink(data, k) : RenderCargos.CargoTypeText(r.Type ?? "?");
+        r.Key is { } k ? RenderCargos.CargoLink(data, k) : RenderCargos.CargoTypeText(data, r.Type ?? "?");
 
     /// <summary>Joins cargo refs from several (key, typeTail) groups into one distinct,
     /// linked-when-possible list for the infobox Import/Export rows.</summary>
@@ -121,7 +121,7 @@ internal static class RenderDelivery
             else if (type is { Length: > 0 })
             {
                 if (!seen.Add(type)) continue;
-                parts.Add(RenderCargos.CargoTypeText(type));
+                parts.Add(RenderCargos.CargoTypeText(data, type));
             }
         }
         return string.Join(", ", parts);

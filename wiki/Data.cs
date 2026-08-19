@@ -249,10 +249,6 @@ internal sealed class CargoTypeInfo
 {
     public required string Type { get; init; }
     public List<CargoInfo> Cargos { get; } = [];
-
-    /// <summary>Delivery points that reference this type generically (a type-ref recipe
-    /// input/output, demand, or passive supply) rather than a specific cargo key.</summary>
-    public List<DeliveryPointInfo> Points { get; } = [];
 }
 
 /// <summary>
@@ -1418,10 +1414,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
     }
 
     /// <summary>The type-based cargo pages (`cargo_type:{slug}`): one per real
-    /// EDeliveryCargoType value that any active cargo or delivery point actually uses
-    /// ("None" is not a group). Lists the cargos of that type plus the delivery points that
-    /// reference it generically (a type-ref recipe input/output, demand, or passive supply,
-    /// as opposed to a specific cargo key).</summary>
+    /// EDeliveryCargoType value that any active cargo uses ("None" is not a group).</summary>
     private void GatherCargoTypes()
     {
         var byType = new Dictionary<string, CargoTypeInfo>(StringComparer.Ordinal);
@@ -1431,25 +1424,18 @@ internal sealed class Data(AssetSource assets, Localization localization)
         foreach (var cargo in Cargos.Where(c => !c.Deprecated && c.Type != "None"))
             Get(cargo.Type).Cargos.Add(cargo);
 
-        foreach (var point in Points.Where(p => p.HasPage))
-        {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            void Touch(string? type)
-            {
-                if (type is not { Length: > 0 } || type == "None" || !seen.Add(type)) return;
-                Get(type).Points.Add(point);
-            }
-
-            foreach (var c in point.Configs)
-            {
-                foreach (var r in c.InputTypes) Touch(TypeSuffix(r.Key));
-                foreach (var r in c.OutputTypes) Touch(TypeSuffix(r.Key));
-            }
-            foreach (var d in point.Demands) Touch(d.Type);
-            foreach (var s in point.PassiveSupplies) Touch(s.Type);
-        }
-
         CargoTypes.AddRange(byType.Values.OrderBy(t => t.Type, StringComparer.Ordinal));
+    }
+
+    /// <summary>The cargo type's locres display name ("SmallPackage" -> "Box",
+    /// "LargePackage" -> "Pallet") — the locres calls SmallPackage "SmallPackage2" (a
+    /// known quirk, see amc-web's CLI help); tails with no locres entry (Coal, Garbage,
+    /// Stone) fall back to the raw tail, already presentable as-is.</summary>
+    public string CargoTypeEnglish(string tail)
+    {
+        var locresKey = tail == "SmallPackage" ? "SmallPackage2" : tail;
+        var locres = localization.Lookup(Localization.English, "CargoType", locresKey);
+        return locres is not null && locres != locresKey ? locres : tail;
     }
 
     /// <summary>Full per-language name for a delivery point placement: the locres-joined

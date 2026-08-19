@@ -106,7 +106,7 @@ internal static class Program
 
         // cargo type pages
         foreach (var t in data.CargoTypes)
-            File.WriteAllText(Path.Combine(typeDir, t.Type.ToLowerInvariant() + ".txt"), RenderCargos.CargoTypePage(t));
+            File.WriteAllText(Path.Combine(typeDir, t.Type.ToLowerInvariant() + ".txt"), RenderCargos.CargoTypePage(t, data));
 
         // delivery point pages (one per real-world placement with a resolvable name)
         foreach (var p in data.Points.Where(p => p.HasPage))
@@ -115,7 +115,7 @@ internal static class Program
         // list pages
         File.WriteAllText(Path.Combine(outDir, "list_of_parts.txt"), RenderParts.ListOfParts(data.Parts));
         File.WriteAllText(Path.Combine(outDir, "list_of_vehicles.txt"), RenderVehicles.ListOfVehicles(data.Vehicles));
-        File.WriteAllText(Path.Combine(outDir, "list_of_cargos.txt"), RenderCargos.ListOfCargos(data.Cargos, data.CargoTypes));
+        File.WriteAllText(Path.Combine(outDir, "list_of_cargos.txt"), RenderCargos.ListOfCargos(data.Cargos, data.CargoTypes, data));
         File.WriteAllText(Path.Combine(outDir, "vehicle_comparison.txt"), RenderVehicles.Comparison(data.Vehicles, data));
         File.WriteAllText(Path.Combine(outDir, "list_of_delivery_points.txt"), RenderDelivery.ListOfDeliveryPoints(data.Points));
 
