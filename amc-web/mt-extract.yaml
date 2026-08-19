@@ -15,7 +15,7 @@
 # Stages - set any to true to leave that output alone
 skip-json: false     # out/out_*.json
 skip-map: false      # out/map.png
-skip-tiles: true     # out/tiles/
+skip-tiles: false     # out/amc-web/map/tiles/
 
 # Enum spelling: false keeps the game's own names (EDeliveryCargoType::Log),
 # true switches to the AMC map's (_TLog, LargeArea, _TSmallPackage) and drops the

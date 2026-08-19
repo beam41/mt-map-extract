@@ -25,7 +25,7 @@ results.
 
 | Path | Purpose |
 |---|---|
-| `wiki/` | the whole generator, one C# project (`wiki/wiki-generate.csproj`): `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` (page templates), `Format.cs` (display rules) |
+| `wiki/` | the whole generator, one C# project (`wiki/wiki.csproj`): `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` (page templates), `Format.cs` (display rules) |
 | `wiki/assertions/` | snapshot of the live wiki pages (raw exports) — diff generated output against it |
 | `out/wiki/vehicles/` | one page per vehicle |
 | `out/wiki/parts/` | one page per part (RideHeight_-N and removed vehicles have none) |

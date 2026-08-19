@@ -1,4 +1,4 @@
-# mt-extract
+# amc-web
 
 Reads `MotorTown-Windows.pak` and writes every `amc-web/out/out_*.json` the map site needs, the world
 map as `amc-web/out/map.png`, and the Leaflet tile pyramid in `amc-web/out/tiles/` - in one pass. This replaces the
