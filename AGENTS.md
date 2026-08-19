@@ -15,6 +15,7 @@ they are the verified ground truth (layout, schemas, display rules, gotchas):
 - `docs/cargos.md` — the Cargos tables, cargo weights, cargo-space types, DeliveryPoint recipes
 - `docs/wiki-pages.md` — the exact DokuWiki templates + display rules the generator must reproduce
 - `docs/dokuwiki-syntax.md` — the DokuWiki markup reference (https://www.dokuwiki.org/wiki:syntax)
+- `.agents/knowledge/explore-tool.md` — how to inspect the pak directly with the explore harness
 
 Update the relevant doc whenever a schema or a display rule changes.
 
