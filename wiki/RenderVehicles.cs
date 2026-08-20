@@ -129,6 +129,32 @@ internal static class RenderVehicles
             sb.AppendLine();
         }
 
+        // Spawned At
+        if (v.SpawnedAt.Count > 0)
+        {
+            var rows = v.SpawnedAt.Select(loc => (loc.Zone, Poi: LocationCell(loc))).Distinct().ToList();
+            if (rows.Count > 0)
+            {
+                sb.AppendLine("===== Spawned At =====");
+                sb.AppendLine("^ Area ^ Nearest Point of Interest ^");
+                foreach (var (zone, poi) in rows) sb.AppendLine($"| {zone} | {poi} |");
+                sb.AppendLine();
+            }
+        }
+
+        // Sold At
+        if (v.SoldAt.Count > 0)
+        {
+            var rows = v.SoldAt.Select(loc => (loc.Zone, Poi: LocationCell(loc))).Distinct().ToList();
+            if (rows.Count > 0)
+            {
+                sb.AppendLine("===== Sold At =====");
+                sb.AppendLine("^ Area ^ Nearest Point of Interest ^");
+                foreach (var (zone, poi) in rows) sb.AppendLine($"| {zone} | {poi} |");
+                sb.AppendLine();
+            }
+        }
+
         // In other languages
         sb.AppendLine("===== In other languages =====");
         sb.AppendLine("^ Language ^ Name ^");
@@ -141,6 +167,45 @@ internal static class RenderVehicles
     /// "elisa_taxi", "Goliath-4" -> "goliath_4", "Air City" -> "air_city".</summary>
     public static string VehicleSlug(VehicleInfo v) =>
         Regex.Replace(v.En.ToLowerInvariant(), "[^a-z0-9]+", "_").Trim('_');
+
+    /// <summary>A "Sold At"/"Spawned At" table's Nearest Point of Interest cell: "Inside
+    /// {subject}" within the POI's threshold, else "{distance} to the {direction} of
+    /// {subject}". A named POI's subject is its bare name alone, never suffixed with its
+    /// category label ("Tosan Trailers" -> "Inside Tosan Trailers", not "Inside Tosan
+    /// Trailers dealer"; "Gapa Bus Terminal" -> "Inside Gapa Bus Terminal", not "... bus
+    /// terminal"; "BurgerJoint Jeju" -> "18m ... of BurgerJoint Jeju", not "... delivery
+    /// point") - user directive, every POI category, the name alone already identifies the
+    /// place and the link/table context already says what kind of row this is. An unnamed
+    /// sparse ~one-per-zone POI (police station, fire fighting station, hospital, car dealer)
+    /// anchors to its own zone instead, since there's no name to carry the meaning: "{label}
+    /// in {zone}" ("Inside police station in Gangjung"). Every other unnamed POI (vendor, gas
+    /// station, ...) never shows up here at all - `Data.BuildLocation` excludes it from the
+    /// nearest-POI search entirely (a generic "vendor" isn't specific enough to identify a
+    /// place on its own, unlike "police station" - user directive, 2026-08-20). Names link to
+    /// their wiki page or an external map when the POI carries one (delivery points, houses).
+    /// A row anchored at a cargo's own "Produced At" delivery point (Raven, Formula SCM)
+    /// reads "Produced at {subject}" instead of "Inside {subject}" - it's the origin, not a
+    /// proximity match. A row from `MWorldVehicleSpawnPoint` gets a trailing "(manually
+    /// spawn)" marker (user directive); a `VehicleSpawner_C` row gets none - the two can sit
+    /// meters apart with otherwise identical text. A delivery point match (not Produced)
+    /// never collapses to "Inside" - always the exact meter distance, user directive,
+    /// delivery points only.</summary>
+    private static string LocationCell(LocationEntry e)
+    {
+        var subject = e.PoiName is { } name
+            ? LinkedName(name, e.PoiLink, e.PoiExternalLink)
+            : e.NearZone is { } zone
+                ? $"{e.PoiLabel} in {zone}"
+                : e.PoiLabel;
+        var marker = e.SpawnKind is { } k ? $" ({k})" : "";
+        if (e.Produced) return $"Produced at {subject}{marker}";
+        if (e.Inside && e.PoiLabel != "delivery point") return $"Inside {subject}{marker}";
+        var distance = $"{Math.Round(e.DistanceM):0}m";
+        return (e.Direction is { } d ? $"{distance} to the {d} of {subject}" : $"{distance} from {subject}") + marker;
+    }
+
+    private static string LinkedName(string name, string? link, string? externalLink) =>
+        link is { } l ? $"[[{l}|{name}]]" : externalLink is { } u ? $"[[{u}|{name}]]" : name;
 
     private static string YesNo(bool b) => b ? "**Yes**" : "No";
 

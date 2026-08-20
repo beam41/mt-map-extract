@@ -15,6 +15,13 @@ namespace Explore;
 ///   stats <path> <type> - per PartType: columns whose values vary across rows (real stats)
 ///   names <path>        - dump row names, one per line
 ///   veh <path> <name>   - print a vehicle row's restrictions only
+///   nearbox <path> <x1> <y1> <x2> <y2> - every actor in a world package whose
+///                         RootComponent/DefaultSceneRoot/Scene RelativeLocation falls
+///                         inside the coordinate box, with type + label + coord
+///   wpscan [pattern]    - scan every Jeju_World World Partition cell (_Generated_/*.umap,
+///                         invisible to grep/find's uasset-only filters) for an export
+///                         type-name regex match (default "Kart"); Jeju_World.umap alone is
+///                         only the always-loaded persistent level
 /// </summary>
 internal static class Program
 {
@@ -47,6 +54,55 @@ internal static class Program
                 return Grep(assets, args[1], args[2]);
             case "types":
                 return Types(assets, args[1]);
+            case "nearbox":
+            {
+                // nearbox <path> <x1> <y1> <x2> <y2> - every actor whose RootComponent (or
+                // DefaultSceneRoot/Scene/SceneComponent fallback) RelativeLocation falls
+                // inside the box, name + type + coord.
+                var package = assets.RequirePackage(args[1]);
+                var x1 = double.Parse(args[2]); var y1 = double.Parse(args[3]);
+                var x2 = double.Parse(args[4]); var y2 = double.Parse(args[5]);
+                var (xlo, xhi) = (Math.Min(x1, x2), Math.Max(x1, x2));
+                var (ylo, yhi) = (Math.Min(y1, y2), Math.Max(y1, y2));
+                for (var i = 0; i < package.Exports.Count; i++)
+                {
+                    var obj = package.Json(i);
+                    var props = obj["Properties"] as JObject;
+                    var sceneRef = props?["RootComponent"] as JObject ?? props?["DefaultSceneRoot"] as JObject
+                        ?? props?["Scene"] as JObject ?? props?["SceneComponent"] as JObject;
+                    var path = (string?)sceneRef?["ObjectPath"];
+                    var dot = path?.LastIndexOf('.') ?? -1;
+                    if (dot < 0 || !int.TryParse(path![(dot + 1)..], out var sceneIndex)) continue;
+                    var loc = package.Json(sceneIndex)["Properties"]?["RelativeLocation"];
+                    var x = (double?)loc?["X"]; var y = (double?)loc?["Y"];
+                    if (x is null || y is null || x < xlo || x > xhi || y < ylo || y > yhi) continue;
+                    var label = (string?)obj["ActorLabel"] ?? "";
+                    Console.WriteLine($"export {i} ({package.Exports[i].ExportType}) \"{label}\": x={x} y={y}");
+                }
+                return 0;
+            }
+            case "wpscan":
+            {
+                var pattern = args.Length > 1 ? args[1] : "Kart";
+                var regex = new Regex(pattern, RegexOptions.IgnoreCase);
+                var files = assets.Files("MotorTown/Content/Maps/Jeju/Jeju_World/_Generated_/")
+                    .Where(f => f.Extension == "umap").ToList();
+                Console.WriteLine($"scanning {files.Count} world partition cells for /{pattern}/i...");
+                var hits = 0;
+                foreach (var file in files)
+                {
+                    var package = assets.Package(file.PathWithoutExtension);
+                    if (package is null) continue;
+                    for (var i = 0; i < package.Exports.Count; i++)
+                    {
+                        if (!regex.IsMatch(package.Exports[i].ExportType)) continue;
+                        Console.WriteLine($"{file.Path} export {i}: {package.Exports[i].ExportType}");
+                        hits++;
+                    }
+                }
+                Console.WriteLine($"--- {hits} type-name hits ---");
+                return 0;
+            }
             case "stats":
                 return Stats(assets, args[1], args.Length > 2 ? args[2] : null);
             case "names":
@@ -131,6 +187,147 @@ internal static class Program
                         DumpVehicle(r);
                     }
                 }
+                return 0;
+            }
+            case "vehiclesale":
+            {
+                // vehiclesale <path> - dump every MTDealerVehicleSpawnPoint (label, coord,
+                // VehicleClass/EditorVisualVehicleClass) and VehicleSpawner_C (label, coord,
+                // VehicleParams/VechileKeys keys) export in a world package, unfiltered.
+                var package = assets.Package(args[1]);
+                if (package is null) { Console.Error.WriteLine($"package not found: {args[1]}"); return 1; }
+                for (var i = 0; i < package.Exports.Count; i++)
+                {
+                    var type = package.Exports[i].ExportType;
+                    if (type != "MTDealerVehicleSpawnPoint" && type != "VehicleSpawner_C") continue;
+                    var obj = package.Json(i);
+                    var props = obj["Properties"] as JObject;
+                    var label = (string?)obj["ActorLabel"] ?? "";
+                    if (type == "MTDealerVehicleSpawnPoint")
+                    {
+                        var vc = (string?)props?["VehicleClass"]?["ObjectPath"];
+                        var evc = (string?)props?["EditorVisualVehicleClass"]?["ObjectPath"];
+                        Console.WriteLine($"export {i} DEALER \"{label}\": VehicleClass={vc} EditorVisual={evc}");
+                    }
+                    else
+                    {
+                        var listRef = props?["MTSpawnVehicleList"] as JObject;
+                        var listPath = (string?)listRef?["ObjectPath"];
+                        var dot = listPath?.LastIndexOf('.') ?? -1;
+                        JToken? list = null;
+                        if (dot >= 0 && int.TryParse(listPath![(dot + 1)..], out var listIndex))
+                            list = package.Json(listIndex)["Properties"];
+                        var keys = (list?["VehicleParams"] as JArray ?? []).Select(p => (string?)p["VehicleKey"])
+                            .Concat((list?["VechileKeys"] as JArray ?? []).OfType<JValue>().Select(v => (string?)v.Value))
+                            .Where(k => k is { Length: > 0 });
+                        Console.WriteLine($"export {i} SPAWNER \"{label}\": keys=[{string.Join(",", keys)}]");
+                    }
+                }
+                return 0;
+            }
+            case "alltypes":
+            {
+                // alltypes <path> [regex] - distinct export type names + counts, optionally
+                // filtered by a case-insensitive regex.
+                var package = assets.Package(args[1]);
+                if (package is null) { Console.Error.WriteLine($"package not found: {args[1]}"); return 1; }
+                var filter = args.Length > 2 ? new Regex(args[2], RegexOptions.IgnoreCase) : null;
+                var counts = new Dictionary<string, int>();
+                foreach (var e in package.Exports) counts[e.ExportType] = counts.GetValueOrDefault(e.ExportType) + 1;
+                foreach (var (type, count) in counts.OrderByDescending(kv => kv.Value))
+                {
+                    if (filter is not null && !filter.IsMatch(type)) continue;
+                    Console.WriteLine($"{count,6}  {type}");
+                }
+                return 0;
+            }
+            case "listowners":
+            {
+                // listowners <path> - for every MTSpawnVehicleListComponent export, print its
+                // owning actor's export type + label + vehicle keys, to find every kiosk
+                // regardless of blueprint subclass name.
+                var package = assets.Package(args[1]);
+                if (package is null) { Console.Error.WriteLine($"package not found: {args[1]}"); return 1; }
+                for (var i = 0; i < package.Exports.Count; i++)
+                {
+                    if (package.Exports[i].ExportType != "MTSpawnVehicleListComponent") continue;
+                    var comp = package.Json(i);
+                    var outerPath = (string?)comp["Outer"]?["ObjectPath"];
+                    var dot = outerPath?.LastIndexOf('.') ?? -1;
+                    if (dot < 0 || !int.TryParse(outerPath![(dot + 1)..], out var ownerIndex)) continue;
+                    var owner = package.Json(ownerIndex);
+                    var ownerType = package.Exports[ownerIndex].ExportType;
+                    var label = (string?)owner["ActorLabel"] ?? "";
+                    var props = comp["Properties"] as JObject;
+                    var keys = (props?["VechileKeys"] as JArray ?? []).OfType<JValue>().Select(v => (string?)v.Value)
+                        .Concat((props?["VehicleParams"] as JArray ?? []).Select(p => (string?)p["VehicleKey"]))
+                        .Where(k => k is { Length: > 0 });
+                    var hasInteractable = (owner["Properties"] as JObject)?.Properties()
+                        .Any(p => p.Name == "MTInteractable" || p.Name.Contains("Interact")) ?? false;
+                    Console.WriteLine($"export {i} owner={ownerType} \"{label}\" interactable={hasInteractable} keys=[{string.Join(",", keys)}]");
+                }
+                return 0;
+            }
+            case "wgrep":
+            {
+                // wgrep <path> <pattern> - dump every export's JSON and grep the serialized
+                // text for <pattern> (case-insensitive), unlike `grep` this covers .umap world
+                // packages export-by-export, not just .uasset files.
+                var package = assets.Package(args[1]);
+                if (package is null) { Console.Error.WriteLine($"package not found: {args[1]}"); return 1; }
+                var regex = new Regex(args[2], RegexOptions.IgnoreCase);
+                for (var i = 0; i < package.Exports.Count; i++)
+                {
+                    var text = package.Json(i).ToString(Newtonsoft.Json.Formatting.None);
+                    if (!regex.IsMatch(text)) continue;
+                    var label = (string?)package.Json(i)["ActorLabel"];
+                    Console.WriteLine($"export {i} ({package.Exports[i].ExportType}) label={label}");
+                }
+                return 0;
+            }
+            case "areas":
+            {
+                // areas - AreaVolume flag distribution + every name per flag (WorldExtractor.AreaVolumes()).
+                var localization = assets.LoadLocalization();
+                var extractor = new WorldExtractor(assets, localization);
+                var groups = extractor.AreaVolumes().OfType<JObject>()
+                    .GroupBy(a => (string?)a["flag"] ?? "")
+                    .OrderBy(g => g.Key);
+                foreach (var g in groups)
+                {
+                    Console.WriteLine($"--- flag=\"{g.Key}\" ({g.Count()}) ---");
+                    foreach (var a in g)
+                        Console.WriteLine($"  {(string?)(a["name"] as JObject)?["en"]}");
+                }
+                return 0;
+            }
+            case "dealeraudit":
+            {
+                // dealeraudit <path> - every MTDealerVehicleSpawnPoint: which of
+                // VehicleClass / EditorVisualVehicleClass / VehicleClasses[] it carries, and
+                // whether the existing VehicleClass/EditorVisualVehicleClass-only match would
+                // miss it (blank=true).
+                var package = assets.Package(args[1]);
+                if (package is null) { Console.Error.WriteLine($"package not found: {args[1]}"); return 1; }
+                var blankCount = 0;
+                var classesOnlyCount = 0;
+                for (var i = 0; i < package.Exports.Count; i++)
+                {
+                    if (package.Exports[i].ExportType != "MTDealerVehicleSpawnPoint") continue;
+                    var obj = package.Json(i);
+                    var props = obj["Properties"] as JObject;
+                    var vc = (string?)props?["VehicleClass"]?["ObjectPath"];
+                    var evc = (string?)props?["EditorVisualVehicleClass"]?["ObjectPath"];
+                    var classes = (props?["VehicleClasses"] as JArray ?? [])
+                        .OfType<JObject>().Select(c => (string?)c["ObjectPath"]).Where(c => c is not null).ToList();
+                    var label = (string?)obj["ActorLabel"] ?? "";
+                    var blank = vc is null && evc is null;
+                    if (blank) blankCount++;
+                    if (blank && classes.Count > 0) classesOnlyCount++;
+                    if (blank || classes.Count > 0)
+                        Console.WriteLine($"export {i} \"{label}\": VehicleClass={vc} EditorVisual={evc} VehicleClasses=[{string.Join(",", classes)}]");
+                }
+                Console.WriteLine($"--- blank VehicleClass+EditorVisual: {blankCount}, of which VehicleClasses[] non-empty: {classesOnlyCount} ---");
                 return 0;
             }
             default:

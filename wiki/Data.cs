@@ -24,6 +24,60 @@ internal sealed class CargoSpaceInfo
     public bool UnlimitedHeight { get; init; }
 }
 
+/// <summary>One "Sold At" / "Spawned At" row: the zone the spawn point sits in, plus the
+/// nearest point of interest and how far away it is. Only named POIs and the sparse
+/// ~one-per-zone unnamed categories (police station, fire fighting station, hospital, car
+/// dealer) are ever candidates for "nearest" - an unnamed vendor or gas station isn't
+/// specific enough to identify a place on its own (unlike "police station"), so it's excluded
+/// from the search entirely rather than shown via a "near {actual landmark}" second hop (user
+/// directive, 2026-08-20: "307m ... of vendor near Cafe" should just resolve straight to
+/// Cafe, at Cafe's own true distance from the spawn point, not the unnamed vendor's). An
+/// unnamed zone-anchored POI has no coordinate-relative text at all - NearZone gives its
+/// enclosing zone instead ("Inside police station in Gangjung").</summary>
+internal sealed class LocationEntry
+{
+    public required string Zone { get; init; }
+    public string? PoiName { get; init; }
+    public required string PoiLabel { get; init; }
+    public required double DistanceM { get; init; }
+    public required bool Inside { get; init; }
+
+    /// <summary>True for a row anchored directly at a cargo's "Produced At" delivery point
+    /// (Raven, Formula SCM) - rendered "Produced at {subject}" instead of "Inside {subject}",
+    /// since it isn't a proximity match at all, it's the origin.</summary>
+    public bool Produced { get; init; }
+
+    /// <summary>Non-null for a row from `MWorldVehicleSpawnPoint` - marked "(manually spawn)"
+    /// (user directive) to distinguish it from a dealer lot or job spawner. `VehicleSpawner_C`
+    /// rows get no marker (a plain "Spawned At" row like the police/fire/bus job spawners).
+    /// The two can otherwise sit meters apart with identical zone/nearest-POI text - the
+    /// marker (or its absence) is what tells the rows apart.</summary>
+    public string? SpawnKind { get; init; }
+    public string? PoiLink { get; init; }
+    public string? PoiExternalLink { get; init; }
+
+    /// <summary>Compass direction from the nearest POI to this spawn/sell point ("north",
+    /// "southwest", ...) - null only when there's no POI at all to be relative to.</summary>
+    public string? Direction { get; init; }
+    public string? NearZone { get; init; }
+}
+
+/// <summary>One point-of-interest candidate for the nearest-POI search: a display label
+/// ("delivery point", "vendor", "car dealer", ...), an optional name (some POIs, like police
+/// stations, carry none), a raw pak coordinate (cm), and how it should link.</summary>
+internal sealed class PoiCandidate
+{
+    public required string Label { get; init; }
+    public string? Name { get; init; }
+    public required double X { get; init; }
+    public required double Y { get; init; }
+    public string? WikiLink { get; init; }
+    public string? ExternalLink { get; init; }
+    /// <summary>Overrides the default 30m "Inside" radius (car dealer 120m, motorcycle
+    /// dealer 50m); null keeps the default.</summary>
+    public double? InsideThresholdM { get; init; }
+}
+
 internal sealed class VehicleInfo
 {
     public required string Key { get; init; }
@@ -51,6 +105,18 @@ internal sealed class VehicleInfo
     public long? BasePayment { get; set; }
     public double? PaymentMultiplier { get; set; }
     public List<string> Tags { get; } = [];
+
+    /// <summary>The VehicleClass blueprint's pak package path (resolved from /Game via
+    /// PathToPackage) — matches an MTDealerVehicleSpawnPoint's own VehicleClass reference
+    /// one-for-one, the join key for the "Sold At" table.</summary>
+    public string? ClassPackage { get; set; }
+
+    /// <summary>Dealer lots displaying this vehicle for sale, one entry per world placement.</summary>
+    public List<LocationEntry> SoldAt { get; } = [];
+
+    /// <summary>Service-vehicle spawners (police/fire/ambulance/bus) this vehicle qualifies
+    /// for, one entry per world placement.</summary>
+    public List<LocationEntry> SpawnedAt { get; } = [];
 
     /// <summary>Part types this vehicle cannot take at all (raw `EMTVehiclePartType::` values,
     /// e.g. Formula SCM: [LSD, WheelSpacer]) — the vehicle-side fit exclusion.</summary>
@@ -199,13 +265,23 @@ internal sealed class DeliveryPointInfo
     public List<CargoRef> PassiveSupplies { get; } = [];
 }
 
+/// <summary>One `AreaVolumes()` polygon, any flag (`Zone`, `LargeArea`, `SmallArea`,
+/// `RaceTrack`, or unflagged "") - the full amc-web `area.ts` hierarchy, not just Zone.</summary>
 internal sealed class AreaInfo
 {
     public required string NameEn { get; init; }
+    public required string Flag { get; init; }
 
     /// <summary>Flat list of 2-point segments (pairs at i, i+1) — the pak's TopViewLines /
     /// area.ts's vertex convention, not a closed ring.</summary>
     public required List<(double X, double Y)> Segments { get; init; }
+
+    /// <summary>Precalculated once: the bounding-box center of every vertex, OpenLayers'
+    /// `getCenter(extent)` convention (`(minX+maxX)/2, (minY+maxY)/2`) - used as this area's
+    /// own POI point when a placement sits outside its polygon (`Zone`/`LargeArea` areas
+    /// never become a POI point at all, only `RaceTrack`/`SmallArea`/unflagged ones do).</summary>
+    public double CenterX { get; init; }
+    public double CenterY { get; init; }
 }
 
 internal sealed class ProductionConfig
@@ -279,6 +355,11 @@ internal sealed class Data(AssetSource assets, Localization localization)
     /// its own name, coordinates and effective production/demand config.</summary>
     public List<DeliveryPointInfo> Points { get; } = [];
 
+    private readonly List<PoiCandidate> _pois = [];
+
+    private const double InsideThresholdM = 30;
+    private const double DealerInsideThresholdM = 50;
+
     private readonly Dictionary<string, JObject?> _dataAssets = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, JArray?> _curves = new(StringComparer.OrdinalIgnoreCase);
     private readonly CargoKeys _cargoKeys = new(assets);
@@ -296,6 +377,8 @@ internal sealed class Data(AssetSource assets, Localization localization)
         GatherCargos();
         GatherSpaces();
         GatherDeliveryPoints();
+        GatherPois();
+        GatherVehicleLocations();
         GatherCargoTypes();
     }
 
@@ -353,6 +436,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
             // blueprint-derived stats
             var classPath = (string?)row["VehicleClass"]?["AssetPathName"]
                             ?? (string?)row["VehicleClass"]?["ObjectPath"];
+            vehicle.ClassPackage = PathToPackage(classPath);
             if (classPath is not null && Blueprint(PathToPackage(classPath)) is { } bp)
             {
                 vehicle.WeightKg = bp.WeightKg;
@@ -1319,18 +1403,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
     private void GatherDeliveryPoints()
     {
         var extractor = new WorldExtractor(assets, localization);
-
-        var zones = extractor.AreaVolumes()
-            .OfType<JObject>()
-            .Where(a => Format.Tail((string?)a["flag"]) == "Zone")
-            .Select(a => new AreaInfo
-            {
-                NameEn = (string?)(a["name"] as JObject)?["en"] ?? "",
-                Segments = (a["vertex"] as JArray ?? [])
-                    .Select(v => ((double?)v["x"] ?? 0, (double?)v["y"] ?? 0))
-                    .ToList(),
-            })
-            .ToList();
+        var zones = Zones(extractor);
 
         var slugCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         var residentSeen = false;
@@ -1457,12 +1530,358 @@ internal sealed class Data(AssetSource assets, Localization localization)
         return names;
     }
 
-    /// <summary>Point-in-polygon zone lookup, ported from amc-web's area.ts
-    /// getLocationAtPoint/getLocationNearPoint: ray-cast against each Zone's 2-point
-    /// TopViewLines segments (not a closed ring), falling back to the nearest zone edge when
-    /// the point sits inside none.</summary>
-    private static string ZoneFor(double px, double py, List<AreaInfo> zones)
+    // ---------------------------------------------------- vehicle sale & spawn locations
+
+    /// <summary>Every area polygon, any flag, ready for ZoneFor's full amc-web `area.ts`
+    /// hierarchy lookup.</summary>
+    private static List<AreaInfo> Zones(WorldExtractor extractor) =>
+        extractor.AreaVolumes()
+            .OfType<JObject>()
+            .Select(a =>
+            {
+                var segments = (a["vertex"] as JArray ?? [])
+                    .Select(v => ((double?)v["x"] ?? 0, (double?)v["y"] ?? 0))
+                    .ToList();
+                var xs = segments.Select(p => p.Item1).ToList();
+                var ys = segments.Select(p => p.Item2).ToList();
+                return new AreaInfo
+                {
+                    NameEn = (string?)(a["name"] as JObject)?["en"] ?? "",
+                    Flag = Format.Tail((string?)a["flag"]),
+                    Segments = segments,
+                    CenterX = xs.Count > 0 ? (xs.Min() + xs.Max()) / 2 : 0,
+                    CenterY = ys.Count > 0 ? (ys.Min() + ys.Max()) / 2 : 0,
+                };
+            })
+            .ToList();
+
+    /// <summary>Every point-of-interest candidate the vehicle location tables search for the
+    /// nearest one: delivery points (this page's own linked list, gas stations relabeled out of
+    /// it), car dealers, vendors, race tracks, bus terminals, houses (external map link), and
+    /// the unnamed police/fire/ambulance markers.</summary>
+    private void GatherPois()
     {
+        var extractor = new WorldExtractor(assets, localization);
+        var zones = Zones(extractor);
+
+        // Areas flagged RaceTrack/SmallArea/unflagged (never Zone/LargeArea, the broad
+        // regions that make up the Area column's own hierarchy) double as a POI in their own
+        // right: a placement exactly inside one is "Inside {name}" (BuildLocation's
+        // AreaFor short-circuit, polygon test); a placement outside falls through to this
+        // ordinary named-POI search, using the area's precalculated bounding-box center as
+        // its point (user directive, 2026-08-20 - extends the earlier race-track-only case
+        // to every sub-Zone/LargeArea area, e.g. "Dragstrip", "Tosan Trailers",
+        // "Jeju Airport").
+        foreach (var area in zones.Where(z => z.Flag is not ("Zone" or "LargeArea") && !Blank(z.NameEn)))
+            _pois.Add(new PoiCandidate { Label = "", Name = area.NameEn, X = area.CenterX, Y = area.CenterY });
+
+        // delivery points: reuse the already slug-resolved Points, minus gas stations (their
+        // own category below) - every other DeliveryPointDir blueprint (farms, factories,
+        // stores, ...) renders under the generic "delivery point" label.
+        foreach (var p in Points.Where(p => p.BlueprintKey != "GasStation"))
+        {
+            _pois.Add(new PoiCandidate
+            {
+                Label = "delivery point",
+                Name = Blank(p.En) ? null : p.En,
+                X = p.X,
+                Y = p.Y,
+                WikiLink = p.HasPage ? $"delivery_points:{p.Slug}" : null,
+            });
+        }
+
+        // gas stations: every GasStation_C placement, independent of the Points filter above
+        // (a plain fuel pump with no delivery config never makes it into Points at all).
+        foreach (var detail in extractor.DeliveryPointDetails().Where(d => d.Type == "GasStation_C"))
+        {
+            var x = (double?)(detail.Coord as JObject)?["x"] ?? 0;
+            var y = (double?)(detail.Coord as JObject)?["y"] ?? 0;
+            var name = DeliveryPointName(detail.NameTexts).GetValueOrDefault("en");
+            _pois.Add(new PoiCandidate { Label = "gas station", Name = Blank(name) ? null : name, X = x, Y = y });
+        }
+
+        foreach (var (name, coord) in extractor.NamedPois("CarDealershipMapIconActor_C"))
+            AddNamedPoi("car dealer", name, coord, insideThresholdM: DealerInsideThresholdM);
+        // MotorcycleDealershipMapIconActor_C (1 instance) carries no MTMapIconPlaceName at
+        // all - the in-game map pin's "Motorcycle Dealer" text is client-hardcoded per actor
+        // type, not pak-authored per instance, so NamedPois (which requires a name component)
+        // always skipped it entirely; the vehicle it sells (Scooty, Gunthoo, Zero, ...) fell
+        // back to whatever named POI happened to be next closest ("Decor Shop vendor") instead
+        // (fixed 2026-08-20). Picked up via CoordMarkers like the other name-less markers,
+        // with the display name hardcoded to match the map pin; its 50m "Inside" radius now
+        // matches the car dealer lot (user directive - both were 120m/50m, unified to 50m).
+        foreach (var coord in extractor.CoordMarkers("MotorcycleDealershipMapIconActor_C"))
+            AddNamedPoi("", "Motorcycle Dealer", coord, insideThresholdM: DealerInsideThresholdM);
+        // vendors dropped entirely (user directive, 2026-08-20): a generic "Cafe"/"Decor
+        // Shop" isn't a landmark the wiki's location tables should route Sold/Spawned At
+        // rows through.
+        // sub-Zone/LargeArea areas are handled above via AreaFor/BuildLocation, not as a
+        // separate map-icon POI type.
+        foreach (var coord in extractor.CoordMarkers("POI_PoliceStation_C", "VehicleDeliveryDestination_PoliceOffice_C"))
+            AddMarker("police station", coord);
+        foreach (var coord in extractor.CoordMarkers("POI_FireStation_C", "VehicleDeliveryDestination_FireStation_C"))
+            AddMarker("fire fighting station", coord);
+        foreach (var coord in extractor.CoordMarkers("POI_AmbulancePatientDropOff_C", "VehicleDeliveryDestination_Hospital_C"))
+            AddMarker("hospital", coord);
+
+        // bus terminals: the existing bus-stop reader already resolves an English name and the
+        // in-game "BusTerminal" tag.
+        foreach (var stop in extractor.BusStops().OfType<JObject>().Where(s => (bool?)s["terminal"] == true))
+        {
+            var coord = stop["coord"] as JObject;
+            var name = (string?)stop["name"];
+            _pois.Add(new PoiCandidate
+            {
+                Label = "bus terminal",
+                Name = Blank(name) ? null : name,
+                X = (double?)coord?["x"] ?? 0,
+                Y = (double?)coord?["y"] ?? 0,
+            });
+        }
+
+        // houses: external link to the live map's housing view, keyed by the house's raw name.
+        foreach (var house in extractor.Houses().OfType<JObject>())
+        {
+            var key = (string?)house["name"];
+            if (Blank(key)) continue;
+            var coord = house["coord"] as JObject;
+            _pois.Add(new PoiCandidate
+            {
+                Label = "house",
+                Name = key,
+                X = (double?)coord?["x"] ?? 0,
+                Y = (double?)coord?["y"] ?? 0,
+                ExternalLink = $"https://www.aseanmotorclub.com/map?menu=housing&house={key}&hf={key}",
+            });
+        }
+
+        void AddNamedPoi(string label, string name, JToken coord, double? insideThresholdM = null)
+        {
+            var c = coord as JObject;
+            _pois.Add(new PoiCandidate
+            {
+                Label = label,
+                Name = Blank(name) ? null : name,
+                X = (double?)c?["x"] ?? 0,
+                Y = (double?)c?["y"] ?? 0,
+                InsideThresholdM = insideThresholdM,
+            });
+        }
+
+        void AddMarker(string label, JToken coord)
+        {
+            var c = coord as JObject;
+            _pois.Add(new PoiCandidate { Label = label, X = (double?)c?["x"] ?? 0, Y = (double?)c?["y"] ?? 0 });
+        }
+    }
+
+    /// <summary>Fills every vehicle's SoldAt (MTDealerVehicleSpawnPoint matched by VehicleClass
+    /// package - falling back to EditorVisualVehicleClass, then the VehicleClasses[] array, when
+    /// the singular field is unset - and the Raven/Formula SCM production-dealer factory) and
+    /// SpawnedAt (MWorldVehicleSpawnPoint ambient points and VehicleSpawner_C manual spawn-box
+    /// kiosks, both matched by VehicleKey or VehicleClass package, plus police/fire/ambulance/bus
+    /// job spawners matched by VehicleKey or the spawner's GameplayTags query) with one row per
+    /// world placement.</summary>
+    private void GatherVehicleLocations()
+    {
+        var extractor = new WorldExtractor(assets, localization);
+        var zones = Zones(extractor);
+        var dealerPoints = extractor.DealerVehicleSpawnPoints();
+        var productionDealers = extractor.ProductionDealers();
+        var worldSpawnPoints = extractor.WorldVehicleSpawnPoints();
+        var vehicleSpawnerPoints = extractor.VehicleSpawnerPoints();
+        var serviceSpawners = extractor.ServiceVehicleSpawners();
+
+        foreach (var vehicle in Vehicles)
+        {
+            // Any vehicle whose key equals a Cargos key is itself a produced cargo, sold only
+            // by being produced (Raven, Formula SCM, Terra) - resolved by that cargo's actual
+            // delivery-point recipe (CargoProducers), authoritative and exclusive: a regular
+            // MTDealerVehicleSpawnPoint that also happens to reference the same vehicle class
+            // is not an independent second sale location, it is where the just-produced
+            // vehicle physically spawns for pickup (Terra: MTDealerVehicleSpawnPoint_Terra
+            // sits 12m from Terra Factory - same mechanism, not a duplicate; fixed 2026-08-20
+            // after the two were briefly shown as separate rows).
+            var cargo = Cargos.FirstOrDefault(c => string.Equals(c.Key, vehicle.Key, StringComparison.OrdinalIgnoreCase));
+            var cargoProducers = cargo is null ? [] : CargoProducers(cargo.Key);
+            foreach (var point in cargoProducers) vehicle.SoldAt.Add(ProducerLocation(point));
+
+            if (cargoProducers.Count == 0)
+            {
+                foreach (var (classPackage, coord) in dealerPoints)
+                {
+                    if (vehicle.ClassPackage is null
+                        || !string.Equals(classPackage, vehicle.ClassPackage, StringComparison.Ordinal))
+                        continue;
+                    vehicle.SoldAt.Add(BuildLocation(coord, zones));
+                }
+
+                foreach (var (vehicleKey, coord) in productionDealers)
+                {
+                    // proximity to the factory actor is only a fallback for a
+                    // production-dealer vehicle with no matching cargo recipe; never triggers
+                    // today (Raven/Formula SCM both have one), kept for a future mismatch.
+                    if (!string.Equals(vehicleKey, vehicle.Key, StringComparison.OrdinalIgnoreCase)) continue;
+                    vehicle.SoldAt.Add(BuildLocation(coord, zones));
+                }
+            }
+
+            foreach (var point in worldSpawnPoints)
+            {
+                var matches = point.VehicleKeys.Any(k => string.Equals(k, vehicle.Key, StringComparison.OrdinalIgnoreCase))
+                    || (vehicle.ClassPackage is not null && point.ClassPackages.Contains(vehicle.ClassPackage, StringComparer.Ordinal));
+                if (!matches) continue;
+                vehicle.SpawnedAt.Add(BuildLocation(point.Coord, zones, spawnKind: "manually spawn"));
+            }
+
+            // VehicleSpawner_C is a manual "spawn menu inside a spawn box" (MTInteractableComponent
+            // -> EMotorTownInteractableType::SpawnVehicle), not a sale - feeds SpawnedAt like
+            // worldSpawnPoints, not SoldAt. SCM Kart One's actual sale point is its
+            // MTDealerVehicleSpawnPoint (see dealerPoints above, VehicleClasses[] fallback).
+            foreach (var point in vehicleSpawnerPoints)
+            {
+                if (!point.VehicleKeys.Any(k => string.Equals(k, vehicle.Key, StringComparison.OrdinalIgnoreCase))) continue;
+                vehicle.SpawnedAt.Add(BuildLocation(point.Coord, zones));
+            }
+
+            foreach (var group in serviceSpawners)
+            {
+                var matches = group.VehicleKeys.Contains(vehicle.Key)
+                    || (group.TagQuery is not null && TagQueryMatches(group.TagQuery, vehicle.Tags));
+                if (!matches) continue;
+                foreach (var coord in group.Coords)
+                    vehicle.SpawnedAt.Add(BuildLocation(coord, zones));
+            }
+
+            int ByZoneThenDistance(LocationEntry a, LocationEntry b) =>
+                string.CompareOrdinal(a.Zone, b.Zone) is var c && c != 0 ? c : a.DistanceM.CompareTo(b.DistanceM);
+            vehicle.SoldAt.Sort(ByZoneThenDistance);
+            vehicle.SpawnedAt.Sort(ByZoneThenDistance);
+        }
+    }
+
+    /// <summary>Delivery points whose production recipe outputs the given cargo key - the
+    /// same match a cargo page's "Produced At" table shows (Key match only; type + tag-query
+    /// recipes never apply to a bespoke, single-cargo-key vehicle-as-cargo like Raven).</summary>
+    private List<DeliveryPointInfo> CargoProducers(string cargoKey) =>
+        Points.Where(p => p.Configs.Any(c => c.Outputs.Any(o =>
+            string.Equals(o.Key, cargoKey, StringComparison.OrdinalIgnoreCase)))).ToList();
+
+    /// <summary>A "Sold At" row anchored directly at a delivery point (Raven/Formula SCM: the
+    /// factory that produces them) instead of the nearest-POI search - the point itself IS
+    /// the answer, so it's its own POI at zero distance.</summary>
+    private static LocationEntry ProducerLocation(DeliveryPointInfo point) => new()
+    {
+        Zone = point.Zone,
+        PoiName = point.En,
+        PoiLabel = "delivery point",
+        DistanceM = 0,
+        Inside = true,
+        Produced = true,
+        PoiLink = point.HasPage ? $"delivery_points:{point.Slug}" : null,
+    };
+
+    /// <summary>One location table row: the enclosing zone plus whichever POI candidate sits
+    /// closest, in raw pak units (cm; /100 for the display distance). "Inside" is 30 m of the
+    /// nearest POI, widened to 120 m for a car dealer, 50 m for a motorcycle dealer. Only
+    /// named POIs and the sparse ~one-per-zone unnamed categories (police station, fire
+    /// fighting station, hospital, car dealer) are ever candidates - an unnamed vendor or gas
+    /// station is excluded from the search entirely (not specific enough to identify a place
+    /// on its own, unlike "police station"; user directive, 2026-08-20, replacing an earlier
+    /// "{label} near {actual named POI}" two-hop that showed the *unnamed* POI's own distance
+    /// next to a *different* named POI's name).</summary>
+    private static readonly HashSet<string> ZoneAnchoredLabels = new(StringComparer.Ordinal)
+    {
+        "police station", "fire fighting station", "hospital", "car dealer",
+    };
+
+    private LocationEntry BuildLocation(JToken coord, List<AreaInfo> zones, string? spawnKind = null)
+    {
+        var x = (double?)(coord as JObject)?["x"] ?? 0;
+        var y = (double?)(coord as JObject)?["y"] ?? 0;
+        var zone = ZoneFor(x, y, zones);
+
+        if (AreaFor(x, y, zones) is { } areaName)
+        {
+            return new LocationEntry
+            {
+                Zone = zone,
+                PoiName = areaName,
+                PoiLabel = "",
+                DistanceM = 0,
+                Inside = true,
+                SpawnKind = spawnKind,
+            };
+        }
+
+        var candidates = _pois.Where(p => p.Name is not null || ZoneAnchoredLabels.Contains(p.Label));
+        var (nearest, nearestDistSq) = Nearest(x, y, candidates);
+        var distanceM = Math.Sqrt(nearestDistSq) / 100;
+        var threshold = nearest?.InsideThresholdM ?? InsideThresholdM;
+
+        var nearZone = nearest is not null && nearest.Name is null ? CoarseZone(nearest.X, nearest.Y, zones) : null;
+
+        return new LocationEntry
+        {
+            Zone = zone,
+            PoiName = nearest?.Name,
+            PoiLabel = nearest?.Label ?? "",
+            DistanceM = distanceM,
+            Inside = distanceM <= threshold,
+            SpawnKind = spawnKind,
+            PoiLink = nearest?.WikiLink,
+            PoiExternalLink = nearest?.ExternalLink,
+            Direction = nearest is null ? null : Direction(nearest.X, nearest.Y, x, y),
+            NearZone = nearZone,
+        };
+    }
+
+    /// <summary>8-point compass direction from (fromX, fromY) to (toX, toY) - "the described
+    /// point is {direction} of the reference". Pak/map convention: +X is east, +Y is south
+    /// (down), so north is the -Y direction.</summary>
+    private static readonly string[] CompassPoints =
+        ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+
+    private static string Direction(double fromX, double fromY, double toX, double toY)
+    {
+        var dx = toX - fromX;
+        var dy = toY - fromY;
+        var bearing = Math.Atan2(dx, -dy) * 180 / Math.PI;
+        if (bearing < 0) bearing += 360;
+        return CompassPoints[(int)Math.Round(bearing / 45.0) % 8];
+    }
+
+    /// <summary>The closest candidate to (x, y) by squared distance (cm²), plus that distance
+    /// (avoids a redundant sqrt when only the winner matters).</summary>
+    private static (PoiCandidate? Poi, double DistSq) Nearest(double x, double y, IEnumerable<PoiCandidate> candidates)
+    {
+        PoiCandidate? nearest = null;
+        var nearestDistSq = double.MaxValue;
+        foreach (var poi in candidates)
+        {
+            var dx = poi.X - x;
+            var dy = poi.Y - y;
+            var distSq = dx * dx + dy * dy;
+            if (distSq >= nearestDistSq) continue;
+            nearestDistSq = distSq;
+            nearest = poi;
+        }
+        return (nearest, nearestDistSq);
+    }
+
+    /// <summary>Flag priority for `ZoneFor`'s composed name, most specific first - ported
+    /// verbatim from amc-web's `area.ts` `flagOrder` (ascending sort key).</summary>
+    private static readonly Dictionary<string, int> AreaFlagOrder = new(StringComparer.Ordinal)
+    {
+        [""] = 0, ["RaceTrack"] = 1, ["SmallArea"] = 2, ["LargeArea"] = 3, ["Zone"] = 4,
+    };
+
+    /// <summary>Every area (any flag - Zone, LargeArea, SmallArea, RaceTrack, unflagged)
+    /// whose polygon contains the point, most specific first (`AreaFlagOrder`). Ray-cast
+    /// against each area's 2-point TopViewLines segments (not a closed ring).</summary>
+    private static List<AreaInfo> MatchingAreas(double px, double py, List<AreaInfo> zones)
+    {
+        var matches = new List<AreaInfo>();
         foreach (var zone in zones)
         {
             var inside = false;
@@ -1473,13 +1892,29 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 if ((y1 > py) != (y2 > py) && x1 + (py - y1) * (x2 - x1) / (y2 - y1) > px)
                     inside = !inside;
             }
-            if (inside) return zone.NameEn;
+            if (inside) matches.Add(zone);
         }
+        matches.Sort((a, b) => AreaFlagOrder.GetValueOrDefault(a.Flag).CompareTo(AreaFlagOrder.GetValueOrDefault(b.Flag)));
+        return matches;
+    }
+
+    /// <summary>Full-hierarchy area name, ported from amc-web's `area.ts`
+    /// `getLocationAtPoint`/`getLocationNearPoint`: joined "Sinchang, Hallim" (LargeArea,
+    /// Zone), most specific first - not just the single Zone name. When the point sits inside
+    /// no area at all, falls back to the nearest *Zone*-flagged area's edge only (source does
+    /// the same - LargeArea/SmallArea never used as a near-fallback). Every ZoneFor call site
+    /// (delivery point Location, vehicle Sold/Spawned At Area and zone-anchored POI) gets
+    /// this automatically.</summary>
+    private static string ZoneFor(double px, double py, List<AreaInfo> zones)
+    {
+        var matches = MatchingAreas(px, py, zones);
+        if (matches.Count > 0) return string.Join(", ", matches.Select(m => m.NameEn));
 
         string? nearest = null;
         var nearestDist = double.MaxValue;
         foreach (var zone in zones)
         {
+            if (zone.Flag != "Zone") continue;
             for (var i = 0; i + 1 < zone.Segments.Count; i += 2)
             {
                 var d = DistanceToSegment(px, py, zone.Segments[i], zone.Segments[i + 1]);
@@ -1490,6 +1925,29 @@ internal sealed class Data(AssetSource assets, Localization localization)
         }
         return nearest ?? "";
     }
+
+    /// <summary>The enclosing `RaceTrack`/`SmallArea`/unflagged area's own name, when the
+    /// point sits inside one ("Olle Speedway", "Dragstrip", "Tosan Trailers") - these areas
+    /// double as a point landmark (unlike the broad `Zone`/`LargeArea` regions that only ever
+    /// compose the Area column): a vehicle inside one reads "Inside {name}" directly rather
+    /// than a meters-away distance to some separate map-icon point; a vehicle outside falls
+    /// through to the ordinary nearest-POI search, where these same areas are also registered
+    /// as a point candidate at their precalculated center (user directive, 2026-08-20 -
+    /// extends an earlier race-track-only special case to every sub-Zone/LargeArea area).
+    /// </summary>
+    private static string? AreaFor(double px, double py, List<AreaInfo> zones) =>
+        MatchingAreas(px, py, zones).FirstOrDefault(m => m.Flag is not ("Zone" or "LargeArea"))?.NameEn;
+
+    /// <summary>The coarse `Zone`-flagged component only ("Gangjung", not "Seoguipo
+    /// DownTown, Gangjung") - used for the zone-anchored POI text in a Sold/Spawned At row
+    /// ("Inside police station in Gangjung"), whose own Area column already shows the full
+    /// `ZoneFor` hierarchy; repeating that whole hierarchy there was pure duplication
+    /// ("Inside police station in Seoguipo DownTown, Gangjung" next to an Area cell that
+    /// already reads "Seoguipo DownTown, Gangjung" - user directive, 2026-08-20). The `Zone`
+    /// flag sorts last in `ZoneFor`'s composed name (`AreaFlagOrder`), so this is always its
+    /// final comma-separated segment.</summary>
+    private static string CoarseZone(double px, double py, List<AreaInfo> zones) =>
+        ZoneFor(px, py, zones).Split(", ").LastOrDefault() ?? "";
 
     private static double DistanceToSegment(double px, double py, (double X, double Y) a, (double X, double Y) b)
     {

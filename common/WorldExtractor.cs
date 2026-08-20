@@ -1,4 +1,5 @@
 using Newtonsoft.Json.Linq;
+using System.Text.RegularExpressions;
 
 namespace MtExtract;
 
@@ -476,13 +477,257 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
         return output;
     }
 
+    // ------------------------------------------------------- vehicle sale & spawn points
+
+    /// <summary>Emitted for the wiki's vehicle "Sold At" table: every MTDealerVehicleSpawnPoint
+    /// world placement, keyed by the vehicle blueprint package it displays on the lot (matches
+    /// a Vehicles row's VehicleClass once resolved through the same /Game -> pak path rule the
+    /// wiki generator already applies to VehicleClass elsewhere). 28 of the 183 placements
+    /// leave VehicleClass unset and carry the vehicle in EditorVisualVehicleClass instead
+    /// (an editor-preview field that turns out to be load-bearing for these) - falls back to
+    /// it, then to the first non-null entry of the plain object-ref array VehicleClasses[] when
+    /// both singular fields are unset (SCM Kart One's only dealer placement: VehicleClass and
+    /// EditorVisualVehicleClass are both empty, VehicleClasses = [SCM_Kart_One, null] - this
+    /// was the vehicle's actual "Sold At" signal, missed entirely before this fallback), or the
+    /// whole placement has no vehicle to display and is skipped.</summary>
+    public List<(string VehicleClassPackage, JToken Coord)> DealerVehicleSpawnPoints()
+    {
+        var result = new List<(string, JToken)>();
+        foreach (var index in ExportsOfType("MTDealerVehicleSpawnPoint"))
+        {
+            var obj = World.Json(index);
+            var props = Props(obj);
+            var classPath = ObjectPackage(props?["VehicleClass"])
+                            ?? ObjectPackage(props?["EditorVisualVehicleClass"])
+                            ?? (props?["VehicleClasses"] as JArray ?? [])
+                                .OfType<JObject>().Select(ObjectPackage).FirstOrDefault(c => c is not null);
+            var sceneIndex = ObjectIndex(props?["RootComponent"]);
+            if (classPath is null || sceneIndex is null) continue;
+            result.Add((classPath, Coord(World.Json(sceneIndex.Value))));
+        }
+        return result;
+    }
+
+    /// <summary>One MWorldVehicleSpawnPoint world placement: ambient/world vehicle spawning
+    /// (134 instances - random-traffic trailer/car spawns, plus special single-vehicle spots
+    /// like SCM Kart One's own spot at Olle Speedway). A separate actor type from
+    /// MTDealerVehicleSpawnPoint entirely - not found via the earlier keyword-filtered actor
+    /// scan since neither "MWorldVehicleSpawnPoint" nor "VehicleClasses" matched any of the
+    /// dealer/garage/vendor keywords searched for.</summary>
+    public sealed record WorldSpawnPoint(List<string> VehicleKeys, List<string> ClassPackages, JToken Coord);
+
+    public List<WorldSpawnPoint> WorldVehicleSpawnPoints()
+    {
+        var result = new List<WorldSpawnPoint>();
+        foreach (var index in ExportsOfType("MWorldVehicleSpawnPoint"))
+        {
+            var obj = World.Json(index);
+            var props = Props(obj);
+            var sceneIndex = ObjectIndex(props?["RootComponent"]);
+            if (sceneIndex is null) continue;
+
+            var vehicleKeys = (props?["VehicleParams"] as JArray ?? [])
+                .Select(p => (string?)p["VehicleKey"]).Where(k => k is { Length: > 0 }).Select(k => k!).ToList();
+            var classPackages = (props?["VehicleClasses"] as JArray ?? [])
+                .Select(ObjectPackage).Where(c => c is not null).Select(c => c!).ToList();
+            if (vehicleKeys.Count == 0 && classPackages.Count == 0
+                && ObjectPackage(props?["EditorVisualVehicleClass"]) is { } fallback)
+                classPackages.Add(fallback);
+            if (vehicleKeys.Count == 0 && classPackages.Count == 0) continue;
+
+            result.Add(new WorldSpawnPoint(vehicleKeys, classPackages, Coord(World.Json(sceneIndex.Value))));
+        }
+        return result;
+    }
+
+    /// <summary>Every manual "spawn menu inside a spawn box" placement in the world (its
+    /// MTInteractableComponent's Interactions is EMotorTownInteractableType::SpawnVehicle) -
+    /// matched by owning an MTSpawnVehicleListComponent, not by literal actor type name.
+    /// VehicleSpawner_C is the generic one (3 instances) with a per-instance vehicle list (e.g.
+    /// SCM Kart One, or Zydro/Cora/Panther/FormulaSCM together); Terra, Vulcan, the four taxi
+    /// keys (Trophy_Taxi/Nimo_Taxi/Nuke_Taxi/Elisa2), and the delivery Scooty each have their
+    /// own dedicated single-purpose blueprint (TerraSpawner_C, VulcanSpawner_C, TaxiSpawner_C,
+    /// DeliveryScooterSpawner_C) with the key list fixed on the blueprint's own
+    /// MTSpawnVehicleListComponent archetype instead (same "list lives on the blueprint, not
+    /// per instance" pattern as ServiceVehicleSpawners) - resolved via the instance component's
+    /// own Template reference when the instance itself carries no override. Matching by literal
+    /// type name alone (pre-2026-08-20) silently dropped every one of these dedicated
+    /// blueprints' "Spawned At" row (Vulcan: found 1 of its real 2 - the ambient
+    /// MWorldVehicleSpawnPoint only, missing this spawn box entirely). Feeds the wiki's
+    /// "Spawned At" table, not "Sold At" - see DealerVehicleSpawnPoints for the real sale
+    /// signal. Police/Fire/Ambulance/Bus job spawners are excluded here (handled separately by
+    /// ServiceVehicleSpawners - a different semantic, job-vehicle access, not personal use).
+    /// Type/tag-only siblings with no explicit vehicle key anywhere (Truck/Trailer/Wrecker/
+    /// GarbageTruck spawners: match by VehicleTypes/a GameplayTag against "whatever you already
+    /// own", not one specific model) naturally yield no keys and are skipped - they don't
+    /// correspond to any single vehicle's "Spawned At" row.</summary>
+    public sealed record VehicleSpawnerPoint(List<string> VehicleKeys, JToken Coord);
+
+    public List<VehicleSpawnerPoint> VehicleSpawnerPoints()
+    {
+        var excludedTypes = ServiceSpawnerBlueprints.Select(b => b.ActorType).ToHashSet();
+        var result = new List<VehicleSpawnerPoint>();
+        foreach (var index in ExportsOfType("MTSpawnVehicleListComponent"))
+        {
+            var comp = World.Json(index);
+            var ownerIndex = ObjectIndex(comp["Outer"]);
+            if (ownerIndex is null) continue;
+            if (excludedTypes.Contains(World.Exports[ownerIndex.Value].ExportType)) continue;
+
+            var owner = World.Json(ownerIndex.Value);
+            var sceneIndex = ObjectIndex(Props(owner)?["RootComponent"]);
+            if (sceneIndex is null) continue;
+
+            var vehicleKeys = VehicleKeysOf(Props(comp));
+            if (vehicleKeys.Count == 0) vehicleKeys = VehicleKeysOf(Props(Template(comp)));
+            if (vehicleKeys.Count == 0) continue;
+
+            result.Add(new VehicleSpawnerPoint(vehicleKeys, Coord(World.Json(sceneIndex.Value))));
+        }
+        return result;
+    }
+
+    private static List<string> VehicleKeysOf(JObject? list)
+    {
+        var keys = (list?["VehicleParams"] as JArray ?? [])
+            .Select(p => (string?)p["VehicleKey"]).Where(k => k is { Length: > 0 }).Select(k => k!).ToList();
+        keys.AddRange((list?["VechileKeys"] as JArray ?? []).OfType<JValue>()
+            .Select(v => (string?)v.Value).Where(k => k is { Length: > 0 }).Select(k => k!));
+        return keys;
+    }
+
+    /// <summary>A handful of vehicles (Raven, Formula SCM) are sold from a dedicated factory
+    /// "production dealer" actor instead of a generic MTDealerVehicleSpawnPoint - one bespoke
+    /// blueprint per vehicle, always named `VehicleDealer_{VehicleKey}_Production_C` (built to
+    /// order rather than pre-spawned on a lot, but still the wiki's "Sold At" table), which
+    /// the row key comes straight out of.</summary>
+    private static readonly Regex ProductionDealerType = new(@"^VehicleDealer_(.+)_Production_C$");
+
+    public List<(string VehicleKey, JToken Coord)> ProductionDealers()
+    {
+        var result = new List<(string, JToken)>();
+        for (var index = 0; index < World.Exports.Count; index++)
+        {
+            var match = ProductionDealerType.Match(World.Exports[index].ExportType);
+            if (!match.Success) continue;
+            var obj = World.Json(index);
+            var sceneIndex = ObjectIndex(Props(obj)?["RootComponent"]);
+            if (sceneIndex is null) continue;
+            result.Add((match.Groups[1].Value, Coord(World.Json(sceneIndex.Value))));
+        }
+        return result;
+    }
+
+    /// <summary>One service-vehicle spawner blueprint (police/fire/ambulance/bus): the fixed
+    /// match criteria from its MTSpawnVehicleListComponent CDO (explicit VehicleParams keys,
+    /// unioned with a GameplayTags query the wiki's TagQueryMatches evaluates) plus every world
+    /// placement's coordinate. The vehicle list lives on the blueprint, not per instance - every
+    /// placement of one spawner type shares the same criteria (verified: instance-level
+    /// MTSpawnVehicleList components carry no property overrides in the current pak).</summary>
+    public sealed record ServiceSpawner(string Label, List<string> VehicleKeys, JToken? TagQuery, List<JToken> Coords);
+
+    private static readonly (string ActorType, string BlueprintPath, string Label)[] ServiceSpawnerBlueprints =
+    [
+        ("PoliceVehicleSpawner_C", "MotorTown/Content/Objects/Interaction/PoliceVehicleSpawner", "police"),
+        ("FireFighterVehicleSpawner_C", "MotorTown/Content/Objects/Interaction/FireFighterVehicleSpawner", "fire"),
+        ("AmbulanceSpawner_C", "MotorTown/Content/Objects/Interaction/AmbulanceSpawner", "ambulance"),
+        ("BusSpawner_C", "MotorTown/Content/Objects/Interaction/BusSpawner", "bus"),
+    ];
+
+    public List<ServiceSpawner> ServiceVehicleSpawners()
+    {
+        var groups = new List<ServiceSpawner>();
+        foreach (var (actorType, blueprintPath, label) in ServiceSpawnerBlueprints)
+        {
+            var package = assets.Package(blueprintPath);
+            if (package is null) continue;
+
+            // The blueprint's CDO serializes with no Properties at all for these actors - the
+            // vehicle list lives on its own MTSpawnVehicleListComponent archetype export
+            // instead, found by type (one per package).
+            JObject? list = null;
+            for (var i = 0; i < package.Exports.Count; i++)
+            {
+                if (package.Exports[i].ExportType != "MTSpawnVehicleListComponent") continue;
+                list = package.Json(i);
+                break;
+            }
+
+            var vehicleKeys = (Props(list)?["VehicleParams"] as JArray ?? [])
+                .Select(p => (string?)p["VehicleKey"]).Where(k => k is { Length: > 0 }).Select(k => k!).ToList();
+            var tagQuery = Props(list)?["VehicleRowGameplayTagQuery"] ?? Props(list)?["GameplayTagQuery"];
+
+            var coords = new List<JToken>();
+            foreach (var index in ExportsOfType(actorType))
+            {
+                var obj = World.Json(index);
+                var sceneIndex = ObjectIndex(Props(obj)?["RootComponent"]);
+                if (sceneIndex is null) continue;
+                coords.Add(Coord(World.Json(sceneIndex.Value)));
+            }
+            groups.Add(new ServiceSpawner(label, vehicleKeys, tagQuery, coords));
+        }
+        return groups;
+    }
+
+    // ---------------------------------------------------------- points of interest
+
+    /// <summary>Named POI actors placed directly in the world with an MTMapIconPlaceName
+    /// component (car dealers): one entry per placement, English display name (instance
+    /// override, falling back to the blueprint's own default) + coordinate.</summary>
+    public List<(string Name, JToken Coord)> NamedPois(params string[] actorTypes)
+    {
+        var result = new List<(string, JToken)>();
+        foreach (var index in ExportsOfType(actorTypes))
+        {
+            var obj = World.Json(index);
+            var nameIndex = ObjectIndex(Props(obj)?["MTMapIconPlaceName"]);
+            var sceneIndex = ObjectIndex(Props(obj)?["RootComponent"]);
+            if (nameIndex is null || sceneIndex is null) continue;
+            var name = EnglishText(PlaceNameTexts(World.Json(nameIndex.Value)));
+            result.Add((name, Coord(World.Json(sceneIndex.Value))));
+        }
+        return result;
+    }
+
+    /// <summary>Bare coordinate markers with no name in the pak (police/fire stations, ambulance
+    /// patient drop-offs, and the per-town wrecker-mission delivery destinations that densify
+    /// them - most of those carry no meaningful ActorLabel either, so treated the same way).</summary>
+    public List<JToken> CoordMarkers(params string[] actorTypes)
+    {
+        var result = new List<JToken>();
+        foreach (var index in ExportsOfType(actorTypes))
+        {
+            var obj = World.Json(index);
+            var sceneIndex = ObjectIndex(Props(obj)?["RootComponent"]);
+            if (sceneIndex is null) continue;
+            result.Add(Coord(World.Json(sceneIndex.Value)));
+        }
+        return result;
+    }
+
+    /// <summary>An MTMapIconPlaceNameComponent's PlaceNameTexts: the instance's own override, or
+    /// its blueprint default when the instance carries none (most vendors: every "Flower Shop"
+    /// placement shares the one blueprint-level name, no per-instance override).</summary>
+    private List<JObject> PlaceNameTexts(JObject component)
+    {
+        var texts = (Props(component)?["PlaceNameTexts"]?["Texts"] as JArray)?.OfType<JObject>().ToList();
+        if (texts is { Count: > 0 }) return texts;
+        var template = Template(component);
+        return (Props(template)?["PlaceNameTexts"]?["Texts"] as JArray ?? []).OfType<JObject>().ToList();
+    }
+
+    /// <summary>English-only text join (POI display names on the wiki are never localized).</summary>
+    private string EnglishText(IEnumerable<JObject> texts) => string.Join(" ", texts.Select(t =>
+        localization.Lookup(Localization.English, Text.Namespace(t), Text.Key(t)) ?? Text.Localized(t) ?? Text.Source(t) ?? ""));
+
     // ------------------------------------------------------------------- plumbing
 
-    private IEnumerable<int> ExportsOfType(string type)
+    private IEnumerable<int> ExportsOfType(params string[] types)
     {
         for (var index = 0; index < World.Exports.Count; index++)
         {
-            if (World.Exports[index].ExportType == type) yield return index;
+            if (types.Contains(World.Exports[index].ExportType)) yield return index;
         }
     }
 

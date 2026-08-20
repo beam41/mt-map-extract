@@ -70,7 +70,29 @@ prints to stdout; pak-package paths are used without the extension where noted.
 - **Output is JSON text**: pipe through `python3 -c "import sys,json; ..."` for precise
   inspection (python keeps the round-trip double).
 - `grep` matches the serialized JSON text, so it finds property names and string values
-  but not e.g. raw floats at a different precision.
+  but not e.g. raw floats at a different precision. It also only scans `.uasset` files
+  (`assets.Files(dir)` filtered to `f.Extension == "uasset"`) — it silently skips `.umap`
+  entirely, so it can never see anything placed in the world.
+- **World Partition**: `Jeju_World.umap` is only the always-loaded *persistent* level.
+  UE5.5's World Partition splits most spatial content into thousands of tiny per-cell
+  packages under `Jeju_World/_Generated_/*.umap` (5738 of them, confirmed) — `WorldExtractor`
+  and every `find`/`grep`/`dump` invocation against `Jeju_World` alone never sees them.
+  Confirmed (2026-08-20) they hold background/environment content only (foliage, trees,
+  streetlamps, landscape data, splines) — no gameplay actor type used anywhere in this
+  codebase (`MTDealerVehicleSpawnPoint`, `POI_*`, vendor/dealer/spawner blueprints, ...) has
+  ever been found inside one; every gameplay-relevant placement lives in the persistent
+  level. Use `wpscan [pattern]` to search cell export type names when checking a new lead.
+- **Keyword-filtered actor-type sweeps miss things**: enumerating all ~338 actor types in
+  `Jeju_World` and eyeballing/`grep`ing for expected keywords (`dealer|garage|vendor|
+  spawn|police|fire|...`) is NOT exhaustive — `MWorldVehicleSpawnPoint` (134 world vehicle
+  spawn points, confirmed carrying SCM Kart One and ~130 others) was missed this way twice
+  because neither its name nor its `VehicleClasses`/`VehicleParams` fields happened to match
+  the keyword list used. When a "this data must be in the pak somewhere" claim survives an
+  exhaustive type-name sweep, pivot to **`nearbox <path> <x1> <y1> <x2> <y2>`**: every actor
+  in a coordinate box, independent of type name — scope the box from a known landmark's
+  `AreaVolumes()` polygon bounds (which isn't only `Zone`-flagged — `RaceTrack`/`SmallArea`/
+  `LargeArea` flags exist too, e.g. "Olle Speedway" is `RaceTrack`-flagged, not `Zone`) and
+  physically enumerate what's actually there.
 - `loc`/`locfind` cover the English locres table only — per-language lookups need the
   code or `loc <namespace>` per table.
 - The tool is throwaway — keep it hacky, prefer one-off scripts over adding commands.

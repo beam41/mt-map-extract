@@ -14,6 +14,10 @@ internal static class RenderCargos
         sb.AppendLine("{{infobox>");
         sb.AppendLine($"name = {cargo.Name}");
         sb.AppendLine($"Cargo Type = {CargoTypeText(data, cargo.Type)}");
+        // a handful of cargos (Raven, Formula SCM) ARE a vehicle - the delivery point that
+        // produces this cargo is that vehicle's actual factory (Data.CargoProducers).
+        if (data.VehicleByKey(cargo.Key) is { } vehicle)
+            sb.AppendLine($"Vehicle = [[vehicles:{RenderVehicles.VehicleSlug(vehicle)}|{vehicle.En}]]");
         sb.AppendLine($"Volume = {Format.Num(cargo.Volume)}");
         if (cargo.WeightText() is { } weight) sb.AppendLine($"Weight = {weight}");
         sb.AppendLine($"Payment = ${cargo.PaymentPerKm}/km");

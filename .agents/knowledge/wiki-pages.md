@@ -270,6 +270,14 @@ Return to [[parts:{slug}|{en}]].
 ^ Axle ^ Break Ratio ^ Driven ^ Dual Wheels ^ Liftable ^
 | {Front|Middle|Rear…} | {0% | 0.0%} | {No|**Yes**} | {No|**Yes**} | {No|**Yes**} |]
 
+[===== Spawned At =====
+^ Area ^ Nearest Point of Interest ^
+| {zone} | {nearestPoiCell} |]
+
+[===== Sold At =====
+^ Area ^ Nearest Point of Interest ^
+| {zone} | {nearestPoiCell} |]
+
 ===== In other languages =====
 ^ Language ^ Name ^
 | Czech | {locres name, English fallback} |
@@ -281,8 +289,80 @@ Return to [[parts:{slug}|{en}]].
 - **Default Parts**: pak `Parts` array order; base slot = trailing digits stripped
   (`Tire0`→`Tire`); one row per distinct part per slot, `×N` when count > 1; Total Mass
   = part mass × count.
+- **Spawned At / Sold At** (new, no wiki precedent): one row per real-world location a
+  vehicle can be acquired at, deduplicated when two rows render byte-identical text
+  (`RenderVehicles.VehiclePageDetails`).
+  - **Spawned At**: **`MWorldVehicleSpawnPoint`** (134 - ambient/random-traffic spawns,
+    marked `(manually spawn)`) matched by `VehicleParams[].VehicleKey`, the object-ref array
+    `VehicleClasses[]`, or `EditorVisualVehicleClass` as a last resort; **plus** the
+    `VehicleSpawner_C`-family "manual spawn box" (`MTInteractableComponent` ->
+    `EMotorTownInteractableType::SpawnVehicle`, not a sale) - matched generically by *owning*
+    an `MTSpawnVehicleListComponent`, not by literal actor type name: `VehicleSpawner_C`
+    itself (3 instances) configures its list per-instance; dedicated single-purpose sibling
+    blueprints (`TerraSpawner_C`->Terra, `VulcanSpawner_C`->Vulcan,
+    `TaxiSpawner_C`->Trophy_Taxi/Nimo_Taxi/Nuke_Taxi/Elisa2,
+    `DeliveryScooterSpawner_C`->Scooty) fix their list on the *blueprint's own*
+    `MTSpawnVehicleListComponent` archetype instead, resolved through the instance
+    component's `Template` reference. Siblings that match by `VehicleTypes`/a `GameplayTag`
+    instead of an explicit key (`TruckSpawner_C`/`TrailerSpawner_C`/`WreckerSpawner_C`/
+    `GarbageTruckSpawner_C` - "whatever you already own") naturally yield no keys and are
+    skipped; **plus** police/fire/ambulance/bus job spawners (`ServiceVehicleSpawners`,
+    matched by explicit `VehicleParams[].VehicleKey` or the spawner's `GameplayTagQuery`/
+    `VehicleRowGameplayTagQuery` - an absent query never matches, it does NOT mean "fits
+    everything"). A vehicle can appear at both a job spawner and a world spawn point near the
+    same station - both rows are kept.
+  - **Sold At**: every `MTDealerVehicleSpawnPoint` matching the vehicle's `VehicleClass`
+    package, falling back to `EditorVisualVehicleClass`, then to the first non-null entry of
+    the plain object-ref array `VehicleClasses[]`, when the earlier field(s) are unset;
+    **plus** any vehicle whose key equals a **Cargos**-table key: it is itself a produced
+    cargo, sold *only* by being produced, resolved by that cargo's actual delivery-point
+    recipe (`Data.CargoProducers`) unconditionally, and *exclusive* of the regular
+    `MTDealerVehicleSpawnPoint`/production-dealer-actor match - a regular dealer placement
+    that happens to reference the same vehicle class is not an independent second sale, it's
+    where the just-produced vehicle physically spawns for pickup (Terra:
+    `MTDealerVehicleSpawnPoint_Terra` sits 12m from Terra Factory). Only 3 vehicle keys
+    collide with a Cargos key: Raven and Formula SCM (each with their own
+    `VehicleDealer_{Key}_Production_C` factory actor - Raven -> Ansan Raven Factory, Formula
+    SCM -> Ansan Racecar Factory, resolved by cargo-key match, not the actor's own map
+    position, since Raven's actor sits geometrically closer to the Racecar factory) and Terra
+    (no factory actor at all - the cargo match is what surfaces it). Rendered "Produced at
+    {subject}" instead of "Inside {subject}". Either section is omitted when its list is
+    empty (trailers, taxis, and a handful of rare vehicles with zero pak sale/spawn signal -
+    Kart_01, distinct from SCM Kart One).
+  - **Nearest POI search** (`Data.BuildLocation`): candidates are named POIs (delivery
+    points, gas stations, car dealers, the single Motorcycle Dealer, bus terminals, houses -
+    **vendors dropped entirely**, too generic a category to identify a place, unlike "police
+    station") plus the sparse ~one-per-zone unnamed categories (police station, fire fighting
+    station, hospital, car dealer - `Data.ZoneAnchoredLabels`), which anchor to their own
+    enclosing *Zone*-flagged area instead of a coordinate: `"{label} in {zone}"` ("Inside
+    police station in Gangjung" - `Data.CoarseZone`, the single `Zone` component only, not
+    the full composed Area-column hierarchy, to avoid repeating it verbatim next to itself).
+    An unnamed non-zone-anchored POI (a nameless gas station, ...) is excluded from the
+    search outright rather than shown via a "near {actual landmark}" second hop - it isn't
+    specific enough, and the old hop measured distance from the wrong point anyway.
+  - **Areas as POIs**: every `AreaVolumes()` polygon flagged `RaceTrack`/`SmallArea`/
+    unflagged (never `Zone`/`LargeArea`, the broad regions that only ever compose the Area
+    column) doubles as a point of interest: a placement exactly inside one's polygon reads
+    "Inside {area name}" directly (`Data.AreaFor`, same point-in-polygon ray-cast as
+    `ZoneFor`), no distance math; a placement outside falls through to the ordinary
+    nearest-POI search above, where the same area is also registered as a candidate at its
+    precalculated bounding-box center (`AreaInfo.CenterX/CenterY`, OpenLayers'
+    `getCenter(extent)` convention, computed once in `Zones()`). Business-premises areas
+    (`Gosan Truck`, `Tosan Trailers`, `Namwon Bus Dealership`, `Tow Truck Dealership`, `Jeju
+    Airport`, ...) resolve this way now instead of via a separate map-icon POI.
+  - **Rendering** (`RenderVehicles.LocationCell`): "Inside {subject}" within the POI's
+    threshold (30 m default, 50 m for a car/motorcycle dealer - `Data.DealerInsideThresholdM`
+    - unified from a stray 120 m/50 m split), else "{Nm} to the {compass} of {subject}".
+    `{compass}` is the 8-point direction (`Data.Direction`) from the POI to the spawn/sell
+    point - pak/map convention `+X` east, `+Y` south. A named POI's subject is its bare
+    linked name alone, **never suffixed with its category label** - "Tosan Trailers", not
+    "Tosan Trailers dealer"; "Gapa Bus Terminal", not "... bus terminal"; a delivery point's
+    own name, not "... delivery point" - every category, the name alone already identifies
+    the place and the table's own column header says what kind of row this is. A delivery
+    point match (not Produced) never collapses to "Inside" - always the exact meter distance,
+    delivery points only.
 - **Section order**: Specifications → Cargo Space → Capabilities → Delivery → Default
-  Parts → Installable Parts → Axle info → In other languages.
+  Parts → Installable Parts → Axle info → Spawned At → Sold At → In other languages.
 
 ## Part page
 
