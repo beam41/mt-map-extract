@@ -444,36 +444,39 @@ internal static class RenderParts
         return sb.ToString();
     }
 
-    /// <summary>The live wiki's own category menu (2026-08-20 screenshot) — 7 groups, each
-    /// with its member part types in a fixed display order. Not alphabetical: mirrors the
-    /// site nav exactly. Keys are `PartInfo.TypeEnglish` spellings (post-`PartTypeEnglish`,
-    /// e.g. "Limited Slip Differential" not "LSD", "Anti-roll Bar" not "Anti Roll Bar").
-    /// Types the live menu doesn't list (`Attachment`, `Body`, `Bus License` — placeholder/
-    /// default parts with no menu entry of their own) fall into "Etc" after the pictured
-    /// entries, natural-sorted.</summary>
-    private static readonly (string Group, string[] Types)[] PartGroups =
-    [
-        ("Powertrain", ["Coolant Radiator", "Engine", "Final Drive Ratio", "Intake", "Limited Slip Differential", "Transmission", "Turbocharger"]),
-        ("Brake", ["Brake Balance", "Brake Pad", "Brake Power"]),
-        ("Suspension", ["Angle Kit", "Anti-roll Bar", "Suspension Damper", "Suspension Ride Height", "Suspension Spring", "Wheel Spacer"]),
-        ("Tire", ["Tire"]),
-        ("Wheel", ["Wheel"]),
-        ("Aero Dynamic", ["Bonnet", "Fender", "Front Bumper", "Front Spoiler", "Front Windshield Sticker", "Front Window Sun Visor", "Rear Bumper", "Rear Spoiler", "Rear Window Louvers", "Rear Wing", "Roof", "Side Skirt", "Trunk"]),
-        ("Etc", ["Bullbar", "Cargo Bed", "Cargo Bed Attachment", "Escort License", "Headlight", "Roof Rack", "Taxi License", "Trailer Hitch", "Utility", "Winch"]),
-    ];
+    /// <summary>The live wiki's own category menu (2026-08-20 screenshot) — 7 groups in
+    /// this fixed display order; within a group the member types are just natural-sorted
+    /// (confirmed: every pictured group's type order is already alphabetical, not a bespoke
+    /// order). Keys are `PartInfo.TypeEnglish` spellings (post-`PartTypeEnglish`, e.g.
+    /// "Limited Slip Differential" not "LSD", "Anti-roll Bar" not "Anti Roll Bar"). Types
+    /// the live menu doesn't list (`Attachment`, `Body`, `Bus License` — placeholder/default
+    /// parts with no menu entry of their own) default to "Etc" and natural-sort in place
+    /// among its pictured entries.</summary>
+    private static readonly string[] PartGroupOrder =
+        ["Powertrain", "Brake", "Suspension", "Tire", "Wheel", "Aero Dynamic", "Etc"];
 
-    private static readonly Dictionary<string, (int GroupIndex, int TypeIndex)> PartGroupRank = BuildPartGroupRank();
-
-    private static Dictionary<string, (int, int)> BuildPartGroupRank()
+    private static readonly Dictionary<string, string> PartTypeGroup = new(StringComparer.Ordinal)
     {
-        var rank = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
-        for (var g = 0; g < PartGroups.Length; g++)
-            for (var t = 0; t < PartGroups[g].Types.Length; t++)
-                rank[PartGroups[g].Types[t]] = (g, t);
-        return rank;
-    }
+        ["Coolant Radiator"] = "Powertrain", ["Engine"] = "Powertrain", ["Final Drive Ratio"] = "Powertrain",
+        ["Intake"] = "Powertrain", ["Limited Slip Differential"] = "Powertrain", ["Transmission"] = "Powertrain",
+        ["Turbocharger"] = "Powertrain",
+        ["Brake Balance"] = "Brake", ["Brake Pad"] = "Brake", ["Brake Power"] = "Brake",
+        ["Angle Kit"] = "Suspension", ["Anti-roll Bar"] = "Suspension", ["Suspension Damper"] = "Suspension",
+        ["Suspension Ride Height"] = "Suspension", ["Suspension Spring"] = "Suspension", ["Wheel Spacer"] = "Suspension",
+        ["Tire"] = "Tire",
+        ["Wheel"] = "Wheel",
+        ["Bonnet"] = "Aero Dynamic", ["Fender"] = "Aero Dynamic", ["Front Bumper"] = "Aero Dynamic",
+        ["Front Spoiler"] = "Aero Dynamic", ["Front Windshield Sticker"] = "Aero Dynamic",
+        ["Front Window Sun Visor"] = "Aero Dynamic", ["Rear Bumper"] = "Aero Dynamic", ["Rear Spoiler"] = "Aero Dynamic",
+        ["Rear Window Louvers"] = "Aero Dynamic", ["Rear Wing"] = "Aero Dynamic", ["Roof"] = "Aero Dynamic",
+        ["Side Skirt"] = "Aero Dynamic", ["Trunk"] = "Aero Dynamic",
+        ["Bullbar"] = "Etc", ["Cargo Bed"] = "Etc", ["Cargo Bed Attachment"] = "Etc", ["Escort License"] = "Etc",
+        ["Headlight"] = "Etc", ["Roof Rack"] = "Etc", ["Taxi License"] = "Etc", ["Trailer Hitch"] = "Etc",
+        ["Utility"] = "Etc", ["Winch"] = "Etc",
+    };
 
-    private static readonly int EtcGroupIndex = Array.FindIndex(PartGroups, g => g.Group == "Etc");
+    private static string PartGroupFor(string typeEnglish) =>
+        PartTypeGroup.GetValueOrDefault(typeEnglish, "Etc");
 
     public static string ListOfParts(List<PartInfo> parts)
     {
@@ -483,17 +486,15 @@ internal static class RenderParts
         sb.AppendLine($"There are {parts.Count} vehicle parts in [[:motor_town|Motor Town]].");
         sb.AppendLine();
 
-        var typeGroups = parts.GroupBy(p => p.TypeEnglish).ToList();
-        var ordered = typeGroups
-            .OrderBy(g => PartGroupRank.TryGetValue(g.Key, out var r) ? r.GroupIndex : EtcGroupIndex)
-            .ThenBy(g => PartGroupRank.TryGetValue(g.Key, out var r) ? r.TypeIndex : int.MaxValue)
+        var ordered = parts.GroupBy(p => p.TypeEnglish)
+            .OrderBy(g => Array.IndexOf(PartGroupOrder, PartGroupFor(g.Key)))
             .ThenBy(g => g.Key, Format.NaturalComparer.Instance)
             .ToList();
 
         string? currentGroup = null;
         foreach (var group in ordered)
         {
-            var groupName = PartGroupRank.TryGetValue(group.Key, out var r2) ? PartGroups[r2.GroupIndex].Group : "Etc";
+            var groupName = PartGroupFor(group.Key);
             if (groupName != currentGroup)
             {
                 sb.AppendLine($"===== {groupName} =====");
