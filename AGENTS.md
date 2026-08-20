@@ -16,6 +16,7 @@ they are the verified ground truth (layout, schemas, display rules, gotchas):
 - `.agents/knowledge/wiki-pages.md` — the exact DokuWiki templates + display rules the generator must reproduce
 - `.agents/knowledge/dokuwiki-syntax.md` — the DokuWiki markup reference (https://www.dokuwiki.org/wiki:syntax)
 - `.agents/knowledge/explore-tool.md` — how to inspect the pak directly with the explore harness
+- `.agents/knowledge/live-wiki-publish.md` — how to push a generated page straight to the live wiki (only when explicitly asked)
 
 Update the relevant doc whenever a schema or a display rule changes.
 
@@ -48,6 +49,7 @@ every option. `--skip-json` / `--skip-map` / `--skip-tiles` disable stages indep
 | `.agents/knowledge/cargos.md` | cargo domain: Cargos tables, weights, space types, DeliveryPoint recipes |
 | `.agents/knowledge/wiki-pages.md` | the exact DokuWiki templates, display rules, and pak→wiki field map the generator must reproduce |
 | `.agents/knowledge/mt-pak-extract-review.md` | read-only review of the mt-pak-extract extraction pipeline (deviations found 2026-08-19) |
+| `.agents/knowledge/live-wiki-publish.md` | the plain HTTP form-POST flow for pushing a generated page straight to the live wiki, on request |
 
 The wiki generator wipes `out/wiki/` on every run and writes only .txt pages. `wiki/assertions/`
 holds a snapshot of the live wiki pages for diffing generated output. Every project writes into
