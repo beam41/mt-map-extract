@@ -251,6 +251,10 @@ internal sealed class DeliveryPointInfo
     public required double Y { get; init; }
     public required string Zone { get; init; }
 
+    /// <summary>Top-level zone only (last comma segment of Zone) — used to group the
+    /// list-of-delivery-points page without fragmenting into every sub-area.</summary>
+    public required string ZoneGroup { get; init; }
+
     /// <summary>False only for the single collapsed "Resident" entry — 223 anonymous,
     /// identically-configured residential consumers share one blueprint-level name with no
     /// per-instance override, so they collapse to one unlinked entry instead of 223 duplicate
@@ -793,8 +797,15 @@ internal sealed class Data(AssetSource assets, Localization localization)
 
     /// <summary>The part→vehicle fit rule (vehicle-parts.md): the override key wins; otherwise
     /// ALL of VehicleTypes / TruckClasses / VehicleKeys / tag query / NotSupportedPartTypes.
-    /// Final Drive Ratio parts fit every vehicle (user directive — the bandaid renamed some).</summary>
-    private static bool PartFitsVehicle(JObject partRow, VehicleInfo vehicle)
+    /// Final Drive Ratio parts fit every vehicle (user directive — the bandaid renamed some).
+    /// License part types (BusLicense, TaxiLicense) additionally gate on the vehicle's own
+    /// `bIsBusable`/`bIsTaxiable`/`bIsLimoable` flags — a real gameplay restriction the
+    /// generic fields above don't capture: BusLicense0/LimoLicense carry NO restriction
+    /// fields at all in the pak (would otherwise fit all 171 vehicles), and TaxiLicense's
+    /// VehicleTypes filter (Small/Pickup/Bus) still lets police/ambulance variants of those
+    /// types through despite `bIsTaxiable = false`. Verified 2026-08-20 against every
+    /// vehicle row's flags.</summary>
+    private static bool PartFitsVehicle(string partKey, JObject partRow, VehicleInfo vehicle)
     {
         if ((string?)partRow["PartType"] == "EMTVehiclePartType::FinalDriveRatio") return true;
         if (OverrideKeys(partRow["OverrideAllowedVehicleKeys"])?.Contains(vehicle.Key) == true) return true;
@@ -817,6 +828,10 @@ internal sealed class Data(AssetSource assets, Localization localization)
             return false;
         if (!TagQueryMatches(partRow["VehicleRowGameplayTagQuery"], vehicle.Tags)) return false;
         if (vehicle.NotSupportedPartTypes.Contains((string?)partRow["PartType"] ?? "")) return false;
+        var partType = (string?)partRow["PartType"];
+        if (partType == "EMTVehiclePartType::BusLicense") return vehicle.Flags.Contains("busable");
+        if (partType == "EMTVehiclePartType::TaxiLicense")
+            return vehicle.Flags.Contains(partKey == "LimoLicense" ? "limoable" : "taxiable");
         return true;
     }
 
@@ -1348,7 +1363,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
     private List<VehicleInfo> FittingVehicles(string key, JObject row)
     {
         if (_installableVehiclesCache.TryGetValue(key, out var cached)) return cached;
-        var result = Vehicles.Where(v => PartFitsVehicle(row, v)).ToList();
+        var result = Vehicles.Where(v => PartFitsVehicle(key, row, v)).ToList();
         _installableVehiclesCache[key] = result;
         return result;
     }
@@ -1363,7 +1378,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
         foreach (var part in Parts)
         {
             if (!_partRowsByKey.TryGetValue(part.Key, out var row)) continue;
-            if (PartFitsVehicle(row, vehicle)) result.Add(part);
+            if (PartFitsVehicle(part.Key, row, vehicle)) result.Add(part);
         }
         _installableCache[vehicle.Key] = result;
         return result;
@@ -1433,6 +1448,7 @@ internal sealed class Data(AssetSource assets, Localization localization)
                 X = x,
                 Y = y,
                 Zone = isResident ? "" : ZoneFor(x, y, zones),
+                ZoneGroup = isResident ? "" : CoarseZone(x, y, zones),
                 HasPage = !isResident,
             };
 

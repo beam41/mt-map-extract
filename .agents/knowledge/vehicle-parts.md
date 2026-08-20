@@ -85,6 +85,7 @@ Worked examples from the data:
 | Field | Meaning |
 | --- | --- |
 | `VehicleType`, `TruckClass`, `GameplayTags` | What part-side filters match against. Tags are namespaced: `Vehicle.EV`, `Vehicle.Key.Goliath`, `Vehicle.Bus`, `Vehicle.Delivery.{Cheap,Modern,Taxi,Heavy}`, `Vehicle.MineTruck`, `Vehicle.Bike.{SportBike,Scooter,Standard}`, ... |
+| `bIsTaxiable` / `bIsLimoable` / `bIsBusable` | Real per-vehicle license eligibility (surfaced as `Flags` "taxiable"/"limoable"/"busable"), gating `TaxiLicense`/`BusLicense` part rows in addition to (not instead of) their other filters — see below. Not implied by `VehicleType`: `PoliceInterceptor_01`/`Elisa_Police`/`Nuke_Police`/`Ambi`/`Tavan_Ambulance` etc. are `VehicleType::Small` like their taxiable civilian siblings but carry `bIsTaxiable = false`. |
 | `NotSupportedPartTypes` | Part types this vehicle cannot take at all (e.g. Formula SCM: `[LSD, WheelSpacer]`). |
 | `NotOptionalPartTypes` | Part types that must be installed (shown as required in the garage). |
 | `OptionalPartTypes` | Part types that may be left empty (e.g. many cars: `[SideSkirt]` or `[Roof]`). |
@@ -105,7 +106,13 @@ the pak): a part fits vehicle V in slot S when V's key is in `OverrideAllowedVeh
 - `VehicleKeys` empty or `V.key ∈ VehicleKeys`,
 - `VehicleRowGameplayTagQuery` empty or it matches `V.GameplayTags`,
 - `V.NotSupportedPartTypes` does not contain `PartType`,
-- `V.SlotSupportedPartsQueries[S]` empty or it matches the part's `GameplayTags`.
+- `V.SlotSupportedPartsQueries[S]` empty or it matches the part's `GameplayTags`,
+- `PartType == BusLicense` ⟹ `V.bIsBusable`; `PartType == TaxiLicense` ⟹ `V.bIsLimoable`
+  for the `LimoLicense` row specifically, else `V.bIsTaxiable` (the wiki generator's
+  implemented rule; the engine may also route this through `SlotSupportedPartsQueries`,
+  not distinguished in the pak dump — verified 2026-08-20: `BusLicense0`/`LimoLicense`
+  carry every other restriction field empty, so without this gate they'd fit all 171
+  vehicles).
 
 `bTruckClassIncludeNone` deserves a caveat: with `TruckClasses` set it either *adds* class
 `None` vehicles or marks that the `None` class is covered; the flag is emitted as-is

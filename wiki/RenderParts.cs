@@ -444,6 +444,37 @@ internal static class RenderParts
         return sb.ToString();
     }
 
+    /// <summary>The live wiki's own category menu (2026-08-20 screenshot) — 7 groups, each
+    /// with its member part types in a fixed display order. Not alphabetical: mirrors the
+    /// site nav exactly. Keys are `PartInfo.TypeEnglish` spellings (post-`PartTypeEnglish`,
+    /// e.g. "Limited Slip Differential" not "LSD", "Anti-roll Bar" not "Anti Roll Bar").
+    /// Types the live menu doesn't list (`Attachment`, `Body`, `Bus License` — placeholder/
+    /// default parts with no menu entry of their own) fall into "Etc" after the pictured
+    /// entries, natural-sorted.</summary>
+    private static readonly (string Group, string[] Types)[] PartGroups =
+    [
+        ("Powertrain", ["Coolant Radiator", "Engine", "Final Drive Ratio", "Intake", "Limited Slip Differential", "Transmission", "Turbocharger"]),
+        ("Brake", ["Brake Balance", "Brake Pad", "Brake Power"]),
+        ("Suspension", ["Angle Kit", "Anti-roll Bar", "Suspension Damper", "Suspension Ride Height", "Suspension Spring", "Wheel Spacer"]),
+        ("Tire", ["Tire"]),
+        ("Wheel", ["Wheel"]),
+        ("Aero Dynamic", ["Bonnet", "Fender", "Front Bumper", "Front Spoiler", "Front Windshield Sticker", "Front Window Sun Visor", "Rear Bumper", "Rear Spoiler", "Rear Window Louvers", "Rear Wing", "Roof", "Side Skirt", "Trunk"]),
+        ("Etc", ["Bullbar", "Cargo Bed", "Cargo Bed Attachment", "Escort License", "Headlight", "Roof Rack", "Taxi License", "Trailer Hitch", "Utility", "Winch"]),
+    ];
+
+    private static readonly Dictionary<string, (int GroupIndex, int TypeIndex)> PartGroupRank = BuildPartGroupRank();
+
+    private static Dictionary<string, (int, int)> BuildPartGroupRank()
+    {
+        var rank = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
+        for (var g = 0; g < PartGroups.Length; g++)
+            for (var t = 0; t < PartGroups[g].Types.Length; t++)
+                rank[PartGroups[g].Types[t]] = (g, t);
+        return rank;
+    }
+
+    private static readonly int EtcGroupIndex = Array.FindIndex(PartGroups, g => g.Group == "Etc");
+
     public static string ListOfParts(List<PartInfo> parts)
     {
         var sb = new StringBuilder();
@@ -451,11 +482,24 @@ internal static class RenderParts
         sb.AppendLine();
         sb.AppendLine($"There are {parts.Count} vehicle parts in [[:motor_town|Motor Town]].");
         sb.AppendLine();
-        foreach (var group in parts
-                     .GroupBy(p => p.TypeEnglish)
-                     .OrderBy(g => g.Key, Format.NaturalComparer.Instance))
+
+        var typeGroups = parts.GroupBy(p => p.TypeEnglish).ToList();
+        var ordered = typeGroups
+            .OrderBy(g => PartGroupRank.TryGetValue(g.Key, out var r) ? r.GroupIndex : EtcGroupIndex)
+            .ThenBy(g => PartGroupRank.TryGetValue(g.Key, out var r) ? r.TypeIndex : int.MaxValue)
+            .ThenBy(g => g.Key, Format.NaturalComparer.Instance)
+            .ToList();
+
+        string? currentGroup = null;
+        foreach (var group in ordered)
         {
-            sb.AppendLine($"===== {group.Key} =====");
+            var groupName = PartGroupRank.TryGetValue(group.Key, out var r2) ? PartGroups[r2.GroupIndex].Group : "Etc";
+            if (groupName != currentGroup)
+            {
+                sb.AppendLine($"===== {groupName} =====");
+                currentGroup = groupName;
+            }
+            sb.AppendLine($"==== {group.Key} ====");
             sb.AppendLine("^ Part ^ Cost ^ Mass ^");
             foreach (var part in group.OrderBy(p => Format.PartSortKey(p.En), Format.NaturalComparer.Instance))
             {

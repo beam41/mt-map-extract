@@ -150,7 +150,7 @@ internal static class RenderDelivery
         sb.AppendLine($"There are {listed.Count} delivery points in [[:motor_town|Motor Town]].");
         sb.AppendLine();
         foreach (var group in listed
-                     .GroupBy(p => p.Zone)
+                     .GroupBy(p => p.ZoneGroup)
                      .OrderBy(g => g.Key, Format.NaturalComparer.Instance))
         {
             sb.AppendLine($"===== {group.Key} =====");

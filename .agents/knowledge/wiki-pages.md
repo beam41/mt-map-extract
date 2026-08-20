@@ -660,9 +660,14 @@ There are {n} delivery points in [[:motor_town|Motor Town]].
   * [[delivery_points:{slug}|{en}]]
 ```
 
-Grouped by zone (natural sort on the zone name, 7 sections), bullets sorted by name
-**ordinal** (case-sensitive, matching list_of_vehicles) — same structure as
-list_of_vehicles' per-type sections. `Resident` is excluded (no page).
+Grouped by the **top-level zone only** (`DeliveryPointInfo.ZoneGroup` — the last
+comma segment of the full `Zone` hierarchy, via `CoarseZone`; natural sort on the zone
+name, 7 sections: Ara, Gangjung, Gapa, Gwangjin, Hallim, Jeju, Seongsan), bullets sorted
+by name **ordinal** (case-sensitive, matching list_of_vehicles) — same structure as
+list_of_vehicles' per-type sections. `Resident` is excluded (no page). The full `Zone`
+hierarchy (e.g. "Aewol Furniture Store, Hallim") stays on the per-point infobox
+`Location =` field and vehicle Spawned/Sold At sections — only this list page's grouping
+key is coarsened, to avoid fragmenting into 50+ sub-area sections.
 
 ## Cargo space page
 
@@ -689,9 +694,14 @@ directive). Zeroed `CargoSpaceSize` structs are not real spaces.
 
 ## List pages
 
-- **list_of_parts**: `There are 768 vehicle parts …`; 44 sections sorted by type name
-  (natural); rows per type sorted by name (natural, case-insensitive, digit runs as
-  integers, pure numbers first). Mass `—` when absent.
+- **list_of_parts**: `There are 768 vehicle parts …`; 7 `=====` category-group sections
+  (`Powertrain`, `Brake`, `Suspension`, `Tire`, `Wheel`, `Aero Dynamic`, `Etc` — the live
+  wiki's own nav menu order, 2026-08-20 screenshot, not alphabetical) each holding its
+  member part types as `====` subsections in the pictured fixed order (`RenderParts.
+  PartGroups`); types absent from the live menu (`Attachment`, `Body`, `Bus License` —
+  placeholder/default parts) fall into `Etc` after the pictured entries, natural-sorted.
+  44 type subsections total. Rows per type sorted by name (natural, case-insensitive,
+  digit runs as integers, pure numbers first). Mass `—` when absent.
 - **list_of_vehicles**: `There are 171 vehicles …`; 12 sections by type name (natural);
   bullets sorted by name **ordinal** (case-sensitive: `SPT1` < `Small Cage Trailer`,
   `Goliath-10` < `Goliath-4`).
