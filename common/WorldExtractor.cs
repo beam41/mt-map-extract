@@ -16,52 +16,6 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
     private static readonly string[] BusStopTypes =
         ["BusStop_01_C", "BusStop_02_C", "BusStop_03_C", "BusTerminal_01_C"];
 
-    /// <summary>
-    /// A storage config that names a cargo type but no key stands for every cargo of that type.
-    /// This is the hand-maintained expansion the Rust extractor carried.
-    /// </summary>
-    private static readonly Dictionary<string, string[]> CargoTypeMembers = new()
-    {
-        ["EDeliveryCargoType::SmallPackage"] =
-        [
-            "SmallBox", "CarrotBox", "AppleBox", "OrangeBox", "GlassBottleBox", "Rice", "PumpkinBox",
-            "CornBox", "CheeseBox", "MeatBox", "BreadBox", "SnackBox", "GiftBox_01",
-        ],
-        ["EDeliveryCargoType::LargePackage"] =
-        [
-            "BoxPallete_01", "BoxPallete_02", "BoxPallete_03", "PowerBox", "OrangeBoxes", "RicePallet",
-            "PumpkinPallet", "CornPallet", "BeanPallet", "HempPallet", "CabbagePallet", "ChilliPallet",
-            "PotatoPallet", "CheesePallet", "BreadPallet",
-        ],
-        ["EDeliveryCargoType::None"] =
-        [
-            "PlasticPallete", "QuicklimePallet", "Fuel", "Oil", "CrudeOil", "LiveFish_01",
-            "MilitarySupplyBox_01_Empty", "Milk", "AirlineMealPallet", "FormulaSCM", "PlasticPipes_6m",
-            "lHBeam_6m", "SteelCoil_10t", "Cement", "Terra", "SunflowerSeed",
-        ],
-        ["EDeliveryCargoType::FinalProduct"] = ["ToyBoxes", "BottlePallete"],
-        ["EDeliveryCargoType::Wood"] = ["WoodPlank_14ft_5t"],
-        ["EDeliveryCargoType::Container"] =
-        [
-            "Container_30ft_5t", "Container_30ft_10t", "Container_30ft_20t", "Container_20ft_01",
-            "Container_40ft_01",
-        ],
-        ["EDeliveryCargoType::Log"] = ["Log_30ft_30t", "Log_Oak_12ft", "Log_Oak_24ft", "Log_20ft"],
-        ["EDeliveryCargoType::Sand"] = ["Sand", "FineSand"],
-        ["EDeliveryCargoType::Coal"] = ["Coal"],
-        ["EDeliveryCargoType::Stone"] = ["LimestoneRock", "Limestone", "IronOre"],
-        ["EDeliveryCargoType::Concrete"] = ["Concrete"],
-        ["EDeliveryCargoType::Garbage"] = ["TrashBag", "Trash_Big"],
-        ["EDeliveryCargoType::Furniture"] =
-        ["Sofa_01", "Sofa_02", "Sofa_03", "Sofa_04", "Bed_01", "Bed_02", "Bed_03"],
-        ["EDeliveryCargoType::Food"] =
-        [
-            "Pizza_01", "Pizza_02", "Pizza_03", "Pizza_04", "Pizza_05", "Pizza_01_Premium", "Burger_01",
-            "Burger_01_Signature",
-        ],
-        ["EDeliveryCargoType::MilitarySupply"] = ["MilitarySupplyBox_01"],
-    };
-
     private readonly CargoKeys _cargoKeys = new(assets);
 
     private PackageJson World => assets.RequirePackage(WorldPath);
@@ -283,12 +237,13 @@ public sealed class WorldExtractor(AssetSource assets, Localization localization
         }
     }
 
-    private static List<StorageConfig> Flatten(List<StorageConfig> configs)
+    private List<StorageConfig> Flatten(List<StorageConfig> configs)
     {
         var flattened = new List<StorageConfig>(configs);
         foreach (var config in configs)
         {
-            if (config.CargoKey != "None" || !CargoTypeMembers.TryGetValue(config.CargoType, out var members)) continue;
+            if (config.CargoKey != "None") continue;
+            var members = _cargoKeys.MembersOf(config.CargoType);
             flattened.AddRange(members.Select(member => config with { CargoKey = member }));
         }
         return flattened;
