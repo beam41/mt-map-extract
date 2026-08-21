@@ -154,9 +154,14 @@ internal static class Program
             File.WriteAllText(Path.Combine(subDir, "auto_details.txt"), info);
 
             if (!opts.Bootstrap) return;
-            var shell = "{{page>" + ns + ":" + slug + ":auto_infobox&nodate&nomdate}}\n\n"
-                        + heading + "\n\n"
-                        + "{{page>" + ns + ":" + slug + ":auto_details&nodate&nomdate}}\n";
+            var shell = $$$"""
+                {{page>{{{ns}}}:{{{slug}}}:auto_infobox&nodate&nomdate}}
+
+                {{{heading}}}
+
+                {{page>{{{ns}}}:{{{slug}}}:auto_details&nodate&nomdate}}
+
+                """;
             File.WriteAllText(Path.Combine(pagesDir, slug + ".txt"), shell);
         }
 

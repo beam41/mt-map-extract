@@ -28,7 +28,11 @@ internal static class RenderCargos
     /// <summary>Heading + intro sentence — generated once, straight into the live shell
     /// page's bootstrap suggestion.</summary>
     public static string CargoPageHeading(CargoInfo cargo, Data data) =>
-        $"====== {cargo.Name} ======\n\n{IntroSentence(cargo, data)}";
+        $"""
+        ====== {cargo.Name} ======
+
+        {IntroSentence(cargo, data)}
+        """;
 
     /// <summary>Specifications through Production — transcluded second
     /// ({{page>cargos:{slug}:auto_details}}).</summary>

@@ -25,7 +25,11 @@ internal static class RenderParts
     public static string PartPageHeading(PartInfo part)
     {
         var article = "aeiou".Contains(char.ToLowerInvariant(part.TypeEnglish[0])) ? "an" : "a";
-        return $"====== {part.En} ({part.TypeEnglish}) ======\n\n**{part.En}** is {article} {part.TypeEnglish.ToLowerInvariant()} part for vehicles in [[:motor_town|Motor Town]].";
+        return $"""
+            ====== {part.En} ({part.TypeEnglish}) ======
+
+            **{part.En}** is {article} {part.TypeEnglish.ToLowerInvariant()} part for vehicles in [[:motor_town|Motor Town]].
+            """;
     }
 
     /// <summary>Specifications through In other languages — transcluded second

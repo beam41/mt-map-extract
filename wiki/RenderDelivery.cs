@@ -33,7 +33,11 @@ internal static class RenderDelivery
     /// <summary>Heading + intro sentence — generated once, straight into the live shell
     /// page's bootstrap suggestion.</summary>
     public static string DeliveryPointPageHeading(DeliveryPointInfo point) =>
-        $"====== {point.En} ======\n\n**{point.En}** is a delivery point in [[:motor_town|Motor Town]].";
+        $"""
+        ====== {point.En} ======
+
+        **{point.En}** is a delivery point in [[:motor_town|Motor Town]].
+        """;
 
     /// <summary>Production through In other languages — transcluded second
     /// ({{page>delivery_points:{slug}:auto_details}}).</summary>

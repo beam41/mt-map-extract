@@ -41,7 +41,10 @@ internal static class RenderVehicles
     /// page's bootstrap suggestion (never its own auto_* subpage, so a curator is free to
     /// tweak it without losing the edit on the next run).</summary>
     public static string VehiclePageHeading(VehicleInfo v) =>
-        $"====== {v.En} ======\n**{v.En}** is a {Format.IntroType(v.Type, v.TruckClass)} vehicle in [[:motor_town|Motor Town]]";
+        $"""
+        ====== {v.En} ======
+        **{v.En}** is a {Format.IntroType(v.Type, v.TruckClass)} vehicle in [[:motor_town|Motor Town]]
+        """;
 
     /// <summary>Specifications through In other languages — transcluded second
     /// ({{page>vehicles:{slug}:auto_details}}).</summary>
