@@ -128,37 +128,44 @@ gradient by the current exaggeration factor rather than re-deriving it from scra
 - the walk itself is cheap, but tile load/unload churn on every single frame is not).
 At each node it computes the camera's full 3D distance to the *closest point of the
 tile's own bounding box* (`THREE.Box3.distanceToPoint` - the same box already built for
-frustum culling, reused rather than rebuilt); if that's closer than
-`tileWorldSize * REFINE_DISTANCE_FACTOR` (`1.5`) and the tile hasn't hit `maxZoom` yet,
-it recurses into the 4 children instead of rendering that node - the same idea
-Cesium/OpenLayers-3D/etc. use (subdivide when the tile would cover too much of the
-view), simplified here to a single distance ratio since this viewer has no true
-screen-space-error budget or camera-FOV-aware projection.
+frustum culling, reused rather than rebuilt), projects that distance and the tile's own
+world size through the camera's actual vertical FOV and the renderer's current viewport
+height into an on-screen pixel size (`projectedScreenSizePx()`), and recurses into the
+4 children instead of rendering the node once that projected size crosses
+`MAX_TILE_SCREEN_PX` (`900`) - a real screen-space-error budget, the same idea Cesium/
+OpenLayers-3D/etc. use.
 
-**Bug, found via real browser use, not caught by the Node-side partition tests**: the
-first version measured distance as a flat horizontal (XZ-plane only) distance to the
-tile's center, completely ignoring camera altitude. Looking mostly straight down while
-fully zoomed out puts the camera's XZ position almost exactly above whatever tile is
-underneath it, so that tile's horizontal distance reads as ~0 regardless of how far the
-camera has actually zoomed out in true 3D - forcing max-zoom refinement right under the
-camera no matter what. Reported as "tile level 5 [`z4`, the 5th zoom level counting
-from `z0`] still got selected when I zoom out fully". Fixed by measuring true 3D
-distance to the tile's bounding box instead of a 2D projection to its center - a
-partition/coverage test alone couldn't have caught this, since the bug is in *which*
-distance metric feeds the correct algorithm, not in the algorithm's coverage logic.
+**Two bugs found via real browser use, neither caught by the Node-side partition
+tests** (a partition/coverage test only checks that leaves tile the map exactly once,
+not *which* leaves get picked - both bugs are in the metric feeding the algorithm, not
+the algorithm's coverage logic):
 
-Verified by construction, not just by eye (WebGL context creation fails in this sandbox
-environment - see below): the leaf set returned by `selectLeafTiles()` for a given
-camera position was checked in Node against a synthetic coverage grid at
-`2^maxZoom x 2^maxZoom` resolution - every cell is covered by exactly one leaf tile (no
-gaps, no overlaps) at every tested camera position (far outside the map, at the map
-center, at a map corner), the total leaf area always equals the map's real area exactly,
-`maxZoom` is never exceeded, and refinement concentrates around the camera's actual
-position (e.g. camera at the exact map corner selects that corner's own `z4` tile as a
-leaf, while the far corner stays a single coarse `z2`/`z3` tile). Every one of the 341
-`(z, x, y)` positions the quadtree can ever reach (`z0` through `z4`) was confirmed to
-have both a height tile and a color tile actually present under `public/assets/tiles/` -
-zero possible 404s from the LOD system's own tile requests.
+- The first version measured distance as a flat horizontal (XZ-plane only) distance to
+  the tile's center, completely ignoring camera altitude. Looking mostly straight down
+  while fully zoomed out puts the camera's XZ position almost exactly above whatever
+  tile is underneath it, so that tile's horizontal distance reads as ~0 regardless of
+  how far the camera has actually zoomed out in true 3D - forcing max-zoom refinement
+  right under the camera no matter what. Reported as "tile level 5 [`z4`, the 5th zoom
+  level counting from `z0`] still got selected when I zoom out fully". Fixed by
+  measuring true 3D distance to the tile's bounding box instead of a 2D projection to
+  its center.
+- The second version fixed the distance metric but still used a flat
+  `distance < tileWorldSize * REFINE_DISTANCE_FACTOR` ratio (`REFINE_DISTANCE_FACTOR =
+  1.5`) to decide when to refine - a fixed ratio like that has no relationship to what's
+  actually on screen: the same real-world camera distance covers very different screen
+  area depending on FOV and window size, so the threshold was inherently too eager on a
+  typical FOV/window, not just mistuned. Reported as "zoom level 5 still render from
+  quite far" even after the first fix landed. Fixed by replacing the ratio with the
+  screen-space-error budget described above - deliberately more conservative than the
+  old ratio (`MAX_TILE_SCREEN_PX = 900` vs. the old ratio's roughly-900px-lower
+  equivalent at a typical viewport - see `projectedScreenSizePx()`'s doc comment for the
+  derivation), verified in Node to be uniformly ~1.5x less eager to refine at *every*
+  zoom level (not just the one level it happened to be tuned against), while still
+  partitioning the map exactly once per leaf at every tested camera position.
+
+Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
+`z4`) was confirmed to have both a height tile and a color tile actually present under
+`public/assets/tiles/` - zero possible 404s from the LOD system's own tile requests.
 
 Each visible tile is its own small `BufferGeometry` (`MESH_RESOLUTION x MESH_RESOLUTION`
 = `65x65` vertices, independent of the tile's own raw data resolution - fixed density
@@ -170,7 +177,7 @@ tile meshes are tracked in `activeTiles` and disposed (geometry, material, textu
 moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long
 session.
 
-### Load/unload ordering: fixing a flash on every LOD transition
+### Load/unload ordering: fixing a flash, then a "dark patch" the first fix caused
 
 Reported after real browser use as "flashing problem when tile change zoom level". Root
 cause: `updateVisibleTiles()`'s first version unloaded a stale (no-longer-desired) tile
@@ -179,9 +186,24 @@ an async load (fetch height bytes, decode the color texture, build the geometry)
 guaranteeing a gap with nothing rendered there for however long that takes. Fixed by
 deferring every unload until the *entire* newly-desired tile set is confirmed active
 (loaded, not merely pending): `desired.every(([z, x, y]) => activeTiles.has(...))`
-gates the unload loop. This briefly renders old and new tiles overlapping while the
-replacement set finishes loading - strictly better than a visible hole where terrain
-used to be, and only lasts as long as one tile's own load time.
+gates the unload loop.
+
+That fix introduced a different, worse-looking bug: `loadTile()`'s first version
+called `loadColorTexture()` but never awaited the image actually finishing - a
+`THREE.TextureLoader` returns a texture object immediately and decodes the image in
+the background, so the mesh was being built and marked active (`activeTiles.set()`,
+which is exactly what the fix above gates unloading on) *before* its texture had
+finished loading, rendering as a blank/dark patch for however long the AVIF took to
+decode. Reported as "flashing still problem, now it show as weird dark patch" -
+correctly diagnosed as a load-ordering bug, not a rendering bug: "while the zoom level
+data is loaded, texture is not loaded yet... it should be fully loaded then the swap
+is performed". Fixed by making `loadColorTexture()` return a `Promise` that only
+resolves in the loader's `onLoad` callback (once the image has actually decoded), and
+awaiting it in `Promise.all(...)` alongside the height fetch in `loadTile()` - the mesh
+is now either fully built with a fully-decoded texture, or not added to the scene at
+all, never rendered partway through loading. (An earlier attempt at this fix used a
+zoom-biased `polygonOffset` to paper over the symptom via depth-test priority instead
+of fixing the actual load-ordering bug; removed once the real cause was identified.)
 
 ### Frustum culling
 
@@ -227,12 +249,24 @@ past both the ~22km map and the camera's own far clip plane) sits at the pak's o
 ocean level - see `.agents/knowledge/landscape-heightmap.md`'s "Ocean level" section for
 where `oceanLevelMeters` comes from (`MTOceanConfig.OceanConfig.OceanLevel`,
 cross-verified against `WaterBodyOcean`'s own transform) and how `tiles.json` carries
-it through. It's exaggerated by the exact same factor as the terrain
-(`oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration`, updated
+it through. Colored/opacity-tuned for clarity, not the first version's darker, more
+opaque look (`color: 0x1c5f8a, opacity: 0.85` -> `color: 0x2f7fa8, opacity: 0.45`) -
+reported as "make water clearer". It's exaggerated by the exact same factor as the
+terrain (`oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration`, updated
 alongside every tile's geometry in the slider handler) so the crossover between
 "terrain above sea level" and "terrain sculpted down to the ocean floor, hidden
 underwater" stays correct at any exaggeration - both scale linearly from world Z=0, so
 neither can cross the other just because the slider moved.
+
+**Known limitation, not fixed by the clarity tweak**: real in-game bridges (an elevated
+road deck spanning open water) have no separate geometry here - only the landscape
+heightmap (which is genuinely submerged under the bridge, since the terrain itself dips
+for the water) and this flat sea-level quad. A road that's actually a bridge in-game
+gets draped on the submerged landscape mesh and will still visually read as "under
+water" here regardless of how clear the water material is - reported as "some part of
+road is under water (aka bridge)". Fixing this for real needs separate bridge/road
+actor geometry extracted from the pak (a genuinely new extraction target, not a viewer
+tweak) - out of scope here.
 
 Deliberately **not** added to `tileGroup`: the ground-anchored pan raycast only tests
 `tileGroup.children`, so panning always grabs the real terrain underneath the water

@@ -357,20 +357,29 @@ node script/get-height.js <worldX_cm> <worldY_cm>
 
 A Three.js viewer with Leaflet/OpenLayers-style tiled 3D terrain: it drapes
 `out/amc-web/map/map.png`'s color tile pyramid over a quadtree of terrain patches built
-from this project's matching height tile pyramid, switching to smaller (higher-zoom)
-tiles near the camera and larger (lower-zoom) tiles far away - confirming visually that
-the two pyramids share a coordinate frame (desert plateau / mountain / forest color
-regions land exactly on the matching relief) - plus a huge flat ocean quad at the pak's
-own ocean level (see "Ocean level" above). See `script/terrain-viewer/README.md` for
-the build/run steps, the map/heightmap alignment assumption, the quadtree LOD design
-(including the skirt technique for hiding LOD-boundary cracks, the analytic
-gradient-based per-vertex normals that give adjacent tiles bit-identical lighting at
-their shared edge, and `logarithmicDepthBuffer`/near-plane tuning that fixed heavy
-z-fighting between the ocean quad and shoreline terrain), and every other gotcha found
-building it (texture flipY, custom ground-anchored pan, linear-velocity zoom,
-zoom-scaled orbit speed).
+from this project's matching height tile pyramid, refining to smaller/higher-zoom
+tiles via a real screen-space-error budget (camera-FOV/viewport-aware, not a flat
+distance ratio) - confirming visually that the two pyramids share a coordinate frame
+(desert plateau / mountain / forest color regions land exactly on the matching relief)
+- plus a huge flat, clarity-tuned ocean quad at the pak's own ocean level (see "Ocean
+level" above; real in-game bridges have no separate deck geometry here, so a road
+that's actually a bridge will still show through the water). See
+`script/terrain-viewer/README.md` for the build/run steps, the map/heightmap alignment
+assumption, the quadtree LOD design (including the skirt technique for hiding
+LOD-boundary cracks, the analytic gradient-based per-vertex normals that give adjacent
+tiles bit-identical lighting at their shared edge, awaiting full texture decode before
+ever swapping a tile into the scene to avoid a load-ordering flash, and
+`logarithmicDepthBuffer`/near-plane tuning that fixed heavy z-fighting between the
+ocean quad and shoreline terrain), and every other gotcha found building it (texture
+flipY, custom ground-anchored pan, linear-velocity zoom, zoom-scaled orbit speed).
 
 ## Known limitations / follow-ups
+
+- No separate bridge/road-deck geometry: an in-game bridge crossing open water is just
+  a road painted on the color texture, draped on the landscape mesh underneath (which
+  is genuinely submerged there) - `script/terrain-viewer` will show it through the flat
+  ocean quad regardless of how the water material is tuned. Extracting real bridge
+  actor geometry would be a new extraction target, not a viewer fix.
 
 - Height `0` (the minimum representable value) is used both for the deliberately-sculpted
   ocean floor across most water-covered area (see "Ocean level" above - genuinely

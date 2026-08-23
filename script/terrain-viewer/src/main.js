@@ -13,12 +13,20 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
  *
  * Every ~150ms, selectLeafTiles() walks the quadtree from z0 and decides, per node,
  * whether to render it as a leaf (a real GPU tile) or subdivide into its 4 children,
- * purely from distance-to-camera vs. the tile's own world size - the same idea Cesium/
- * OpenLayers-3D/etc. use, simplified to a single distance ratio since this viewer has no
- * true screen-space-error budget. Closer tiles end up smaller/higher-zoom; distant tiles
- * stay large/coarse. Nodes entirely outside the camera's view frustum are culled outright
- * (not recursed into, not loaded, not rendered) via a THREE.Frustum test against each
- * node's own world-space bounding box.
+ * from a real screen-space-error budget (the same idea Cesium/OpenLayers-3D/etc. use):
+ * a tile's own world size and its 3D distance to the camera are projected through the
+ * camera's actual vertical FOV and the renderer's current viewport height into an
+ * on-screen pixel size, and it only subdivides once that projected size crosses
+ * MAX_TILE_SCREEN_PX. This is deliberately FOV/viewport-aware, not a flat
+ * distance-to-tile-size ratio - the same real-world camera distance covers very
+ * different screen area depending on FOV and window size, so a fixed-ratio distance
+ * threshold is inherently wrong (too eager to refine on a typical FOV/window), not
+ * just mistunable. Reported as "zoom level 5 [renders] from quite far" even after an
+ * earlier fix (3D box distance instead of flat horizontal distance) - the residual bug
+ * was the ratio-based threshold itself having no real relationship to what's actually
+ * on screen. Nodes entirely outside the camera's view frustum are culled outright (not
+ * recursed into, not loaded, not rendered) via a THREE.Frustum test against each node's
+ * own world-space bounding box.
  */
 
 // Real elevation differences (tens of meters) are imperceptible against a 22km-wide map
@@ -42,12 +50,13 @@ const ZOOM_UNITS_PER_WHEEL_DELTA = 5;
 // the quadtree currently selects, not by the raw data's own resolution.
 const MESH_RESOLUTION = 65;
 
-// A tile subdivides into its 4 children once the camera gets closer than its own world
-// size times this factor; otherwise it renders as a single leaf tile. Larger = coarser
-// terrain closer to the camera (fewer, bigger tiles); smaller = finer detail nearer the
-// camera (more, smaller tiles). Tuned by eye, not derived from a real screen-space-error
-// budget - this viewer has no per-frame projected-size calculation.
-const REFINE_DISTANCE_FACTOR = 1.5;
+// Maximum on-screen vertical size (px) a tile may reach before subdividing into its 4
+// children - see projectedScreenSizePx(). Deliberately more conservative than the old
+// flat REFINE_DISTANCE_FACTOR=1.5 ratio (which worked out to roughly 600px at a
+// typical ~900px-tall viewport and 55deg FOV) specifically because that ratio was
+// reported as still refining to the finest zoom from too far away - this requires a
+// tile to visually dominate more of the screen before its children load in.
+const MAX_TILE_SCREEN_PX = 900;
 
 // Post-exaggeration world-unit drop for the skirt (a thin vertical wall of extra
 // geometry around every tile's border, dropped straight down). Neighboring tiles at
@@ -100,18 +109,30 @@ function tileWorldRect(meta, z, x, y) {
   return { worldX0, worldZ0, tileSize };
 }
 
+/** Approximate on-screen vertical size, in pixels, that a `tileWorldSize`-tall object
+ * at `distance` from the camera would occupy - projected through the camera's actual
+ * vertical FOV and the renderer's current viewport height, so refinement decisions
+ * scale correctly with both instead of assuming a fixed window size/FOV (see
+ * MAX_TILE_SCREEN_PX). */
+function projectedScreenSizePx(distance, tileWorldSize, camera, viewportHeightPx) {
+  const angularSizeRad = 2 * Math.atan(tileWorldSize / (2 * Math.max(distance, 1e-6)));
+  const verticalFovRad = THREE.MathUtils.degToRad(camera.fov);
+  return (angularSizeRad / verticalFovRad) * viewportHeightPx;
+}
+
 /** Walks the quadtree from z0, returning the [z, x, y] leaves the camera's current
- * position and view frustum call for - see REFINE_DISTANCE_FACTOR. A node entirely
- * outside the camera's frustum is skipped outright (not recursed into, not selected as
- * a leaf) - it and everything below it is offscreen, so there's no reason to load or
- * render any of it. The refine distance is the camera's actual 3D distance to the
- * closest point of the tile's bounding box (`THREE.Box3.distanceToPoint`), not a flat
- * horizontal-plane (XZ-only) distance to the tile's center - a horizontal-only metric
- * ignores camera altitude entirely, so looking straight down from very high up (XZ
- * position ~= the tile directly underneath) reads as "distance ~= 0" and force-refines
- * to max zoom regardless of how far out the camera has actually zoomed. Confirmed bug,
- * not theoretical: reported as "still selects the deepest zoom fully zoomed out". */
-function selectLeafTiles(camera, meta) {
+ * position, view frustum, and viewport call for - see MAX_TILE_SCREEN_PX. A node
+ * entirely outside the camera's frustum is skipped outright (not recursed into, not
+ * selected as a leaf) - it and everything below it is offscreen, so there's no reason
+ * to load or render any of it. The refine distance is the camera's actual 3D distance
+ * to the closest point of the tile's bounding box (`THREE.Box3.distanceToPoint`), not a
+ * flat horizontal-plane (XZ-only) distance to the tile's center - a horizontal-only
+ * metric ignores camera altitude entirely, so looking straight down from very high up
+ * (XZ position ~= the tile directly underneath) reads as "distance ~= 0" and
+ * force-refines to max zoom regardless of how far out the camera has actually zoomed
+ * (confirmed bug, not theoretical: reported as "still selects the deepest zoom fully
+ * zoomed out"). */
+function selectLeafTiles(camera, meta, viewportHeightPx) {
   camera.updateMatrixWorld(); // ensures matrixWorldInverse below reflects this frame's pose
   const frustum = new THREE.Frustum().setFromProjectionMatrix(
     new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
@@ -128,8 +149,9 @@ function selectLeafTiles(camera, meta) {
     if (!frustum.intersectsBox(box)) return; // fully offscreen - cull, don't recurse or load
 
     const distance = box.distanceToPoint(camera.position); // full 3D, accounts for camera height
+    const screenPx = projectedScreenSizePx(distance, tileSize, camera, viewportHeightPx);
 
-    if (z < meta.maxZoom && distance < tileSize * REFINE_DISTANCE_FACTOR) {
+    if (z < meta.maxZoom && screenPx > MAX_TILE_SCREEN_PX) {
       visit(z + 1, x * 2, y * 2);
       visit(z + 1, x * 2 + 1, y * 2);
       visit(z + 1, x * 2, y * 2 + 1);
@@ -150,17 +172,35 @@ async function fetchHeightTile(z, x, y) {
   return new Uint16Array(await r.arrayBuffer());
 }
 
-/** Loads one color tile's texture. Same flipY fix as the old single-mesh viewer: this
- * mesh's UVs are assigned by hand to directly match the tile's own un-flipped
- * row->worldY mapping, but TextureLoader defaults flipY=true (assumes a plane's default
- * UVs, v=0 at bottom) - disable it so texture and geometry read the tile in the same
- * top-down row order. */
+/** Loads one color tile's texture, resolving only once the image has actually
+ * finished decoding - not the moment `TextureLoader.load()` returns (which happens
+ * immediately, well before the network fetch + image decode complete, since
+ * `THREE.TextureLoader` loads asynchronously in the background). `loadTile()` awaits
+ * this before ever adding the tile's mesh to the scene, so a tile is either fully
+ * textured or not present at all - never rendered with the still-blank/default
+ * texture partway through loading, which read as a "weird dark patch" flash on every
+ * newly-loaded tile (most visible right after an LOD transition, when several
+ * sibling tiles all start loading their own textures at once) even after the
+ * load/unload-ordering fix above solved the geometry gap.
+ *
+ * Same flipY fix as the old single-mesh viewer: this mesh's UVs are assigned by hand
+ * to directly match the tile's own un-flipped row->worldY mapping, but TextureLoader
+ * defaults flipY=true (assumes a plane's default UVs, v=0 at bottom) - disable it so
+ * texture and geometry read the tile in the same top-down row order. */
 function loadColorTexture(z, x, y, renderer) {
-  const texture = new THREE.TextureLoader().load(`/assets/tiles/color/${z}_${x}_${y}.avif`);
-  texture.flipY = false;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  return texture;
+  return new Promise((resolve, reject) => {
+    new THREE.TextureLoader().load(
+      `/assets/tiles/color/${z}_${x}_${y}.avif`,
+      (texture) => {
+        texture.flipY = false;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        resolve(texture);
+      },
+      undefined,
+      (err) => reject(new Error(`color tile ${z}_${x}_${y}.avif failed to load: ${err?.message ?? err}`))
+    );
+  });
 }
 
 /**
@@ -377,9 +417,17 @@ async function main() {
   if (meta.oceanLevelMeters != null) {
     const oceanGeometry = new THREE.PlaneGeometry(OCEAN_QUAD_SIZE, OCEAN_QUAD_SIZE);
     oceanGeometry.rotateX(-Math.PI / 2); // PlaneGeometry is XY-facing by default; lay it flat (XZ)
+    // Lower opacity + lighter, less saturated color than the first version (was
+    // color 0x1c5f8a, opacity 0.85, which read as opaque/murky) - reported as "make
+    // water clearer". Known limitation, not fixed by this: any road that's a real
+    // elevated bridge in-game has no separate bridge-deck geometry here (only the
+    // landscape heightmap + this flat sea-level quad), so it's draped on the
+    // underlying (submerged) terrain and will still show through the water surface
+    // regardless of clarity - see script/terrain-viewer/README.md's "Ocean quad"
+    // section.
     const oceanMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1c5f8a, roughness: 0.25, metalness: 0.1,
-      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+      color: 0x2f7fa8, roughness: 0.2, metalness: 0.05,
+      transparent: true, opacity: 0.45, side: THREE.DoubleSide,
     });
     oceanMesh = new THREE.Mesh(oceanGeometry, oceanMaterial);
     oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration;
@@ -407,8 +455,14 @@ async function main() {
     const key = `${z}_${x}_${y}`;
     pending.add(key);
     try {
-      const rawHeights = await fetchHeightCached(z, x, y);
-      const texture = loadColorTexture(z, x, y, renderer);
+      // Fetched/decoded in parallel, but the mesh below isn't built or added to the
+      // scene until *both* resolve - see loadColorTexture()'s doc comment for why:
+      // a mesh added with a still-decoding texture renders as a dark/blank patch
+      // until the image finishes, which is a large chunk of the observable "flash".
+      const [rawHeights, texture] = await Promise.all([
+        fetchHeightCached(z, x, y),
+        loadColorTexture(z, x, y, renderer),
+      ]);
       const { worldX0, worldZ0, tileSize } = tileWorldRect(meta, z, x, y);
       const { geometry, baseHeights, baseGradX, baseGradZ, skirtDrop } = buildTileGeometry(
         rawHeights, meta.tileSampleInnerCount, meta.tileSampleCount, worldX0, worldZ0, tileSize, currentExaggeration
@@ -435,7 +489,7 @@ async function main() {
   }
 
   function updateVisibleTiles() {
-    const desired = selectLeafTiles(camera, meta);
+    const desired = selectLeafTiles(camera, meta, renderer.domElement.clientHeight);
     const desiredKeys = new Set(desired.map(([z, x, y]) => `${z}_${x}_${y}`));
 
     for (const [z, x, y] of desired) {
