@@ -63,6 +63,11 @@ const SKIRT_DROP = 400;
 // correctness only needs "not too tight", not "exact".
 const CULL_MAX_EXAGGERATION = 40;
 
+// World-unit side length of the flat ocean quad - deliberately much larger than the
+// ~22km map itself so it reads as an endless sea to the horizon rather than a visibly
+// bounded tile, out to and past the camera's own far clip plane (100000).
+const OCEAN_QUAD_SIZE = 200000;
+
 /**
  * Raw height unit (0-65535, as stored in the height tiles) -> world Z, in meters.
  * Matches `worldZFormulaCm` in Jeju_World.json exactly (that formula in cm, divided by
@@ -99,7 +104,13 @@ function tileWorldRect(meta, z, x, y) {
  * position and view frustum call for - see REFINE_DISTANCE_FACTOR. A node entirely
  * outside the camera's frustum is skipped outright (not recursed into, not selected as
  * a leaf) - it and everything below it is offscreen, so there's no reason to load or
- * render any of it. */
+ * render any of it. The refine distance is the camera's actual 3D distance to the
+ * closest point of the tile's bounding box (`THREE.Box3.distanceToPoint`), not a flat
+ * horizontal-plane (XZ-only) distance to the tile's center - a horizontal-only metric
+ * ignores camera altitude entirely, so looking straight down from very high up (XZ
+ * position ~= the tile directly underneath) reads as "distance ~= 0" and force-refines
+ * to max zoom regardless of how far out the camera has actually zoomed. Confirmed bug,
+ * not theoretical: reported as "still selects the deepest zoom fully zoomed out". */
 function selectLeafTiles(camera, meta) {
   camera.updateMatrixWorld(); // ensures matrixWorldInverse below reflects this frame's pose
   const frustum = new THREE.Frustum().setFromProjectionMatrix(
@@ -109,19 +120,14 @@ function selectLeafTiles(camera, meta) {
   const maxY = Math.max(meta.minZ, meta.maxZ, 0) * CULL_MAX_EXAGGERATION;
 
   const leaves = [];
+  const box = new THREE.Box3();
   function visit(z, x, y) {
     const { worldX0, worldZ0, tileSize } = tileWorldRect(meta, z, x, y);
-    const box = new THREE.Box3(
-      new THREE.Vector3(worldX0, minY, worldZ0),
-      new THREE.Vector3(worldX0 + tileSize, maxY, worldZ0 + tileSize)
-    );
+    box.min.set(worldX0, minY, worldZ0);
+    box.max.set(worldX0 + tileSize, maxY, worldZ0 + tileSize);
     if (!frustum.intersectsBox(box)) return; // fully offscreen - cull, don't recurse or load
 
-    const cx = worldX0 + tileSize / 2;
-    const cz = worldZ0 + tileSize / 2;
-    const dx = camera.position.x - cx;
-    const dz = camera.position.z - cz;
-    const distance = Math.sqrt(dx * dx + dz * dz);
+    const distance = box.distanceToPoint(camera.position); // full 3D, accounts for camera height
 
     if (z < meta.maxZoom && distance < tileSize * REFINE_DISTANCE_FACTOR) {
       visit(z + 1, x * 2, y * 2);
@@ -136,7 +142,8 @@ function selectLeafTiles(camera, meta) {
   return leaves;
 }
 
-/** Fetches one height tile's raw uint16 samples (tileSize x tileSize, row-major). */
+/** Fetches one height tile's raw uint16 samples (tileSampleCount x tileSampleCount,
+ * row-major - see meta.tileSampleCount/tileSampleInnerCount in tiles.json). */
 async function fetchHeightTile(z, x, y) {
   const r = await fetch(`/assets/tiles/height/${z}_${x}_${y}.bin`);
   if (!r.ok) throw new Error(`height tile ${z}_${x}_${y}: HTTP ${r.status}`);
@@ -159,37 +166,67 @@ function loadColorTexture(z, x, y, renderer) {
 /**
  * Builds one tile's mesh geometry: a MESH_RESOLUTION x MESH_RESOLUTION grid sampled from
  * the tile's raw height data, plus a skirt border (see SKIRT_DROP) to hide LOD-boundary
- * cracks. Returns per-vertex bookkeeping (baseHeights in meters, skirtDrop) so the
- * exaggeration slider can recompute every active tile's Y coordinates live without
- * re-fetching or re-sampling anything.
+ * cracks. Returns per-vertex bookkeeping (baseHeights/baseGradX/baseGradZ in meters,
+ * skirtDrop) so the exaggeration slider can recompute every active tile's Y coordinates
+ * *and* normals live without re-fetching or re-sampling anything.
+ *
+ * Normals are computed analytically from the height field via central finite
+ * differences (`-dh/dx, 1, -dh/dz`, matching the mesh's own winding - verified against
+ * the actual triangle order below, not assumed), not `BufferGeometry.
+ * computeVertexNormals()`. That distinction matters at tile boundaries specifically: a
+ * boundary vertex's face-normal average only ever sees *this tile's own* triangles, so
+ * it's systematically skewed toward this tile's interior - the neighbouring tile's copy
+ * of that same world vertex gets its normal skewed the *other* way, and two different
+ * normals at a shared point reads as a lighting-discontinuity seam even when the
+ * position data matches exactly (a real, separate bug from the plain 1px position
+ * overlap - reported as "seam is still a problem" after that fix alone). The analytic
+ * gradient instead uses `rawHeights`' 1px "normal halo" (`tileDataSize` = `tileSize+3`,
+ * see heightmap/ImageWriter.cs's WriteHeightTiles) - one real sample beyond each tile
+ * edge - so a central difference at a boundary vertex is always well-defined from data
+ * this tile alone stores, and because both tiles derive that halo sample from the exact
+ * same deterministic area-average of the same canvas pixel, the two independently
+ * computed edge normals come out bit-identical.
  */
-function buildTileGeometry(rawHeights, tileDataSize, worldX0, worldZ0, tileWorldSize, exaggeration) {
+function buildTileGeometry(rawHeights, innerSize, haloSize, worldX0, worldZ0, tileWorldSize, exaggeration) {
   const N = MESH_RESOLUTION;
   const mainCount = N * N;
   const skirtCount = 4 * N;
   const total = mainCount + skirtCount;
 
   const positions = new Float32Array(total * 3);
+  const normals = new Float32Array(total * 3);
   const uvs = new Float32Array(total * 2);
   const baseHeights = new Float32Array(total); // meters, pre-exaggeration
+  const baseGradX = new Float32Array(total);   // d(height meters)/d(world x), pre-exaggeration
+  const baseGradZ = new Float32Array(total);   // d(height meters)/d(world z), pre-exaggeration
   const skirtDrop = new Float32Array(total);   // 0 for main vertices, SKIRT_DROP for skirt
 
-  function sampleRaw(u, v) {
-    const rx = Math.min(tileDataSize - 1, Math.round(u * (tileDataSize - 1)));
-    const ry = Math.min(tileDataSize - 1, Math.round(v * (tileDataSize - 1)));
-    return rawHeights[ry * tileDataSize + rx];
+  // World-unit spacing between adjacent halo-array samples (main-grid samples are a
+  // subset of this same spacing, so this is also the right step for the gradient).
+  const sampleSpacing = tileWorldSize / (innerSize - 1);
+
+  // Raw (unexaggerated) height in meters at a halo-array index pair. hx/hy in
+  // [0, haloSize-1]; every call below stays in range because the loop only ever asks
+  // for hx +/- 1 where hx itself ranges over [1, innerSize] (the halo's inner region).
+  function heightAtHalo(hx, hy) {
+    return rawHeightToWorldZMeters(rawHeights[hy * haloSize + hx]);
   }
 
   for (let row = 0; row < N; row++) {
     const v = row / (N - 1);
+    const hy = Math.round(v * (innerSize - 1)) + 1; // +1 shifts into the halo-padded index space
     for (let col = 0; col < N; col++) {
       const u = col / (N - 1);
+      const hx = Math.round(u * (innerSize - 1)) + 1;
       const idx = row * N + col;
-      const y = rawHeightToWorldZMeters(sampleRaw(u, v));
+
+      const y = heightAtHalo(hx, hy);
       positions[idx * 3 + 0] = worldX0 + u * tileWorldSize;
       positions[idx * 3 + 1] = y * exaggeration;
       positions[idx * 3 + 2] = worldZ0 + v * tileWorldSize;
       baseHeights[idx] = y;
+      baseGradX[idx] = (heightAtHalo(hx + 1, hy) - heightAtHalo(hx - 1, hy)) / (2 * sampleSpacing);
+      baseGradZ[idx] = (heightAtHalo(hx, hy + 1) - heightAtHalo(hx, hy - 1)) / (2 * sampleSpacing);
       uvs[idx * 2 + 0] = u;
       uvs[idx * 2 + 1] = v;
     }
@@ -211,6 +248,8 @@ function buildTileGeometry(rawHeights, tileDataSize, worldX0, worldZ0, tileWorld
       positions[sIdx * 3 + 1] = positions[mainIdx * 3 + 1] - SKIRT_DROP;
       positions[sIdx * 3 + 2] = positions[mainIdx * 3 + 2];
       baseHeights[sIdx] = baseHeights[mainIdx];
+      baseGradX[sIdx] = baseGradX[mainIdx];
+      baseGradZ[sIdx] = baseGradZ[mainIdx];
       skirtDrop[sIdx] = SKIRT_DROP;
       uvs[sIdx * 2 + 0] = uvs[mainIdx * 2 + 0];
       uvs[sIdx * 2 + 1] = uvs[mainIdx * 2 + 1];
@@ -239,27 +278,53 @@ function buildTileGeometry(rawHeights, tileDataSize, worldX0, worldZ0, tileWorld
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
   geometry.setIndex(indices);
-  geometry.computeVertexNormals();
+  writeGradientNormals(normals, baseGradX, baseGradZ, exaggeration);
+  geometry.attributes.normal.needsUpdate = true;
 
-  return { geometry, baseHeights, skirtDrop };
+  return { geometry, baseHeights, baseGradX, baseGradZ, skirtDrop };
+}
+
+/** Fills `normals` (in place) from precomputed unexaggerated gradients, scaled by the
+ * current exaggeration - `-dh/dx, 1, -dh/dz`, matching the mesh's actual triangle
+ * winding (see buildTileGeometry's doc comment). Shared by the initial build and every
+ * later exaggeration-slider update. */
+function writeGradientNormals(normals, baseGradX, baseGradZ, exaggeration) {
+  for (let i = 0; i < baseGradX.length; i++) {
+    const nx = -baseGradX[i] * exaggeration;
+    const nz = -baseGradZ[i] * exaggeration;
+    const len = Math.hypot(nx, 1, nz);
+    normals[i * 3 + 0] = nx / len;
+    normals[i * 3 + 1] = 1 / len;
+    normals[i * 3 + 2] = nz / len;
+  }
 }
 
 /** Applies the current exaggeration to a tile's already-built geometry in place (no
  * re-fetch, no re-sampling) - called for every active tile whenever the slider moves. */
-function applyExaggeration(geometry, baseHeights, skirtDrop, exaggeration) {
+function applyExaggeration(geometry, baseHeights, baseGradX, baseGradZ, skirtDrop, exaggeration) {
   const positionAttr = geometry.getAttribute("position");
   for (let i = 0; i < baseHeights.length; i++) {
     positionAttr.setY(i, baseHeights[i] * exaggeration - skirtDrop[i]);
   }
   positionAttr.needsUpdate = true;
-  geometry.computeVertexNormals();
+  const normalAttr = geometry.getAttribute("normal");
+  writeGradientNormals(normalAttr.array, baseGradX, baseGradZ, exaggeration);
+  normalAttr.needsUpdate = true;
 }
 
 async function main() {
   const container = document.getElementById("app");
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // logarithmicDepthBuffer: true - this scene mixes tiny (skirt/seam-scale) and huge
+  // (map/far-clip-scale) depths in one standard depth buffer; without it, two nearly
+  // coplanar surfaces far from the camera (most visibly the flat ocean quad against
+  // gently-sloping shoreline terrain near the water's edge) z-fight heavily because a
+  // linear depth buffer has almost no precision left out there. Reported as "heavy
+  // ocean z-fighting" - this is the standard, well-documented Three.js fix for exactly
+  // that failure mode, not a targeted hack for this one surface pair.
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
   const skyColor = 0x8fb8e0;
@@ -270,7 +335,10 @@ async function main() {
   scene.background = new THREE.Color(skyColor);
   scene.fog = new THREE.Fog(skyColor, 25000, 100000);
 
-  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 100000);
+  // near=5, not 1: also reduces the near/far ratio (5:100000 instead of 1:100000),
+  // compounding with logarithmicDepthBuffer above rather than fighting it - nothing in
+  // this scene needs to render closer than a few meters from the camera anyway.
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 5, 100000);
   camera.position.set(0, 6000, 9000);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -297,13 +365,35 @@ async function main() {
 
   const meta = await loadTilesMeta();
 
+  let currentExaggeration = DEFAULT_EXAGGERATION;
+
+  // Flat ocean quad at the pak's own ocean level (see OceanExtractor.cs /
+  // Jeju_World.json's "ocean" section) - a huge horizontal plane, exaggerated by the
+  // same factor as the terrain so the crossover between "above sea level" and "below
+  // sea level" stays correct at any exaggeration (both scale linearly from world Z=0).
+  // Not added to tileGroup: it must never be a ground-anchored-pan raycast target, or
+  // panning would grab the ocean surface instead of the real terrain underneath it.
+  let oceanMesh = null;
+  if (meta.oceanLevelMeters != null) {
+    const oceanGeometry = new THREE.PlaneGeometry(OCEAN_QUAD_SIZE, OCEAN_QUAD_SIZE);
+    oceanGeometry.rotateX(-Math.PI / 2); // PlaneGeometry is XY-facing by default; lay it flat (XZ)
+    const oceanMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1c5f8a, roughness: 0.25, metalness: 0.1,
+      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    });
+    oceanMesh = new THREE.Mesh(oceanGeometry, oceanMaterial);
+    oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration;
+    scene.add(oceanMesh);
+  } else {
+    console.warn("tiles.json has no oceanLevelMeters - skipping the ocean quad");
+  }
+
   // All active tile meshes live under this group - the raycast target for
   // ground-anchored panning below.
   const tileGroup = new THREE.Group();
   scene.add(tileGroup);
 
-  let currentExaggeration = DEFAULT_EXAGGERATION;
-  const activeTiles = new Map();  // "z_x_y" -> { mesh, geometry, baseHeights, skirtDrop, texture }
+  const activeTiles = new Map();  // "z_x_y" -> { mesh, geometry, baseHeights, baseGradX, baseGradZ, skirtDrop, texture }
   const heightCache = new Map();  // "z_x_y" -> Promise<Uint16Array>
   const pending = new Set();      // "z_x_y" currently being loaded
 
@@ -320,15 +410,15 @@ async function main() {
       const rawHeights = await fetchHeightCached(z, x, y);
       const texture = loadColorTexture(z, x, y, renderer);
       const { worldX0, worldZ0, tileSize } = tileWorldRect(meta, z, x, y);
-      const { geometry, baseHeights, skirtDrop } = buildTileGeometry(
-        rawHeights, meta.tileSize, worldX0, worldZ0, tileSize, currentExaggeration
+      const { geometry, baseHeights, baseGradX, baseGradZ, skirtDrop } = buildTileGeometry(
+        rawHeights, meta.tileSampleInnerCount, meta.tileSampleCount, worldX0, worldZ0, tileSize, currentExaggeration
       );
       const material = new THREE.MeshStandardMaterial({
         map: texture, roughness: 0.95, metalness: 0, side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geometry, material);
       tileGroup.add(mesh);
-      activeTiles.set(key, { mesh, geometry, material, baseHeights, skirtDrop, texture });
+      activeTiles.set(key, { mesh, geometry, material, baseHeights, baseGradX, baseGradZ, skirtDrop, texture });
     } finally {
       pending.delete(key);
     }
@@ -354,8 +444,18 @@ async function main() {
         loadTile(z, x, y).catch((err) => console.error(`tile ${key} failed to load:`, err));
       }
     }
-    for (const key of [...activeTiles.keys()]) {
-      if (!desiredKeys.has(key)) unloadTile(key);
+
+    // Only unload stale tiles once every desired tile is actually active (loaded, not
+    // merely pending) - otherwise a tile gets removed the instant it's no longer
+    // desired, but its replacement (a fetch + texture decode + geometry build) hasn't
+    // finished yet, leaving a visible gap/flash for however long that takes. Briefly
+    // rendering both the old and new tiles overlapped is a strictly better tradeoff
+    // than a hole where terrain used to be.
+    const replacementReady = desired.every(([z, x, y]) => activeTiles.has(`${z}_${x}_${y}`));
+    if (replacementReady) {
+      for (const key of [...activeTiles.keys()]) {
+        if (!desiredKeys.has(key)) unloadTile(key);
+      }
     }
   }
 
@@ -459,8 +559,9 @@ async function main() {
     currentExaggeration = Number(slider.value);
     label.textContent = `vertical exaggeration: ${currentExaggeration}x`;
     for (const tile of activeTiles.values()) {
-      applyExaggeration(tile.geometry, tile.baseHeights, tile.skirtDrop, currentExaggeration);
+      applyExaggeration(tile.geometry, tile.baseHeights, tile.baseGradX, tile.baseGradZ, tile.skirtDrop, currentExaggeration);
     }
+    if (oceanMesh) oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration;
   });
 
   const tileInfo = document.createElement("div");

@@ -16,8 +16,9 @@
  *                                  pyramid's depth), skipping amc-web's own extra
  *                                  upscaled level if it generated one.
  *   tiles.json                     tileSize, maxZoom, real-world width/height/origin in
- *                                  meters, min/max Z in meters - copied from
- *                                  Jeju_World.json's "tiles" section (see
+ *                                  meters, min/max Z in meters, oceanLevelMeters (null if
+ *                                  the pak build has no MTOceanConfig) - copied from
+ *                                  Jeju_World.json's "tiles"/"ocean" sections (see
  *                                  heightmap/ImageWriter.cs's BuildMetadata).
  *
  * Both pyramids use the same {z}_{x}_{y} naming and the same zoom-to-resolution scheme
@@ -37,7 +38,7 @@ const HEIGHTMAP_DIR = path.join(REPO_ROOT, "out", "heightmap");
 const COLOR_TILES_DIR = path.join(REPO_ROOT, "out", "amc-web", "map", "tiles");
 const ASSETS_DIR = path.join(__dirname, "..", "public", "assets");
 
-function loadTilesMetadata() {
+function loadMetadata() {
   const metaPath = path.join(HEIGHTMAP_DIR, "Jeju_World.json");
   if (!fs.existsSync(metaPath)) {
     throw new Error(`${metaPath} not found - run 'dotnet run -c Release --project heightmap' first.`);
@@ -46,7 +47,7 @@ function loadTilesMetadata() {
   if (!meta.tiles) {
     throw new Error(`${metaPath} has no "tiles" section - regenerate with a heightmap build that writes tiles/<z>_<x>_<y>.bin.`);
   }
-  return meta.tiles;
+  return meta;
 }
 
 function copyPyramid(srcDir, destDir, maxZoom, extension, label) {
@@ -70,7 +71,8 @@ function copyPyramid(srcDir, destDir, maxZoom, extension, label) {
 }
 
 function main() {
-  const tiles = loadTilesMetadata();
+  const meta = loadMetadata();
+  const tiles = meta.tiles;
 
   const heightTilesSrc = path.join(HEIGHTMAP_DIR, tiles.directory);
   copyPyramid(heightTilesSrc, path.join(ASSETS_DIR, "tiles", "height"), tiles.maxZoom, "bin", "height");
@@ -82,6 +84,8 @@ function main() {
 
   const metaOut = {
     tileSize: tiles.tileSize,
+    tileSampleCount: tiles.tileSampleCount,
+    tileSampleInnerCount: tiles.tileSampleInnerCount,
     maxZoom: tiles.maxZoom,
     dtype: tiles.dtype,
     byteOrder: tiles.byteOrder,
@@ -92,6 +96,9 @@ function main() {
     minZ: tiles.minZMeters,
     maxZ: tiles.maxZMeters,
     colorExtension: "avif",
+    // null when the pak build this ran against has no MTOceanConfig (shouldn't happen for
+    // Jeju_World, but a consumer must not assume every map has an ocean).
+    oceanLevelMeters: meta.ocean ? meta.ocean.levelMeters : null,
   };
   const metaOutPath = path.join(ASSETS_DIR, "tiles.json");
   fs.writeFileSync(metaOutPath, JSON.stringify(metaOut, null, 2));

@@ -11,7 +11,7 @@ internal static class ImageWriter
 {
     private const string Label = "Jeju_World";
 
-    public static void Write(LandscapeExtractor.Map map, int tileSize, int maxZoom, int debugSize, string outDir)
+    public static void Write(LandscapeExtractor.Map map, double? oceanLevelCm, int tileSize, int maxZoom, int debugSize, string outDir)
     {
         Directory.CreateDirectory(outDir);
 
@@ -23,7 +23,7 @@ internal static class ImageWriter
         Console.WriteLine($"  wrote {heightmapPath} ({map.Width}x{map.Height}, 16-bit, native resolution)");
 
         Output.Write(Path.Combine(outDir, $"{Label}.json"),
-            BuildMetadata(map, tileSize, maxZoom).ToString(Newtonsoft.Json.Formatting.Indented));
+            BuildMetadata(map, oceanLevelCm, tileSize, maxZoom).ToString(Newtonsoft.Json.Formatting.Indented));
 
         WriteHeightsBin(map, Path.Combine(outDir, "heights.bin"));
         WriteHeightTiles(map, tileSize, maxZoom, Path.Combine(outDir, "tiles"));
@@ -56,20 +56,38 @@ internal static class ImageWriter
     /// (z, x, y) and know they cover the exact same world-space rectangle - `tileSize`
     /// (raw sample resolution per tile) is independent of amc-web's own `--tile-size`,
     /// so the two pyramids can carry different detail levels per tile while sharing the
-    /// same grid/zoom layout; default `512` here vs. amc-web's default `256` means every
-    /// height tile is sampled at 2x the linear density of its matching color tile.
-    /// `maxZoom` is tied to amc-web's own *native* zoom (4, for its 4096px map at its
-    /// default tile size) as a manually-kept-in-sync constant, not auto-derived from
-    /// amc-web's on-disk output - this project has no runtime dependency on amc-web's,
-    /// matching the existing "manually kept in sync with the game's own map" pattern
-    /// used by --origin-x/--origin-y/--map-size. Deliberately never generates amc-web's
-    /// extra upscaled level (z5 by its default) - upscaling raw elevation data invents
-    /// no real detail, only interpolates, which would be actively misleading for a
-    /// heightmap. Every level here is a genuine area-average downsample of the native
-    /// data.</summary>
+    /// same grid/zoom layout. `maxZoom` is tied to amc-web's own *native* zoom (4, for
+    /// its 4096px map at its default tile size) as a manually-kept-in-sync constant,
+    /// not auto-derived from amc-web's on-disk output - this project has no runtime
+    /// dependency on amc-web's, matching the existing "manually kept in sync with the
+    /// game's own map" pattern used by --origin-x/--origin-y/--map-size. Deliberately
+    /// never generates amc-web's extra upscaled level (z5 by its default) - upscaling
+    /// raw elevation data invents no real detail, only interpolates, which would be
+    /// actively misleading for a heightmap. Every level here is a genuine area-average
+    /// downsample of the native data.
+    ///
+    /// Each tile file actually stores `(tileSize+3) x (tileSize+3)` samples, not just
+    /// `tileSize x tileSize`: a 1px border overlap (as above) *plus* one more "halo"
+    /// sample beyond each edge, purely so `script/terrain-viewer` can compute vertex
+    /// normals via central finite differences that are bit-identical between two
+    /// adjacent tiles at their shared edge. A tile's own triangles alone can only see
+    /// one side of a boundary vertex, so per-tile `computeVertexNormals()` (face-normal
+    /// averaging restricted to that tile's own mesh) gives every boundary vertex a
+    /// normal skewed toward its own tile's interior - systematically different from its
+    /// neighbour's skewed-the-other-way normal for the textually same world point, which
+    /// reads as a lighting-discontinuity seam even when the *position* data matches
+    /// exactly (a real, separate bug from the plain 1px-overlap position fix above -
+    /// reported as "seam is still a problem" after that fix alone). The extra halo
+    /// sample gives each tile's own data everything needed for a symmetric central
+    /// difference at its own edge, and because both tiles derive that halo sample from
+    /// the exact same deterministic area-average of the same canvas region, the two
+    /// independently-computed edge normals come out numerically identical. The
+    /// outermost edge of the whole pyramid (no real neighbour) clamps the halo to the
+    /// last valid canvas pixel, same as the border-overlap sample.</summary>
     private static void WriteHeightTiles(LandscapeExtractor.Map map, int tileSize, int maxZoom, string tilesDir)
     {
         Directory.CreateDirectory(tilesDir);
+        var sampleCount = tileSize + 3; // tileSize+1 border overlap + 1px normal halo per edge
 
         for (var zoom = 0; zoom <= maxZoom; zoom++)
         {
@@ -82,18 +100,25 @@ internal static class ImageWriter
             {
                 for (var tx = 0; tx < grid; tx++)
                 {
-                    var tile = new ushort[tileSize * tileSize];
-                    for (var y = 0; y < tileSize; y++)
+                    var tile = new ushort[sampleCount * sampleCount];
+                    for (var y = 0; y < sampleCount; y++)
                     {
-                        Array.Copy(canvas, (ty * tileSize + y) * canvasSize + tx * tileSize, tile, y * tileSize, tileSize);
+                        var srcY = Math.Clamp(ty * tileSize - 1 + y, 0, canvasSize - 1);
+                        var srcRowBase = srcY * canvasSize;
+                        var dstRowBase = y * sampleCount;
+                        for (var x = 0; x < sampleCount; x++)
+                        {
+                            var srcX = Math.Clamp(tx * tileSize - 1 + x, 0, canvasSize - 1);
+                            tile[dstRowBase + x] = canvas[srcRowBase + srcX];
+                        }
                     }
                     WriteUshortsLE(tile, Path.Combine(tilesDir, $"{zoom}_{tx}_{ty}.bin"));
                     written++;
                 }
             }
 
-            Console.WriteLine($"  z={zoom} {grid}x{grid} = {written} height tiles ({tileSize}x{tileSize} each, " +
-                              $"canvas {canvasSize}x{canvasSize})");
+            Console.WriteLine($"  z={zoom} {grid}x{grid} = {written} height tiles ({sampleCount}x{sampleCount} " +
+                              $"each incl. 1px border overlap + 1px normal halo, canvas {canvasSize}x{canvasSize})");
         }
     }
 
@@ -164,7 +189,7 @@ internal static class ImageWriter
         Console.WriteLine($"  wrote {previewPath} ({resized.Width}x{resized.Height}, 8-bit normalized preview)");
     }
 
-    private static JObject BuildMetadata(LandscapeExtractor.Map map, int tileSize, int maxZoom)
+    private static JObject BuildMetadata(LandscapeExtractor.Map map, double? oceanLevelCm, int tileSize, int maxZoom)
     {
         // worldZFormulaCm is linear and monotonically increasing in rawHeight, so the
         // native rawHeightRange's min/max map directly to the world-Z min/max - a safe
@@ -191,13 +216,20 @@ internal static class ImageWriter
                 ["dtype"] = "uint16",
                 ["byteOrder"] = "little",
                 ["tileSize"] = tileSize,
+                ["tileSampleCount"] = tileSize + 3,
+                ["tileSampleInnerCount"] = tileSize + 1,
                 ["maxZoom"] = maxZoom,
                 ["layout"] = "Leaflet/OpenLayers XYZ scheme matching amc-web's color tiles: z0 is a " +
-                    "1x1 grid, zN is 2^N x 2^N, each tile tileSize x tileSize, row-major, raw height " +
-                    "units (not meters - apply worldZFormulaCm client-side). x/col and y/row both " +
-                    "increase together with world X/Y, same as heights.bin - no flip in either axis. " +
-                    "Every zoom is a genuine area-average downsample of the native heights.bin, " +
-                    "recomputed independently per zoom (not chained from a coarser level).",
+                    "1x1 grid, zN is 2^N x 2^N (tileSize defines this grid/world-size math), each tile " +
+                    "file is tileSampleCount x tileSampleCount samples (tileSize+3: tileSampleInnerCount " +
+                    "= tileSize+1 real position samples with a 1px border overlap so adjacent tiles " +
+                    "share their boundary pixel exactly, plus 1 more halo sample beyond each edge purely " +
+                    "for computing vertex normals that agree exactly with the neighbouring tile at the " +
+                    "shared edge), row-major, raw height units (not meters - apply worldZFormulaCm " +
+                    "client-side). x/col and y/row both increase together with world X/Y, same as " +
+                    "heights.bin - no flip in either axis. Every zoom is a genuine area-average " +
+                    "downsample of the native heights.bin, recomputed independently per zoom (not " +
+                    "chained from a coarser level).",
                 ["widthMeters"] = map.Width * map.QuadScaleCm / 100.0,
                 ["heightMeters"] = map.Height * map.QuadScaleCm / 100.0,
                 ["originMetersX"] = map.OriginXCm / 100.0,
@@ -215,6 +247,14 @@ internal static class ImageWriter
                 "one small ~12-component islet (Z origin -21900cm, excluded by default anyway) not " +
                 "distinguishable per-pixel in this combined canvas",
             ["heightmap16Format"] = "16-bit grayscale PNG, native resolution, one pixel per quad; pixel value is rawHeight",
+            ["ocean"] = oceanLevelCm is null ? null : new JObject
+            {
+                ["levelCm"] = oceanLevelCm,
+                ["levelMeters"] = oceanLevelCm / 100.0,
+                ["source"] = "MTOceanConfig.OceanConfig.OceanLevel in the persistent Jeju_World level - " +
+                    "cross-verified against WaterBodyOcean's own WaterBodyOceanComponent.RelativeLocation.Z, " +
+                    "which matches exactly",
+            },
         };
     }
 }

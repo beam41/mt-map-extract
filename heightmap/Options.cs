@@ -45,8 +45,12 @@ internal sealed record Options
           --tile-size <px>   height tile raw-sample resolution (independent of
                              amc-web's own --tile-size - same {z}_{x}_{y} grid/zoom
                              layout either way, just more or less height detail per
-                             tile)
-                                                      (default 512)
+                             tile; each tile file is actually (tile-size+3) samples per
+                             edge - a 1px border overlap so adjacent tiles share their
+                             boundary pixel exactly, plus a 1px normal halo so they also
+                             agree on lighting normals at that edge - see
+                             landscape-heightmap.md)
+                                                      (default 256)
           --max-zoom <n>     highest height tile zoom (tiles are 0..n) - kept in sync
                              with amc-web's own native zoom (4, for its 4096px map at
                              the default tile size); never generates an upscaled level,
@@ -105,7 +109,7 @@ internal sealed record Options
     public double OriginYCm => OriginYCmOverride ?? -320_000;
     public double MapSizeCm => MapSizeCmOverride ?? 2_200_000;
 
-    public int TileSize { get; private init; } = 512;
+    public int TileSize { get; private init; } = 256;
     public int MaxZoom { get; private init; } = 4;
     public string? DebugGuidFilter { get; private init; }
     public int DebugSize { get; private init; } = 2048;

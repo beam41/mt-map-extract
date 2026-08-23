@@ -220,7 +220,7 @@ dotnet run -c Release --project heightmap --
   is strictly more useful for point queries than a directory of PNG tiles (no tile-size
   math, no per-tile PNG/zlib decode), and the full native PNG already covers the
   "load it all at once in an image viewer" case.
-- `tiles/{z}_{x}_{y}.bin` (`--tile-size`/`--max-zoom`, defaults `512`/`4`) — a
+- `tiles/{z}_{x}_{y}.bin` (`--tile-size`/`--max-zoom`, defaults `256`/`4`) — a
   Leaflet/OpenLayers-style tile pyramid, same raw `uint16` little-endian layout as
   `heights.bin`, deliberately using the **same `{z}_{x}_{y}` naming and the same
   zoom-to-grid scheme as `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1 grid,
@@ -228,22 +228,49 @@ dotnet run -c Release --project heightmap --
   for the same `(z, x, y)` and know they cover the exact same world-space rectangle.
   `--tile-size` (raw sample resolution per tile) is independent of `amc-web`'s own
   `--tile-size` - the two pyramids share the same grid/zoom layout but can carry
-  different detail levels per tile; default `512` here vs. `amc-web`'s default `256`
-  means every height tile is sampled at 2x the linear density of its matching color
-  tile. `--max-zoom` defaults to `4`, matching `amc-web`'s current *native* zoom for its
-  4096px map at its default tile size (ground-truth-checked against
-  `out/amc-web/map/tiles/`: z0..z4 exist with 1/4/16/64/256 tiles respectively, z5's
-  extra 1024 tiles are `amc-web`'s own upscaled level) - a manually-kept-in-sync
-  constant, not auto-derived, matching the existing `--origin-x`/`--origin-y`/
-  `--map-size` pattern of trusting a verified, documented constant over a fragile
-  cross-project runtime dependency. Deliberately never generates an upscaled level
-  itself - upscaling raw elevation invents no real detail. `Jeju_World.json`'s
-  `"tiles"` object carries every consumer-needed field precomputed (`tileSize`,
-  `maxZoom`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
-  `minZMeters`/`maxZMeters`). Replaced the earlier single flat `heights_<n>px.bin`
-  (`--web-size`) export - a real tile pyramid is what lets the viewer show
-  coarser/finer detail by camera position instead of one fixed resolution for the whole
-  map.
+  different detail levels per tile. `--max-zoom` defaults to `4`, matching `amc-web`'s
+  current *native* zoom for its 4096px map at its default tile size
+  (ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist with
+  1/4/16/64/256 tiles respectively, z5's extra 1024 tiles are `amc-web`'s own upscaled
+  level) - a manually-kept-in-sync constant, not auto-derived, matching the existing
+  `--origin-x`/`--origin-y`/`--map-size` pattern of trusting a verified, documented
+  constant over a fragile cross-project runtime dependency. Deliberately never
+  generates an upscaled level itself - upscaling raw elevation invents no real detail.
+
+  Each tile file actually stores `(tileSize+3) x (tileSize+3)` samples
+  (`Jeju_World.json`'s `tiles.tileSampleCount`, `259` at the default) - two extra
+  layers beyond the nominal `tileSize`, fixing two different seam bugs found via real
+  browser use of `script/terrain-viewer`, both originally reported as "seam[s] between
+  tile":
+
+  - **1px border overlap** (`tiles.tileSampleInnerCount` = `tileSize+1`, `257` at the
+    default): two adjacent tiles' shared edge reads from the exact same underlying
+    pixel on both sides. Without it, tile A's "last" column and tile B's "first" column
+    are neighbouring but genuinely *different* source pixels - a real, visible
+    same-zoom position seam. Verified by construction: every sampled shared edge
+    between adjacent same-zoom tiles matches exactly, 0 mismatches across 257 samples
+    at 4 tested boundary pairs spanning z2-z4.
+  - **1px normal halo** (one more sample beyond the border-overlap edge): a
+    *different* bug that survives the position fix above, because it's about lighting,
+    not position - see `script/terrain-viewer/README.md`'s "Normal continuity" section
+    for the full explanation (each tile computing its own vertex normals in isolation
+    skews every boundary normal toward that tile's own interior, so two tiles disagree
+    on lighting at their shared edge even when positions match exactly). The halo
+    sample gives the viewer's client-side gradient-based normal calculation a real
+    neighbour-side data point to difference against, so both tiles derive
+    bit-identical boundary normals from it.
+
+  Both are a **different** class of bug from the different-zoom cracks skirts cover -
+  they happen even between two same-zoom tiles. The outermost edge of the whole
+  pyramid (no real neighbour) just clamps every extra sample to the last valid canvas
+  pixel, harmlessly duplicating it.
+
+  `Jeju_World.json`'s `"tiles"` object carries every consumer-needed field precomputed
+  (`tileSize`, `tileSampleCount`, `tileSampleInnerCount`, `maxZoom`,
+  `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`, `minZMeters`/
+  `maxZMeters`). Replaced the earlier single flat `heights_<n>px.bin` (`--web-size`)
+  export - a real tile pyramid is what lets the viewer show coarser/finer detail by
+  camera position instead of one fixed resolution for the whole map.
 - `debug/Jeju_World_preview.png` — 8-bit min/max-normalized, downscaled so the longer
   edge is `--debug-size` px (default `2048`; aspect ratio preserved, cubic resample) - the
   16-bit file looks almost solid black in ordinary viewers otherwise.
@@ -287,6 +314,31 @@ interpretation tag, so `Pngsave` still writes 16-bit output and (since the true 
 has 8 significant bits) inflates every value by ~257x on save. Fix: also `.Copy(
 interpretation: Enums.Interpretation.Bw)` after the `Linear` call, before saving.
 
+## Ocean level
+
+`heightmap/OceanExtractor.cs` reads the ocean's world Z, in cm, from the persistent
+`Jeju_World` level's `MTOceanConfig` actor - `OceanConfig.OceanLevel`, a single
+game-authored float, not derived from any mesh/actor transform. Found via
+`wgrep MotorTown/Content/Maps/Jeju/Jeju_World "Water|Ocean"` - plain `grep` only scans
+`.uasset` files and would never see this, since the persistent level is a `.umap` - and
+cross-verified against a second, independent pak source: the `WaterBodyOcean` actor's
+own `WaterBodyOceanComponent.RelativeLocation.Z`, which matches exactly (both `-22374`
+cm = `-223.74` m). Written to `Jeju_World.json`'s `"ocean"` object
+(`levelCm`/`levelMeters`) and passed through
+`script/terrain-viewer/scripts/prepare-assets.js` into `tiles.json` as
+`oceanLevelMeters`, where `src/main.js` renders it as a large flat quad.
+
+This also gives the missing context for the "Known limitations" note below about raw
+height `0` (`-256m`, the absolute floor of the 16-bit encoding): the landscape is
+sculpted all the way down to that floor across large ocean-covered areas - **below**
+the `-223.74m` water surface, so it's genuinely invisible underwater in the live game,
+not a padding/hole artifact. `-223.74m` sits strictly between the raw floor (`-256m`)
+and the highest observed peak (`87.9m`) at any vertical exaggeration (both scale
+linearly from world Z=0, so the crossover point where terrain pokes above the ocean
+quad stays correct regardless of the exaggeration slider) - consistent with what's
+already visually confirmed: islands (terrain above `-223.74m`) surrounded by ocean
+(terrain sculpted down to `-256m`, hidden below the water plane).
+
 ## Sample Z-lookup: `script/get-height.js`
 
 A dependency-free Node.js sample program: given a world `(X, Y)` in cm, prints the
@@ -308,18 +360,26 @@ A Three.js viewer with Leaflet/OpenLayers-style tiled 3D terrain: it drapes
 from this project's matching height tile pyramid, switching to smaller (higher-zoom)
 tiles near the camera and larger (lower-zoom) tiles far away - confirming visually that
 the two pyramids share a coordinate frame (desert plateau / mountain / forest color
-regions land exactly on the matching relief). See `script/terrain-viewer/README.md` for
+regions land exactly on the matching relief) - plus a huge flat ocean quad at the pak's
+own ocean level (see "Ocean level" above). See `script/terrain-viewer/README.md` for
 the build/run steps, the map/heightmap alignment assumption, the quadtree LOD design
-(including the skirt technique for hiding LOD-boundary cracks), and every other gotcha
-found building it (texture flipY, custom ground-anchored pan, linear-velocity zoom,
+(including the skirt technique for hiding LOD-boundary cracks, the analytic
+gradient-based per-vertex normals that give adjacent tiles bit-identical lighting at
+their shared edge, and `logarithmicDepthBuffer`/near-plane tuning that fixed heavy
+z-fighting between the ocean quad and shoreline terrain), and every other gotcha found
+building it (texture flipY, custom ground-anchored pan, linear-velocity zoom,
 zoom-scaled orbit speed).
 
 ## Known limitations / follow-ups
 
-- Height `0` (the minimum representable value) is used both for genuinely low/flat
-  terrain (verified via `CachedLocalBox`) and, likely, for World-Partition padding tiles
-  outside the sculpted area — this extraction does not distinguish real "hole" flags
-  (the `LandscapeVisibilityMask` layer weightmap) from legitimately low terrain.
+- Height `0` (the minimum representable value) is used both for the deliberately-sculpted
+  ocean floor across most water-covered area (see "Ocean level" above - genuinely
+  invisible underwater, below the `-223.74m` water surface, not an artifact) and,
+  possibly still, for World-Partition padding tiles outside the sculpted area in some
+  spots — this extraction does not distinguish real "hole" flags (the
+  `LandscapeVisibilityMask` layer weightmap) from legitimately low terrain, so a
+  padding-tile explanation for any given raw-`0` pixel hasn't been ruled out everywhere,
+  just shown to be unnecessary for the ocean floor specifically.
   - Weightmap textures (`WeightmapTextures`) use the same raw-`PF_B8G8R8A8`-per-pixel
     approach but pack up to 4 layer weights per texture (RGBA channels) — not decoded here.
 - ~~No `.r16` raw-array output~~ - resolved: `heights.bin` is exactly that (raw `uint16`,

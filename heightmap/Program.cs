@@ -65,8 +65,14 @@ internal static class Program
 
         Console.WriteLine($"{map.ComponentCount} components across {map.LandscapeCount} landscape(s), " +
                           $"native {map.Width}x{map.Height}, raw height {map.RawMin}..{map.RawMax}");
+
+        var oceanLevelCm = OceanExtractor.FindOceanLevelCm(assets);
+        Console.WriteLine(oceanLevelCm is not null
+            ? $"ocean level: {oceanLevelCm}cm ({oceanLevelCm / 100.0}m)"
+            : "warning: no MTOceanConfig found - ocean level omitted from metadata");
+
         Console.WriteLine($"writing to {opts.OutDir}...");
-        ImageWriter.Write(map, opts.TileSize, opts.MaxZoom, opts.DebugSize, opts.OutDir);
+        ImageWriter.Write(map, oceanLevelCm, opts.TileSize, opts.MaxZoom, opts.DebugSize, opts.OutDir);
 
         Console.WriteLine("Done.");
         return 0;
