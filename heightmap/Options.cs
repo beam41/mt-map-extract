@@ -19,10 +19,10 @@ internal sealed record Options
           heights.bin                  raw uint16, little-endian, row-major, native
                                        resolution - seek to (row * width + col) * 2 bytes
                                        for a single point query, no PNG/zlib decode needed
-          heights_<n>px.bin             same encoding, area-averaged down to --web-size x
-                                       --web-size - for script/terrain-viewer, which
-                                       copies this file directly (no decode/resample of
-                                       its own)
+          tiles/{z}_{x}_{y}.bin        Leaflet/OpenLayers-style height tile pyramid,
+                                       z0..--max-zoom, same {z}_{x}_{y} naming and
+                                       zoom-to-resolution scheme as amc-web's color
+                                       tiles - for script/terrain-viewer's LOD renderer
           debug/Jeju_World_preview.png 8-bit min/max-normalized, downscaled to
                                        --debug-size - the 16-bit file looks almost solid
                                        black in ordinary viewers otherwise
@@ -42,9 +42,14 @@ internal sealed record Options
           --map-size <cm>    map width and height, in world cm (must cover both islands
                              plus the ocean between them to match the game's own map)
                                                       (default 2200000, i.e. 22km square)
-          --web-size <n>     resolution of heights_<n>px.bin (n x n, area-averaged down
-                             from native) for script/terrain-viewer to copy directly
-                                                      (default 512)
+          --tile-size <px>   height tile size, matching amc-web's --tile-size
+                                                      (default 256)
+          --max-zoom <n>     highest height tile zoom (tiles are 0..n) - kept in sync
+                             with amc-web's own native zoom (4, for its 4096px map at
+                             the default tile size); never generates an upscaled level,
+                             unlike amc-web's default - upscaling raw elevation invents
+                             no real detail
+                                                      (default 4)
           --exclude-guid <substring>
                              never place components whose LandscapeGuid contains this
                              (case-insensitive); repeatable. Replaces the default exclusion
@@ -97,7 +102,8 @@ internal sealed record Options
     public double OriginYCm => OriginYCmOverride ?? -320_000;
     public double MapSizeCm => MapSizeCmOverride ?? 2_200_000;
 
-    public int WebSize { get; private init; } = 512;
+    public int TileSize { get; private init; } = 256;
+    public int MaxZoom { get; private init; } = 4;
     public string? DebugGuidFilter { get; private init; }
     public int DebugSize { get; private init; } = 2048;
     public bool DebugAutoFit { get; private init; }
@@ -125,7 +131,8 @@ internal sealed record Options
                 case "--origin-x": o = o with { OriginXCmOverride = Double(Value("--origin-x"), "--origin-x") }; break;
                 case "--origin-y": o = o with { OriginYCmOverride = Double(Value("--origin-y"), "--origin-y") }; break;
                 case "--map-size": o = o with { MapSizeCmOverride = Double(Value("--map-size"), "--map-size") }; break;
-                case "--web-size": o = o with { WebSize = Number(Value("--web-size"), "--web-size", 16, 8192) }; break;
+                case "--tile-size": o = o with { TileSize = Number(Value("--tile-size"), "--tile-size", 16, 8192) }; break;
+                case "--max-zoom": o = o with { MaxZoom = Number(Value("--max-zoom"), "--max-zoom", 0, 12) }; break;
                 case "--exclude-guid":
                 {
                     var v = Value("--exclude-guid");

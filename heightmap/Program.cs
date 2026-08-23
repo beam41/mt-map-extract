@@ -66,7 +66,7 @@ internal static class Program
         Console.WriteLine($"{map.ComponentCount} components across {map.LandscapeCount} landscape(s), " +
                           $"native {map.Width}x{map.Height}, raw height {map.RawMin}..{map.RawMax}");
         Console.WriteLine($"writing to {opts.OutDir}...");
-        ImageWriter.Write(map, opts.WebSize, opts.DebugSize, opts.OutDir);
+        ImageWriter.Write(map, opts.TileSize, opts.MaxZoom, opts.DebugSize, opts.OutDir);
 
         Console.WriteLine("Done.");
         return 0;

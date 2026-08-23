@@ -220,14 +220,26 @@ dotnet run -c Release --project heightmap --
   is strictly more useful for point queries than a directory of PNG tiles (no tile-size
   math, no per-tile PNG/zlib decode), and the full native PNG already covers the
   "load it all at once in an image viewer" case.
-- `heights_<n>px.bin` (`n` = `--web-size`, default `512`) — same raw `uint16`
-  little-endian layout as `heights.bin`, area-average-downsampled to `n×n`.
-  `script/terrain-viewer` copies this file directly into its own `public/assets/`, no
-  decode or resampling of its own (see its `README.md`'s asset-pipeline section).
-  `Jeju_World.json`'s `"web"` object carries this file's exact metadata (`fileName`,
-  `grid`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
-  `minZMeters`/`maxZMeters`) precomputed, so consumers never need to scan the array
-  themselves.
+- `tiles/{z}_{x}_{y}.bin` (`--tile-size`/`--max-zoom`, defaults `256`/`4`) — a
+  Leaflet/OpenLayers-style tile pyramid, same raw `uint16` little-endian layout as
+  `heights.bin`, deliberately using the **same `{z}_{x}_{y}` naming and the same
+  zoom-to-resolution scheme as `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1
+  grid, zN = 2^N × 2^N, `2^N * tileSize` total resolution) - so `script/terrain-viewer`
+  can fetch a height tile and a color tile for the same `(z, x, y)` and know they cover
+  the exact same world-space rectangle at the exact same sample density. `--max-zoom`
+  defaults to `4`, matching `amc-web`'s current *native* zoom for its 4096px map at the
+  default tile size (ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist
+  with 1/4/16/64/256 tiles respectively, z5's extra 1024 tiles are `amc-web`'s own
+  upscaled level) - a manually-kept-in-sync constant, not auto-derived, matching the
+  existing `--origin-x`/`--origin-y`/`--map-size` pattern of trusting a verified,
+  documented constant over a fragile cross-project runtime dependency. Deliberately
+  never generates an upscaled level itself - upscaling raw elevation invents no real
+  detail. `Jeju_World.json`'s `"tiles"` object carries every consumer-needed field
+  precomputed (`tileSize`, `maxZoom`, `widthMeters`/`heightMeters`,
+  `originMetersX`/`originMetersY`, `minZMeters`/`maxZMeters`). Replaced the earlier
+  single flat `heights_<n>px.bin` (`--web-size`) export - a real tile pyramid is what
+  lets the viewer show coarser/finer detail by camera position instead of one fixed
+  resolution for the whole map.
 - `debug/Jeju_World_preview.png` — 8-bit min/max-normalized, downscaled so the longer
   edge is `--debug-size` px (default `2048`; aspect ratio preserved, cubic resample) - the
   16-bit file looks almost solid black in ordinary viewers otherwise.
@@ -287,12 +299,16 @@ node script/get-height.js <worldX_cm> <worldY_cm>
 
 ## 3D web viewer: `script/terrain-viewer/`
 
-A Three.js viewer that drapes `out/amc-web/map/map.png` over a mesh displaced by this
-project's heightmap output, confirming visually that the two share a coordinate frame
-(desert plateau / mountain / forest color regions land exactly on the matching relief).
-See `script/terrain-viewer/README.md` for the build/run steps, the map/heightmap
-alignment assumption, and every gotcha found building it (texture flipY, custom
-ground-anchored pan, linear-velocity zoom, zoom-scaled orbit speed).
+A Three.js viewer with Leaflet/OpenLayers-style tiled 3D terrain: it drapes
+`out/amc-web/map/map.png`'s color tile pyramid over a quadtree of terrain patches built
+from this project's matching height tile pyramid, switching to smaller (higher-zoom)
+tiles near the camera and larger (lower-zoom) tiles far away - confirming visually that
+the two pyramids share a coordinate frame (desert plateau / mountain / forest color
+regions land exactly on the matching relief). See `script/terrain-viewer/README.md` for
+the build/run steps, the map/heightmap alignment assumption, the quadtree LOD design
+(including the skirt technique for hiding LOD-boundary cracks), and every other gotcha
+found building it (texture flipY, custom ground-anchored pan, linear-velocity zoom,
+zoom-scaled orbit speed).
 
 ## Known limitations / follow-ups
 

@@ -1,17 +1,19 @@
 # terrain-viewer
 
-A Three.js viewer (plain Vite dev server, no bundler config beyond defaults) that drapes
-`out/amc-web/map/map.png` (the pre-baked in-game minimap texture, decoded straight from
-`T_WorldMap_Jeju` with no world-bounds metadata of its own - see `amc-web/Program.cs`'s
-`DecodeMapTexture`) over a mesh displaced by the `heightmap` project's extracted
-elevation data. The two assets have independent origins in the pak (one is a baked
-texture, the other is live vertex data) - there is no metadata anywhere that states they
-share a coordinate frame. `heightmap/Options.cs`'s default `--origin-x -1280000
---origin-y -320000 --map-size 2200000` was chosen to match the game's own map (see
+A Three.js viewer with Leaflet/OpenLayers-style tiled 3D terrain (plain Vite dev server,
+no bundler config beyond defaults): a quadtree of terrain patches, built from the
+`heightmap` project's height tile pyramid and textured with `amc-web`'s matching color
+tile pyramid, switches to smaller (higher-zoom) tiles near the camera and larger
+(lower-zoom) tiles far away - see "Tiled LOD terrain" below for the design.
+
+The two pyramids have independent origins in the pak (one is a baked texture, the other
+is live vertex data) - there is no metadata anywhere that states they share a coordinate
+frame. `heightmap/Options.cs`'s default `--origin-x -1280000 --origin-y -320000
+--map-size 2200000` was chosen to match the game's own map (see
 `.agents/knowledge/landscape-heightmap.md`'s "Native resolution" section), and this
-viewer assumes `map.png` covers that same rectangle. **This assumption is empirically
-confirmed**, not just asserted: rendering the two together shows the desert plateau /
-rugged mountain / forested-hills color regions in `map.png` land exactly on the matching
+viewer assumes `amc-web`'s map tiles cover that same rectangle. **This assumption is
+empirically confirmed**, not just asserted: rendering the two together shows the desert
+plateau / rugged mountain / forested-hills color regions land exactly on the matching
 terrain relief (flat high plateau under the tan desert color, jagged peaks under the
 reddish "Outback" rock texture, rolling hills under the green forest color), and the
 small offshore islands appear at the correct relative position and scale. If a future
@@ -21,68 +23,123 @@ way before trusting the drape.
 ## Build + run
 
 ```bash
-# 1. Generate the heightmap, including the web-optimized downsample (skip if
-#    out/heightmap/ is already up to date; --web-size defaults to 512, override if you
-#    need a different resolution)
-dotnet run -c Release --project heightmap -- [--web-size <n>]
+# 1. Generate the heightmap, including its tile pyramid (skip if out/heightmap/ is
+#    already up to date; --tile-size/--max-zoom default to 256/4, matching amc-web's
+#    own native zoom for its 4096px map - override only if that ever changes)
+dotnet run -c Release --project heightmap -- [--tile-size <px>] [--max-zoom <n>]
 
-# 2. Generate map.png (skip tiles - the viewer only needs the flat PNG)
-dotnet run -c Release --project amc-web -- --skip-tiles
+# 2. Generate amc-web's color tile pyramid (tiles are NOT optional here, unlike the old
+#    single-mesh viewer - --skip-tiles would leave nothing to texture the terrain with)
+dotnet run -c Release --project amc-web
 
 # 3. One-time: install this project's own deps (three, vite - nothing else)
 cd script/terrain-viewer && pnpm install   # or npm install
 
-# 4. Copy the two outputs above into public/assets/
+# 4. Copy both tile pyramids into public/assets/tiles/
 node scripts/prepare-assets.js
 
 # 5. Run it
 pnpm dev   # http://localhost:5173
 ```
 
-`scripts/prepare-assets.js` does **no decoding or resampling of its own** - all of that
-now happens once, in C#, at generation time (`heightmap/ImageWriter.cs`'s
-`WriteWebHeightsBin`, the exact same area-average-pooling algorithm this script used to
-run in JS against the full native PNG on every build). The script is a pure direct-copy
-build step:
+`scripts/prepare-assets.js` does **no decoding or resampling of its own** - both
+pyramids are already generated at the right zoom/resolution scheme in C#
+(`heightmap/ImageWriter.cs`'s `WriteHeightTiles`, `amc-web/TileGenerator.cs`). The
+script is a pure direct-copy build step:
 
-- `heights.bin` - a byte-for-byte copy of `out/heightmap/heights_<n>px.bin` (raw
-  `uint16`, little-endian, row-major, `n x n` per `--web-size`, still in **raw height
-  units** - not meters). `src/main.js` applies the raw-height-to-meters formula
-  client-side (`rawHeightToWorldZMeters`), it does not arrive pre-converted.
-- `heights.json` - a subset/rename passthrough of `Jeju_World.json`'s `"web"` object
-  (`grid`, `dtype`, `byteOrder`, `widthMeters`/`heightMeters`,
+- `tiles/height/<z>_<x>_<y>.bin` - copied from `out/heightmap/tiles/` - raw `uint16`,
+  little-endian, `tileSize x tileSize`, still in **raw height units** (not meters).
+  `src/main.js` applies the raw-height-to-meters formula client-side
+  (`rawHeightToWorldZMeters`), it does not arrive pre-converted.
+- `tiles/color/<z>_<x>_<y>.avif` - copied from `out/amc-web/map/tiles/`, only
+  `z0..maxZoom` (the height pyramid's own depth) - skips `amc-web`'s own extra upscaled
+  level if it generated one, since the height pyramid never has a matching level for it.
+- `tiles.json` - a subset/rename passthrough of `Jeju_World.json`'s `"tiles"` object
+  (`tileSize`, `maxZoom`, `dtype`, `byteOrder`, `widthMeters`/`heightMeters`,
   `originMetersX`/`originMetersY`, `minZ`/`maxZ` in meters) - no computation, everything
   was already precomputed on the C# side.
-- `map.png` - a plain copy of `out/amc-web/map/map.png`, used as-is for the texture; no
-  per-pixel correspondence with the heightmap grid is needed, it's draped over the mesh
-  purely via UVs (`col/(grid-1), row/(grid-1)`, matching the same row/col orientation used
-  to place each vertex).
 
-This replaced an earlier version that itself decoded the full native
-`Jeju_World_heightmap16.png` (~80MB, `zlib.inflateSync` via `script/lib/png16.js`) and
-downsampled it in JS on every asset-prep run - correct, but redundant work repeated in
-two languages. `script/lib/png16.js`'s PNG decoder is no longer used anywhere in this
-project (still used by `script/get-height.js`, which reads the un-downsampled
-`heights.bin`/native PNG directly, a different use case).
+This replaced an earlier version that copied one fixed-resolution `heights.bin` and one
+flat `map.png` and built a single whole-map `BufferGeometry` - correct, but with no way
+to show more detail near the camera without paying for that detail everywhere at once.
+`script/lib/png16.js`'s PNG decoder is not used anywhere in this project (only by
+`script/get-height.js`, a different use case: point queries against the un-tiled native
+data).
 
-`src/main.js` builds one `BufferGeometry` (a `grid x grid` vertex plane, two triangles
-per quad) centered on the origin, applies a **vertical exaggeration** (default `6x`,
-live-adjustable via the on-screen slider, `1x`-`40x`) to the Y (height) coordinate only -
-real elevation differences here are a few tens of meters across a 22km-wide map, visually
-flat at true 1:1 scale, so the exaggeration is a deliberate, disclosed rendering choice,
-not a measurement. `MeshStandardMaterial` + a `HemisphereLight` + `AmbientLight` + one
-`DirectionalLight` ("sun") light the relief with real shading instead of a flat color
-texture; a light sky-blue background/fog (not an initial near-black void) reads as
-daylight rather than looking underlit.
+## Tiled LOD terrain
 
-No CDN dependencies: `three` and `vite` are installed into `node_modules/` (gitignored)
-and bundled/served locally; nothing is fetched from a CDN at runtime.
+`selectLeafTiles()` walks the quadtree from `z0` every ~150ms (`TILE_UPDATE_INTERVAL_MS`
+- the walk itself is cheap, but tile load/unload churn on every single frame is not).
+At each node it computes the tile's own world size and the camera's distance to the
+tile's center; if the camera is closer than `tileWorldSize * REFINE_DISTANCE_FACTOR`
+(`1.5`) and the tile hasn't hit `maxZoom` yet, it recurses into the 4 children instead of
+rendering that node - the same idea Cesium/OpenLayers-3D/etc. use (subdivide when the
+tile would cover too much of the view), simplified here to a single distance ratio since
+this viewer has no true screen-space-error budget or camera-FOV-aware projection.
+
+Verified by construction, not just by eye (WebGL context creation fails in this sandbox
+environment - see below): the leaf set returned by `selectLeafTiles()` for a given
+camera position was checked in Node against a synthetic coverage grid at
+`2^maxZoom x 2^maxZoom` resolution - every cell is covered by exactly one leaf tile (no
+gaps, no overlaps) at every tested camera position (far outside the map, at the map
+center, at a map corner), the total leaf area always equals the map's real area exactly,
+`maxZoom` is never exceeded, and refinement concentrates around the camera's actual
+position (e.g. camera at the exact map corner selects that corner's own `z4` tile as a
+leaf, while the far corner stays a single coarse `z2`/`z3` tile). Every one of the 341
+`(z, x, y)` positions the quadtree can ever reach (`z0` through `z4`) was confirmed to
+have both a height tile and a color tile actually present under `public/assets/tiles/` -
+zero possible 404s from the LOD system's own tile requests.
+
+Each visible tile is its own small `BufferGeometry` (`MESH_RESOLUTION x MESH_RESOLUTION`
+= `65x65` vertices, independent of the tile's own raw data resolution - fixed density
+regardless of zoom, so total scene triangle count is bounded by how many leaf tiles are
+currently selected, not by the underlying `256x256` height data) and its own
+`MeshStandardMaterial` textured with that tile's color `.avif`. `heightCache` (keyed by
+`z_x_y`) avoids re-fetching a height tile's raw bytes if the camera revisits it; loaded
+tile meshes are tracked in `activeTiles` and disposed (geometry, material, texture) the
+moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long
+session.
+
+### LOD-boundary cracks: skirts, not seamless stitching
+
+Neighboring tiles at different zoom levels sample the native heightmap at different
+resolutions, so their shared edge rarely lines up vertex-for-vertex - a classic
+quadtree-terrain crack (a proper fix requires stitching matching edge resolutions or a
+shared skeleton, real engineering for another day). `buildTileGeometry()` instead adds a
+"skirt": every border vertex gets a mirrored twin, `SKIRT_DROP` (`400` world units)
+lower, connected by a thin wall of extra triangles running all the way around the tile.
+This doesn't close the geometric gap - it hides it behind a wall deep enough that any
+crack reads as a shadowed seam instead of a hole punched through the terrain. Winding on
+the four skirt walls wasn't rigorously derived (four different edge orientations); the
+tile material is `side: THREE.DoubleSide` specifically so an inverted skirt triangle
+still renders instead of being backface-culled into a visible gap of its own.
+
+The exaggeration slider (see below) recomputes every active tile's vertex `Y` in place
+(`applyExaggeration()`, using each vertex's stored pre-exaggeration `baseHeights` meters
+and per-vertex `skirtDrop` - `0` for main-grid vertices, `SKIRT_DROP` for skirt
+vertices) - no re-fetch, no re-sampling, and skirts stay `SKIRT_DROP` world units below
+their main-grid twin at any exaggeration level, since the drop is applied *after*
+exaggeration rather than scaled by it.
+
+### WebGL verification note
+
+This sandbox's headless Chromium fails `Error creating WebGL context` at
+`new THREE.WebGLRenderer()` - reproduced before any of this feature's code runs, and
+persists across full browser/tab restarts - so the render output itself could not be
+screenshotted here. Everything checkable without a live WebGL context was checked (see
+above): the tile pyramids' data (spot-checked against the native `heights.bin` at every
+zoom level), the quadtree selection algorithm (partition correctness, distance-based
+behavior, `maxZoom` clamping), and asset completeness (every reachable tile file
+exists). A `vite build` of the full bundle succeeds cleanly. Visually confirm the actual
+render (does refinement track the camera, do skirts hide seams acceptably) in a normal
+browser before relying on this for anything beyond internal review.
 
 ## Self-shadowing terrain
 
 The terrain both casts and receives shadows from the sun `DirectionalLight`
-(`terrain.castShadow = terrain.receiveShadow = true`, `renderer.shadowMap.enabled = true`,
-`THREE.PCFSoftShadowMap`) - mountains cast real shadows into neighbouring valleys instead
+(every tile mesh gets `castShadow = receiveShadow = true` in `loadTile()`,
+`renderer.shadowMap.enabled = true`, `THREE.PCFSoftShadowMap`) - mountains cast real
+shadows into neighbouring valleys instead
 of every slope's brightness coming from its normal alone. The light's orthographic
 shadow camera is sized once, generously, from real terrain extent: a bounding-sphere
 radius covering the full horizontal footprint (`widthMeters`/`heightMeters`) plus the
@@ -122,7 +179,9 @@ Confirmed fixed by geography, not just by eye: `Outback` (the *main southern lan
 containing the desert-plateau material - see `.agents/knowledge/landscape-heightmap.md`)
 now renders near the camera in a default south-facing framing, with the northern island
 (`88AA0DB8`, has a lake) correctly appearing far in the background - the reverse of the
-pre-fix render.
+pre-fix render. The tiled LOD renderer applies the identical fix per-tile, in
+`loadColorTexture()` - every tile's UVs follow the same un-flipped row/col convention,
+so every tile's texture needs the same `flipY = false`.
 
 ## Camera controls: left-drag pan (ground-anchored), right-drag orbit
 
@@ -132,8 +191,9 @@ THREE.MOUSE.ROTATE }`, `enablePan = false`). `enableZoom = false` too - `MIDDLE`
 wheel dolly are both gated by that one flag in `OrbitControls` - zoom is fully custom (see
 below). Left-drag is **not** `OrbitControls`' own pan (that translates the camera in its
 own screen-space plane, with no relationship to what's actually under the cursor) - it's a
-hand-rolled ground-anchored drag: on `pointerdown`, raycast the click against the
-`terrain` mesh itself (not a plane) to find the exact grabbed world point, then build a
+hand-rolled ground-anchored drag: on `pointerdown`, raycast the click against
+`tileGroup.children` (every currently-loaded tile mesh, not a plane) to find the exact
+grabbed world point, then build a
 horizontal `THREE.Plane` through it. On every `pointermove` for the rest of that drag,
 raycast the *current* mouse position against that same fixed plane using the *current*
 (already-moved) camera pose, and translate `camera.position` and `controls.target` by
