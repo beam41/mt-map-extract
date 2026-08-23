@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jeju_World terrain viewer</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #05070c; }
+      #app { width: 100%; height: 100%; }
+      #info {
+        position: fixed; top: 8px; left: 8px; z-index: 10;
+        font: 12px/1.5 monospace; color: #cfe3ff; background: rgba(0, 10, 20, 0.55);
+        padding: 8px 10px; border-radius: 4px; pointer-events: none;
+        max-width: 360px;
+      }
+      #info b { color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="info">
+      <b>Jeju_World</b> - map.png draped over the extracted heightmap<br />
+      left-drag: pan &middot; right-drag: orbit &middot; scroll: zoom
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

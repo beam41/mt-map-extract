@@ -1,9 +1,11 @@
 # AGENT.md
 
 C# (.NET 10) tooling around Motor Town's `resource/MotorTown-Windows.pak` (UE 5.5), read via
-CUE4Parse. Four standalone projects, each with its own csproj, sharing the pak helpers from
-`common/` via `<ProjectReference>` — no per-project copies. All outputs go into the root
-`out/` tree, split by project.
+CUE4Parse. Five standalone .NET projects, each with its own csproj, sharing the pak helpers
+from `common/` via `<ProjectReference>` — no per-project copies. All outputs go into the
+root `out/` tree, split by project. `script/terrain-viewer/` is a separate, npm-based
+Three.js viewer that consumes two of those outputs (`out/heightmap/`,
+`out/amc-web/map/map.png`) - not part of the .NET solution.
 
 ## Read before starting
 
@@ -29,11 +31,16 @@ dotnet run -c Release --project amc-web          # amc-web extractor: data + map
 dotnet run -c Release --project amc-web -- --skip-tiles   # data only
 dotnet run -c Release --project wiki             # wiki generator: every DokuWiki page as .txt (out/wiki/, no json)
 dotnet run -c Release --project richtags         # rich-text tag finder (writes out/richtags/)
+dotnet run -c Release --project heightmap        # landscape heightmap extractor (writes out/heightmap/, ~75s)
 dotnet run -c Release --project tools/explore    # throwaway parts-data exploration harness
 ```
 
 `amc-web/mt-extract.yaml` is picked up automatically; CLI flags win over it. `--help` lists
 every option. `--skip-json` / `--skip-map` / `--skip-tiles` disable stages independently.
+
+`script/terrain-viewer/` is npm-based, not part of the above - see its own
+`script/terrain-viewer/README.md` for build/run steps (`pnpm install`,
+`node scripts/prepare-assets.js`, `pnpm dev`).
 
 ## Layout
 
@@ -43,7 +50,9 @@ every option. `--skip-json` / `--skip-map` / `--skip-tiles` disable stages indep
 | `amc-web/` | the amc-web extractor (`amc-web`): `Program.cs` (orchestration, `DecodeMapTexture`), `Options.cs` (CLI + yaml — amc-web-only: tile/dump options), `TileGenerator.cs` (libvips tile pyramid). Writes `out/amc-web/data/` (the `out_*.json`), `out/amc-web/map/map.png`, `out/amc-web/map/tiles/`. |
 | `wiki/` | the DokuWiki generator (`wiki`): `Program.cs`, `Data.cs` (pak gathering), `RenderVehicles.cs` / `RenderParts.cs` / `RenderCargos.cs` / `RenderDelivery.cs` (page templates), `Format.cs` (display rules), `LiveWiki.cs` (live-wiki `image =` field fetch/merge), `WikiOptions.cs` (its own CLI, incl. `--bootstrap`). Writes `out/wiki/` (vehicles/, parts/, cargos/, cargo_space/, cargo_type/, delivery_points/, list_of_*.txt, vehicle_comparison.txt) — no json. The four "detail" page types (vehicles, parts, cargos, delivery_points) each split into `{slug}:auto_infobox` + `{slug}:auto_details` (bot-owned, regenerated every run — `auto_infobox`'s `image =` line is live-fetched from the real wiki and merged back in every run) plus a once-generated heading, so a human curator can transclude the two subpages into a hand-owned live shell page via the DokuWiki `include` plugin without losing hand-written prose on regeneration; `out/wiki-bootstrap/` (opt-in, `--bootstrap`) holds the one-time shell suggestion for each. See `.agents/knowledge/wiki-pages.md` for the migration recipe and the deployment rule (never delete-sync a shell page path). |
 | `richtags/` | rich-text tag scanner (`richtags`), standalone, writes `out/richtags/rich_text_tags.md`. |
+| `heightmap/` | the landscape heightmap extractor (`heightmap`): `Program.cs` (orchestration), `Options.cs` (core CLI: `--origin-x`/`--origin-y`/`--map-size` default to the game's real map extent, `--web-size` (default 512) for the downsampled web export, `--exclude-guid` default excludes "OlleSpeedway_Landscape" (confirmed dead in the live game), plus `--pak`/`--aes`/`--usmap`/`--out`; debug-only options prefixed `--debug-guid`/`--debug-size`/`--debug-auto-fit`/`--debug-tiles`), `LandscapeExtractor.cs` (World Partition cell scan + texture decode + world-space stitch at native resolution, no resampling; live landscapes merged by taking the higher elevation per pixel), `ImageWriter.cs` (native 16-bit PNG + raw `heights.bin` (uint16 little-endian, row-major, for point queries) + raw `heights_<n>px.bin` (same encoding, area-averaged down to `--web-size`, for `script/terrain-viewer` to copy directly) + `debug/` downscaled preview via libvips), `TileDumper.cs` (unstitched per-component dump, `--debug-tiles`). Writes `out/heightmap/` (`Jeju_World_heightmap16.png`, `Jeju_World.json`, `heights.bin`, `heights_<n>px.bin`, `debug/`). See `.agents/knowledge/landscape-heightmap.md`. |
 | `tools/explore/` | throwaway exploration harness for parts data (`find`, `table`, `rows`, `grep`, `stats`, …); keep hacky. |
+| `script/terrain-viewer/` | Three.js 3D viewer (`pnpm`/`npm`, not part of the .NET solution): drapes `out/amc-web/map/map.png` over the `heightmap` project's elevation data. `scripts/prepare-assets.js` is a pure direct-copy build step - no decode/downsampling of its own - copying the `heightmap` project's already-downsampled `out/heightmap/heights_<n>px.bin` (raw uint16, per `--web-size`) into `public/assets/heights.bin` plus a small `heights.json` metadata passthrough and a copy of `map.png` (gitignored, generated); `src/main.js` applies the raw-height-to-meters formula client-side (`rawHeightToWorldZMeters`) and renders with Vite + Three.js (`pnpm dev`). See its own `README.md` for build/run steps, the map/heightmap alignment assumption, and every UI gotcha (texture flip, custom pan/zoom/orbit). |
 | `.agents/knowledge/vehicle-parts.md` | full data map of VehicleParts/Vehicles tables; update when part fields change |
 | `.agents/knowledge/vehicles.md` | vehicle domain: Vehicles table, blueprint stats, axles, capabilities, cargo spaces |
 | `.agents/knowledge/cargos.md` | cargo domain: Cargos tables, weights, space types, DeliveryPoint recipes |

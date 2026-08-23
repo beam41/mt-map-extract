@@ -1,0 +1,19 @@
+{
+  "name": "jeju-terrain-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "3D viewer: drapes amc-web's map.png over the heightmap project's extracted Jeju_World elevation data.",
+  "type": "module",
+  "scripts": {
+    "prepare-assets": "node scripts/prepare-assets.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
