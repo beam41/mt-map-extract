@@ -50,19 +50,23 @@ internal static class ImageWriter
     }
 
     /// <summary>Leaflet/OpenLayers-style tile pyramid, `{z}_{x}_{y}.bin` - deliberately
-    /// the same `{z}_{x}_{y}` naming and the same zoom-to-resolution scheme as
-    /// `amc-web/TileGenerator.cs`'s color tiles (z0 = 1x1 grid, zN = 2^N x 2^N, total
-    /// resolution `2^N * tileSize`), so `script/terrain-viewer` can fetch a height tile
-    /// and a color tile for the same (z, x, y) and know they cover the exact same
-    /// world-space rectangle at the exact same sample density. `maxZoom` is tied to
-    /// amc-web's own *native* zoom (4, for its 4096px map at the default 256px tile size)
-    /// as a manually-kept-in-sync constant, not auto-derived from amc-web's on-disk
-    /// output - this project has no runtime dependency on amc-web's, matching the
-    /// existing "manually kept in sync with the game's own map" pattern used by
-    /// --origin-x/--origin-y/--map-size. Deliberately never generates amc-web's extra
-    /// upscaled level (z5 by its default) - upscaling raw elevation data invents no real
-    /// detail, only interpolates, which would be actively misleading for a heightmap.
-    /// Every level here is a genuine area-average downsample of the native data.</summary>
+    /// the same `{z}_{x}_{y}` naming and the same zoom-to-grid scheme as
+    /// `amc-web/TileGenerator.cs`'s color tiles (z0 = 1x1 grid, zN = 2^N x 2^N), so
+    /// `script/terrain-viewer` can fetch a height tile and a color tile for the same
+    /// (z, x, y) and know they cover the exact same world-space rectangle - `tileSize`
+    /// (raw sample resolution per tile) is independent of amc-web's own `--tile-size`,
+    /// so the two pyramids can carry different detail levels per tile while sharing the
+    /// same grid/zoom layout; default `512` here vs. amc-web's default `256` means every
+    /// height tile is sampled at 2x the linear density of its matching color tile.
+    /// `maxZoom` is tied to amc-web's own *native* zoom (4, for its 4096px map at its
+    /// default tile size) as a manually-kept-in-sync constant, not auto-derived from
+    /// amc-web's on-disk output - this project has no runtime dependency on amc-web's,
+    /// matching the existing "manually kept in sync with the game's own map" pattern
+    /// used by --origin-x/--origin-y/--map-size. Deliberately never generates amc-web's
+    /// extra upscaled level (z5 by its default) - upscaling raw elevation data invents
+    /// no real detail, only interpolates, which would be actively misleading for a
+    /// heightmap. Every level here is a genuine area-average downsample of the native
+    /// data.</summary>
     private static void WriteHeightTiles(LandscapeExtractor.Map map, int tileSize, int maxZoom, string tilesDir)
     {
         Directory.CreateDirectory(tilesDir);

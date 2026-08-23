@@ -42,8 +42,11 @@ internal sealed record Options
           --map-size <cm>    map width and height, in world cm (must cover both islands
                              plus the ocean between them to match the game's own map)
                                                       (default 2200000, i.e. 22km square)
-          --tile-size <px>   height tile size, matching amc-web's --tile-size
-                                                      (default 256)
+          --tile-size <px>   height tile raw-sample resolution (independent of
+                             amc-web's own --tile-size - same {z}_{x}_{y} grid/zoom
+                             layout either way, just more or less height detail per
+                             tile)
+                                                      (default 512)
           --max-zoom <n>     highest height tile zoom (tiles are 0..n) - kept in sync
                              with amc-web's own native zoom (4, for its 4096px map at
                              the default tile size); never generates an upscaled level,
@@ -102,7 +105,7 @@ internal sealed record Options
     public double OriginYCm => OriginYCmOverride ?? -320_000;
     public double MapSizeCm => MapSizeCmOverride ?? 2_200_000;
 
-    public int TileSize { get; private init; } = 256;
+    public int TileSize { get; private init; } = 512;
     public int MaxZoom { get; private init; } = 4;
     public string? DebugGuidFilter { get; private init; }
     public int DebugSize { get; private init; } = 2048;

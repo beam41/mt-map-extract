@@ -24,8 +24,9 @@ way before trusting the drape.
 
 ```bash
 # 1. Generate the heightmap, including its tile pyramid (skip if out/heightmap/ is
-#    already up to date; --tile-size/--max-zoom default to 256/4, matching amc-web's
-#    own native zoom for its 4096px map - override only if that ever changes)
+#    already up to date; --tile-size defaults to 512, --max-zoom to 4 - the latter
+#    matches amc-web's own native zoom for its 4096px map, override only if that ever
+#    changes; --tile-size is independent of amc-web's own and can be any resolution)
 dotnet run -c Release --project heightmap -- [--tile-size <px>] [--max-zoom <n>]
 
 # 2. Generate amc-web's color tile pyramid (tiles are NOT optional here, unlike the old
@@ -93,12 +94,28 @@ zero possible 404s from the LOD system's own tile requests.
 Each visible tile is its own small `BufferGeometry` (`MESH_RESOLUTION x MESH_RESOLUTION`
 = `65x65` vertices, independent of the tile's own raw data resolution - fixed density
 regardless of zoom, so total scene triangle count is bounded by how many leaf tiles are
-currently selected, not by the underlying `256x256` height data) and its own
+currently selected, not by the underlying raw height tile resolution) and its own
 `MeshStandardMaterial` textured with that tile's color `.avif`. `heightCache` (keyed by
 `z_x_y`) avoids re-fetching a height tile's raw bytes if the camera revisits it; loaded
 tile meshes are tracked in `activeTiles` and disposed (geometry, material, texture) the
 moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long
 session.
+
+### Frustum culling
+
+`selectLeafTiles()` also builds a `THREE.Frustum` from the camera's current
+`projectionMatrix` / `matrixWorldInverse` (calling `camera.updateMatrixWorld()` first,
+since this runs outside the render call and can't rely on the renderer having refreshed
+it already) and tests every quadtree node's world-space bounding box against it before
+recursing or selecting a leaf. A node entirely outside the frustum is skipped outright -
+not recursed into, not fetched, not built, not rendered - so panning the camera away
+from part of the map stops loading and holding geometry/textures for tiles that are no
+longer (or never were) visible, not just relying on Three.js's own per-mesh
+`frustumCulled` draw-call skip after the fact. Each node's bounding box uses a generous,
+not exaggeration-accurate vertical range (`[minZ, maxZ] * CULL_MAX_EXAGGERATION`, `40` -
+the slider's max) so a tile is never wrongly culled just because the exaggeration slider
+is turned up after the box was sized; culling only needs to be *not too tight*, not
+exact.
 
 ### LOD-boundary cracks: skirts, not seamless stitching
 
@@ -129,35 +146,14 @@ persists across full browser/tab restarts - so the render output itself could no
 screenshotted here. Everything checkable without a live WebGL context was checked (see
 above): the tile pyramids' data (spot-checked against the native `heights.bin` at every
 zoom level), the quadtree selection algorithm (partition correctness, distance-based
-behavior, `maxZoom` clamping), and asset completeness (every reachable tile file
-exists). A `vite build` of the full bundle succeeds cleanly. Visually confirm the actual
-render (does refinement track the camera, do skirts hide seams acceptably) in a normal
-browser before relying on this for anything beyond internal review.
-
-## Self-shadowing terrain
-
-The terrain both casts and receives shadows from the sun `DirectionalLight`
-(every tile mesh gets `castShadow = receiveShadow = true` in `loadTile()`,
-`renderer.shadowMap.enabled = true`, `THREE.PCFSoftShadowMap`) - mountains cast real
-shadows into neighbouring valleys instead
-of every slope's brightness coming from its normal alone. The light's orthographic
-shadow camera is sized once, generously, from real terrain extent: a bounding-sphere
-radius covering the full horizontal footprint (`widthMeters`/`heightMeters`) plus the
-tallest possible vertical extent at the **slider's maximum** exaggeration (`40x` -
-`Math.max(|minZ|, |maxZ|) * 40`), not the current slider value, so cranking the
-exaggeration slider live never clips the shadow frustum. The sun is placed at
-`2 x shadowRadius` along its direction vector specifically so the shadow camera's
-near/far span (centered on that light-to-target distance) stays comfortably positive -
-placed too close, the bounding sphere would swallow the light's own position and produce
-a degenerate (negative-near) frustum.
-
-This is a single, un-cascaded shadow map (`4096x4096`) spanning the whole ~22km map, so
-resolution is coarse by construction (low tens of meters per texel) - acceptable for a
-large-scale relief viewer, not fine enough for e.g. crisp building shadows. `normalBias
-= 15` (world units/meters, comparable to one texel) offsets the sampled depth along the
-surface normal rather than a flat depth bias, which holds up far better against
-self-shadowing acne on sloped terrain at this resolution than a small constant bias
-would.
+behavior, `maxZoom` clamping), frustum culling (a hand-rolled 2D wedge-intersection
+sanity check in Node confirmed a narrower view cone selects strictly fewer tiles, and a
+camera looking entirely away from the map selects zero - not a substitute for testing
+the real `THREE.Frustum`/matrix code, which needs a browser), and asset completeness
+(every reachable tile file exists). A `vite build` of the full bundle succeeds cleanly.
+Visually confirm the actual render (does refinement track the camera, do skirts hide
+seams acceptably, does culling ever visibly pop in tiles too late) in a normal browser
+before relying on this for anything beyond internal review.
 
 ## Texture-vs-geometry north/south flip gotcha
 

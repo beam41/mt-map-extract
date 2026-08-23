@@ -220,26 +220,30 @@ dotnet run -c Release --project heightmap --
   is strictly more useful for point queries than a directory of PNG tiles (no tile-size
   math, no per-tile PNG/zlib decode), and the full native PNG already covers the
   "load it all at once in an image viewer" case.
-- `tiles/{z}_{x}_{y}.bin` (`--tile-size`/`--max-zoom`, defaults `256`/`4`) — a
+- `tiles/{z}_{x}_{y}.bin` (`--tile-size`/`--max-zoom`, defaults `512`/`4`) — a
   Leaflet/OpenLayers-style tile pyramid, same raw `uint16` little-endian layout as
   `heights.bin`, deliberately using the **same `{z}_{x}_{y}` naming and the same
-  zoom-to-resolution scheme as `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1
-  grid, zN = 2^N × 2^N, `2^N * tileSize` total resolution) - so `script/terrain-viewer`
-  can fetch a height tile and a color tile for the same `(z, x, y)` and know they cover
-  the exact same world-space rectangle at the exact same sample density. `--max-zoom`
-  defaults to `4`, matching `amc-web`'s current *native* zoom for its 4096px map at the
-  default tile size (ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist
-  with 1/4/16/64/256 tiles respectively, z5's extra 1024 tiles are `amc-web`'s own
-  upscaled level) - a manually-kept-in-sync constant, not auto-derived, matching the
-  existing `--origin-x`/`--origin-y`/`--map-size` pattern of trusting a verified,
-  documented constant over a fragile cross-project runtime dependency. Deliberately
-  never generates an upscaled level itself - upscaling raw elevation invents no real
-  detail. `Jeju_World.json`'s `"tiles"` object carries every consumer-needed field
-  precomputed (`tileSize`, `maxZoom`, `widthMeters`/`heightMeters`,
-  `originMetersX`/`originMetersY`, `minZMeters`/`maxZMeters`). Replaced the earlier
-  single flat `heights_<n>px.bin` (`--web-size`) export - a real tile pyramid is what
-  lets the viewer show coarser/finer detail by camera position instead of one fixed
-  resolution for the whole map.
+  zoom-to-grid scheme as `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1 grid,
+  zN = 2^N × 2^N) - so `script/terrain-viewer` can fetch a height tile and a color tile
+  for the same `(z, x, y)` and know they cover the exact same world-space rectangle.
+  `--tile-size` (raw sample resolution per tile) is independent of `amc-web`'s own
+  `--tile-size` - the two pyramids share the same grid/zoom layout but can carry
+  different detail levels per tile; default `512` here vs. `amc-web`'s default `256`
+  means every height tile is sampled at 2x the linear density of its matching color
+  tile. `--max-zoom` defaults to `4`, matching `amc-web`'s current *native* zoom for its
+  4096px map at its default tile size (ground-truth-checked against
+  `out/amc-web/map/tiles/`: z0..z4 exist with 1/4/16/64/256 tiles respectively, z5's
+  extra 1024 tiles are `amc-web`'s own upscaled level) - a manually-kept-in-sync
+  constant, not auto-derived, matching the existing `--origin-x`/`--origin-y`/
+  `--map-size` pattern of trusting a verified, documented constant over a fragile
+  cross-project runtime dependency. Deliberately never generates an upscaled level
+  itself - upscaling raw elevation invents no real detail. `Jeju_World.json`'s
+  `"tiles"` object carries every consumer-needed field precomputed (`tileSize`,
+  `maxZoom`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
+  `minZMeters`/`maxZMeters`). Replaced the earlier single flat `heights_<n>px.bin`
+  (`--web-size`) export - a real tile pyramid is what lets the viewer show
+  coarser/finer detail by camera position instead of one fixed resolution for the whole
+  map.
 - `debug/Jeju_World_preview.png` — 8-bit min/max-normalized, downscaled so the longer
   edge is `--debug-size` px (default `2048`; aspect ratio preserved, cubic resample) - the
   16-bit file looks almost solid black in ordinary viewers otherwise.

@@ -11,12 +11,14 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
  * pyramids as-is into public/assets/tiles/{height,color}/ plus a small tiles.json
  * metadata passthrough - no decoding/resampling in JS at all.
  *
- * Every frame, selectLeafTiles() walks the quadtree from z0 and decides, per node,
+ * Every ~150ms, selectLeafTiles() walks the quadtree from z0 and decides, per node,
  * whether to render it as a leaf (a real GPU tile) or subdivide into its 4 children,
  * purely from distance-to-camera vs. the tile's own world size - the same idea Cesium/
  * OpenLayers-3D/etc. use, simplified to a single distance ratio since this viewer has no
- * true screen-space-error budget or camera-FOV-aware projection. Closer tiles end up
- * smaller/higher-zoom; distant tiles stay large/coarse.
+ * true screen-space-error budget. Closer tiles end up smaller/higher-zoom; distant tiles
+ * stay large/coarse. Nodes entirely outside the camera's view frustum are culled outright
+ * (not recursed into, not loaded, not rendered) via a THREE.Frustum test against each
+ * node's own world-space bounding box.
  */
 
 // Real elevation differences (tens of meters) are imperceptible against a 22km-wide map
@@ -55,6 +57,12 @@ const REFINE_DISTANCE_FACTOR = 1.5;
 // the gap reads as a shadowed seam instead of a hole punched through the terrain.
 const SKIRT_DROP = 400;
 
+// A generous (not exaggeration-accurate) vertical bound for each tile's frustum-culling
+// bounding box - matches the exaggeration slider's max (40x) so a tile never gets
+// wrongly culled just because the slider is cranked up after the box was sized. Culling
+// correctness only needs "not too tight", not "exact".
+const CULL_MAX_EXAGGERATION = 40;
+
 /**
  * Raw height unit (0-65535, as stored in the height tiles) -> world Z, in meters.
  * Matches `worldZFormulaCm` in Jeju_World.json exactly (that formula in cm, divided by
@@ -88,11 +96,27 @@ function tileWorldRect(meta, z, x, y) {
 }
 
 /** Walks the quadtree from z0, returning the [z, x, y] leaves the camera's current
- * position calls for - see REFINE_DISTANCE_FACTOR. */
+ * position and view frustum call for - see REFINE_DISTANCE_FACTOR. A node entirely
+ * outside the camera's frustum is skipped outright (not recursed into, not selected as
+ * a leaf) - it and everything below it is offscreen, so there's no reason to load or
+ * render any of it. */
 function selectLeafTiles(camera, meta) {
+  camera.updateMatrixWorld(); // ensures matrixWorldInverse below reflects this frame's pose
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(
+    new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+  );
+  const minY = Math.min(meta.minZ, meta.maxZ, 0) * CULL_MAX_EXAGGERATION;
+  const maxY = Math.max(meta.minZ, meta.maxZ, 0) * CULL_MAX_EXAGGERATION;
+
   const leaves = [];
   function visit(z, x, y) {
     const { worldX0, worldZ0, tileSize } = tileWorldRect(meta, z, x, y);
+    const box = new THREE.Box3(
+      new THREE.Vector3(worldX0, minY, worldZ0),
+      new THREE.Vector3(worldX0 + tileSize, maxY, worldZ0 + tileSize)
+    );
+    if (!frustum.intersectsBox(box)) return; // fully offscreen - cull, don't recurse or load
+
     const cx = worldX0 + tileSize / 2;
     const cz = worldZ0 + tileSize / 2;
     const dx = camera.position.x - cx;
@@ -238,8 +262,6 @@ async function main() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const skyColor = 0x8fb8e0;
   renderer.setClearColor(skyColor);
   container.appendChild(renderer.domElement);
@@ -269,42 +291,14 @@ async function main() {
   scene.add(new THREE.HemisphereLight(0xbfe0ff, 0x4a3d2a, 1.4));
   scene.add(new THREE.AmbientLight(0xffffff, 0.6));
   const sun = new THREE.DirectionalLight(0xfff3df, 2.4);
-  const sunDirection = new THREE.Vector3(-8000, 12000, 6000).normalize();
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
-  // Large terrain, coarse texel size at that map resolution - offset along the surface
-  // normal (world units, meters) rather than a flat depth bias, which is far more robust
-  // against self-shadowing acne on sloped terrain than a small constant bias.
-  sun.shadow.normalBias = 15;
+  sun.position.set(-8000, 12000, 6000);
   scene.add(sun);
   scene.add(sun.target); // stays at the default (0,0,0), which is where the map is centered
 
   const meta = await loadTilesMeta();
 
-  // Size the sun's orthographic shadow frustum to comfortably contain the terrain at
-  // any exaggeration up to the slider's max (40x) - a single static frustum, not
-  // recomputed per-frame or per-exaggeration-change, so shadow resolution is a fixed
-  // (coarse, ~dozens of meters/texel across a 22km map) tradeoff of this single-cascade
-  // setup, not a bug.
-  const SHADOW_MAX_EXAGGERATION = 40;
-  const horizontalRadius = 0.5 * Math.sqrt(meta.widthMeters ** 2 + meta.heightMeters ** 2);
-  const verticalHalfRange = Math.max(Math.abs(meta.minZ), Math.abs(meta.maxZ)) * SHADOW_MAX_EXAGGERATION;
-  const shadowRadius = horizontalRadius + verticalHalfRange;
-  // Place the sun far enough past shadowRadius that its shadow camera's near/far span
-  // (centered on the light-to-target distance) stays comfortably positive - too close
-  // and the bounding sphere below would swallow the light position itself.
-  sun.position.copy(sunDirection).multiplyScalar(shadowRadius * 2);
-  const shadowCam = sun.shadow.camera;
-  shadowCam.left = -shadowRadius;
-  shadowCam.right = shadowRadius;
-  shadowCam.top = shadowRadius;
-  shadowCam.bottom = -shadowRadius;
-  shadowCam.near = sun.position.length() - shadowRadius - 1000;
-  shadowCam.far = sun.position.length() + shadowRadius + 1000;
-  shadowCam.updateProjectionMatrix();
-
-  // All active tile meshes live under this group - both the shadow-casting/receiving
-  // terrain surface and the raycast target for ground-anchored panning below.
+  // All active tile meshes live under this group - the raycast target for
+  // ground-anchored panning below.
   const tileGroup = new THREE.Group();
   scene.add(tileGroup);
 
@@ -333,8 +327,6 @@ async function main() {
         map: texture, roughness: 0.95, metalness: 0, side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
       tileGroup.add(mesh);
       activeTiles.set(key, { mesh, geometry, material, baseHeights, skirtDrop, texture });
     } finally {
