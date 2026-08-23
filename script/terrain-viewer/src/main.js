@@ -32,7 +32,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 // Real elevation differences (tens of meters) are imperceptible against a 22km-wide map
 // at true 1:1 scale - this is a deliberate, visible artistic exaggeration, not a
 // measurement. Adjustable live via the on-screen slider.
-const DEFAULT_EXAGGERATION = 6;
+const DEFAULT_EXAGGERATION = 1;
 
 // Orbiting the same angle sweeps terrain past the camera much faster, visually, when
 // zoomed in close than when zoomed far out - scaled by current camera distance every
