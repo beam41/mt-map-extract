@@ -135,7 +135,7 @@ height into an on-screen pixel size (`projectedScreenSizePx()`), and recurses in
 `centerBiasMultiplier()` - see the fourth bug below) - a real screen-space-error
 budget, the same idea Cesium/OpenLayers-3D/etc. use.
 
-**Four issues found via real browser use, none caught by the Node-side partition
+**Five issues found via real browser use, none caught by the Node-side partition
 tests** (a partition/coverage test only checks that leaves tile the map exactly once,
 not *which* leaves get picked - each issue below is in the metric feeding the
 algorithm, not the algorithm's coverage logic):
@@ -229,6 +229,42 @@ algorithm, not the algorithm's coverage logic):
     for the third) - and the full zoomed-distance sweep (`10800` down to `50` world
     units) refines monotonically `z1 -> z2 -> z3 -> z4` with no distance at which it
     gets stuck, matching the bias-disabled baseline exactly.
+- A fifth issue, also a deliberate design choice: "z0 tile texture is too blurry, do
+  stitched z1". `z0`'s color texture is the *entire* ~22km map resized down to one
+  `tileSize x tileSize` (256x256 by default) image - about 86m/pixel - which reads as
+  visibly blurry well before the screen-space-error budget above would ever ask the
+  *geometry* to refine (from directly overhead or far away, a single huge `z0` tile
+  can legitimately project under `MAX_TILE_SCREEN_PX` and stay a leaf).
+  - **First attempt** was `MIN_LEAF_ZOOM = 1`: force-refine `z0` unconditionally in
+    `visit()`, so the coarsest the viewer would ever show was 4 geometrically-seamless
+    `z1` tiles (same-zoom neighbours, no LOD-boundary crack to skirt over) - trading
+    texture sharpness for triangle count. Superseded immediately by a follow-up
+    request: "I want it to do z0 height map to reduce triangle at min zoom, just
+    don't use z0 texture" - i.e. keep `z0`'s single, cheap mesh (one
+    `MESH_RESOLUTION x MESH_RESOLUTION` tile, not four) and fix *only* the texture.
+  - **Final fix**, `loadZ0StitchedTexture()`: `MIN_LEAF_ZOOM` removed entirely - `z0`
+    is a valid leaf again, at true single-tile triangle cost. `loadColorTexture()`
+    special-cases `z === 0` to fetch the four real `z1` color images
+    (`1_0_0`/`1_1_0`/`1_0_1`/`1_1_1.avif`) and composite them with the 2D canvas API
+    into one `THREE.CanvasTexture`, applied to `z0`'s own single geometry instead of
+    loading `0_0_0.avif`. Quadrant `(x, y)` is drawn at canvas pixel offset
+    `(x * tileW, y * tileH)` - `x` increasing left-to-right matches `u`/`worldX`
+    increasing, `y` increasing top-to-bottom matches `v`/`worldZ` increasing, the same
+    top-down convention `flipY = false` relies on for every other tile - so this
+    reconstructs exactly the full-map image `amc-web/TileGenerator.cs` cropped those
+    four tiles from in the first place (mod AVIF's own lossy encoding): 2x the linear
+    resolution (4x the pixels) of `z0`'s own texture, for the same ground footprint,
+    at zero extra triangle cost. Canvas size is derived from the loaded images' own
+    `naturalWidth`/`naturalHeight`, not assumed from `meta.tileSize` (that field
+    describes the *height* tile pyramid, independent of amc-web's own color tile size
+    by design even though both default to 256).
+  - Verified with real WebGL rendering: at `controls.maxDistance` (the actual worst
+    case), the color-by-zoom debug view shows exactly 1 red (`z0`) tile - confirming
+    the single-mesh geometry claim - while the browser's own network log shows
+    requests for the four `z1` AVIF images and *not* `0_0_0.avif`, confirming the
+    stitched-texture path actually ran rather than the direct-load path. Panning,
+    orbiting, and zooming back into normal `z1`-`z4` range all continue to work with
+    no console errors.
 
 Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
 `z4`) was confirmed to have both a height tile and a color tile actually present under
@@ -238,7 +274,9 @@ Each visible tile is its own small `BufferGeometry` (`MESH_RESOLUTION x MESH_RES
 = `65x65` vertices, independent of the tile's own raw data resolution - fixed density
 regardless of zoom, so total scene triangle count is bounded by how many leaf tiles are
 currently selected, not by the underlying raw height tile resolution) and its own
-`MeshStandardMaterial` textured with that tile's color `.avif`. `heightCache` (keyed by
+`MeshStandardMaterial` textured with that tile's color `.avif` - except `z0`, whose
+texture is the 4-way `z1` composite described above instead of `0_0_0.avif` (see
+`loadZ0StitchedTexture()`). `heightCache` (keyed by
 `z_x_y`) avoids re-fetching a height tile's raw bytes if the camera revisits it; loaded
 tile meshes are tracked in `activeTiles` and disposed (geometry, material, texture) the
 moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long

@@ -286,6 +286,63 @@ async function fetchHeightTile(z, x, y) {
   return new Uint16Array(await r.arrayBuffer());
 }
 
+/** Composites the four z1 color tiles into one canvas texture, used in place of z0's
+ * own texture whenever z0 is actually selected as a leaf by `selectLeafTiles()`
+ * (see `loadColorTexture()`). z0's own color tile is the *entire* ~22km map resized
+ * down to one `tileSize x tileSize` image (256x256 by default, ~86m/pixel) - visibly
+ * blurry well before the height *geometry* would need refining, since z0 can
+ * legitimately stay a leaf from far away or directly overhead. Reported directly:
+ * "z0 tile texture is too blurry, do stitched z1" - then refined further: "I want it
+ * to do z0 height map to reduce triangle at min zoom, just don't use z0 texture" -
+ * i.e. keep z0's single, cheap mesh (one `MESH_RESOLUTION x MESH_RESOLUTION` tile,
+ * not four) rather than forcing a geometry split into 4 z1 tiles, but texture that
+ * one mesh with the four real z1 images instead of z0's own. This reconstructs
+ * exactly the full-map image `amc-web/TileGenerator.cs` cropped those four tiles from
+ * in the first place (mod AVIF's own lossy encoding) - 2x the linear resolution (4x
+ * the pixels) of z0's own texture, for the exact same ground footprint, at no
+ * geometry/triangle cost at all.
+ *
+ * Pure canvas 2D compositing, not a WebGL render-to-texture pass: four decoded `Image`
+ * elements drawn into the four quadrants of one canvas, matching the mesh's own
+ * coordinate convention - quadrant `(x, y)` (the same z1 tile indices used everywhere
+ * else) goes at canvas pixel offset `(x * tileW, y * tileH)`: `x` increasing
+ * left-to-right matches `u`/`worldX` increasing, `y` increasing top-to-bottom matches
+ * `v`/`worldZ` increasing - the same top-down row convention `flipY = false` relies on
+ * for every other tile's texture. Canvas size is derived from the loaded images'
+ * own natural dimensions, not assumed from `meta.tileSize` (that field describes the
+ * *height* tile pyramid - independent of amc-web's own color tile size by design, even
+ * though both happen to default to 256). */
+function loadZ0StitchedTexture(renderer) {
+  const quadrants = [
+    ["/assets/tiles/color/1_0_0.avif", 0, 0],
+    ["/assets/tiles/color/1_1_0.avif", 1, 0],
+    ["/assets/tiles/color/1_0_1.avif", 0, 1],
+    ["/assets/tiles/color/1_1_1.avif", 1, 1],
+  ];
+  const loads = quadrants.map(([url, qx, qy]) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ img, qx, qy });
+    img.onerror = (err) => reject(new Error(`stitched z0 texture: ${url} failed to load: ${err?.message ?? err}`));
+    img.src = url;
+  }));
+  return Promise.all(loads).then((loaded) => {
+    const tileW = loaded[0].img.naturalWidth;
+    const tileH = loaded[0].img.naturalHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = tileW * 2;
+    canvas.height = tileH * 2;
+    const ctx = canvas.getContext("2d");
+    for (const { img, qx, qy } of loaded) {
+      ctx.drawImage(img, qx * tileW, qy * tileH, tileW, tileH);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.flipY = false;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return texture;
+  });
+}
+
 /** Loads one color tile's texture, resolving only once the image has actually
  * finished decoding - not the moment `TextureLoader.load()` returns (which happens
  * immediately, well before the network fetch + image decode complete, since
@@ -297,11 +354,15 @@ async function fetchHeightTile(z, x, y) {
  * sibling tiles all start loading their own textures at once) even after the
  * load/unload-ordering fix above solved the geometry gap.
  *
+ * z0 is special-cased to `loadZ0StitchedTexture()` instead of its own `0_0_0.avif` -
+ * see that function's doc comment.
+ *
  * Same flipY fix as the old single-mesh viewer: this mesh's UVs are assigned by hand
  * to directly match the tile's own un-flipped row->worldY mapping, but TextureLoader
  * defaults flipY=true (assumes a plane's default UVs, v=0 at bottom) - disable it so
  * texture and geometry read the tile in the same top-down row order. */
 function loadColorTexture(z, x, y, renderer) {
+  if (z === 0) return loadZ0StitchedTexture(renderer);
   return new Promise((resolve, reject) => {
     new THREE.TextureLoader().load(
       `/assets/tiles/color/${z}_${x}_${y}.avif`,
