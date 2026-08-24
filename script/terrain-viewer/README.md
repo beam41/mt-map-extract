@@ -275,7 +275,7 @@ to a flat plane instead of the actual seabed/shoreline geometry.
 
 ### Debug view: color-by-zoom + wireframe
 
-Two independent checkboxes, top-left. Requested directly to actually diagnose a
+Two independent checkboxes, top-right. Requested directly to actually diagnose a
 reported seam instead of guessing at a cause ("make debug view that color each zoom
 level as different color, don't jump to avif conclusion"):
 
@@ -299,6 +299,34 @@ once and toggled per-tile rather than rebuilt - `unloadTile()` only ever dispose
 tile's own real `MeshStandardMaterial`, never one of the 5 shared debug materials.
 Both checkboxes apply immediately to every currently active tile and to every tile
 loaded afterward, independent of each other and of which tile the camera is looking at.
+
+**Result: confirmed AVIF, not geometry/lighting.** With color-by-zoom on (no texture
+at all, real shading still active) the seam wasn't visible even at a same-zoom
+boundary - ruling out both the position-stitching and normal-continuity code entirely.
+Root-caused with real pixel evidence, not another guess: `amc-web/TileGenerator.cs`
+resizes the *whole* map once per zoom, then crops individual tiles as plain array
+slices from that one already-resized canvas - so two adjacent same-zoom tiles'
+*source* pixels at their shared edge are byte-identical before encoding, confirmed by
+reading the code, not assumed. Decoded two real adjacent tiles' actual AVIF output in
+a browser tab (`createImageBitmap`/`<canvas>.getImageData`, comparing every row along
+their shared edge) and found real, substantial disagreement anyway - up to 92 (summed
+R+G+B delta) at the worst row, 11.1 average across the whole 256px edge, entirely from
+independent per-tile AVIF encoding (`Options.cs`'s default `Quality = 65`, `Effort =
+9`, each tile compressed as its own standalone lossy image with zero knowledge of its
+neighbour's pixels beyond the edge).
+
+Tried raising the encode quality (`--quality 90` vs. the default `65`) and re-ran the
+identical pixel comparison against the regenerated tiles: only a marginal improvement
+(worst-row delta 92 -> 77, average 11.1 -> 9.76) - confirming this is a fundamental
+property of compressing each tile independently and lossily, not a quality-tuning
+problem with an easy knob. Abandoned pursuing a real fix here: closing it for real
+would need either a lossless tile format (a real file-size/generation-time regression
+for `amc-web`'s *other* consumers too, e.g. the wiki map viewer - not a call to make
+unilaterally) or baking a border-overlap scheme into `amc-web`'s own tile pyramid (the
+same fix already applied to the *height* pyramid, mirrored onto a shared resource used
+well beyond this one viewer - a real, separate feature, not a quick tweak). Tiles were
+regenerated back to the documented default quality (`65`) afterward, so this
+investigation left no drift from `amc-web/Options.cs`'s committed defaults.
 
 ### WebGL verification note
 

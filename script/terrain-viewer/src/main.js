@@ -647,7 +647,7 @@ async function main() {
   // material (real or debug-colored) is currently showing.
   const debugPanel = document.createElement("div");
   Object.assign(debugPanel.style, {
-    position: "fixed", top: "8px", left: "8px", zIndex: 10,
+    position: "fixed", top: "8px", right: "8px", zIndex: 10,
     font: "12px monospace", color: "#cfe3ff", background: "rgba(0,0,0,0.35)",
     padding: "6px 8px", borderRadius: "4px",
   });
