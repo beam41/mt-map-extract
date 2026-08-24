@@ -16,17 +16,25 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
  * from a real screen-space-error budget (the same idea Cesium/OpenLayers-3D/etc. use):
  * a tile's own world size and its 3D distance to the camera are projected through the
  * camera's actual vertical FOV and the renderer's current viewport height into an
- * on-screen pixel size, and it only subdivides once that projected size crosses
- * MAX_TILE_SCREEN_PX. This is deliberately FOV/viewport-aware, not a flat
- * distance-to-tile-size ratio - the same real-world camera distance covers very
- * different screen area depending on FOV and window size, so a fixed-ratio distance
- * threshold is inherently wrong (too eager to refine on a typical FOV/window), not
- * just mistunable. Reported as "zoom level 5 [renders] from quite far" even after an
- * earlier fix (3D box distance instead of flat horizontal distance) - the residual bug
- * was the ratio-based threshold itself having no real relationship to what's actually
- * on screen. Nodes entirely outside the camera's view frustum are culled outright (not
- * recursed into, not loaded, not rendered) via a THREE.Frustum test against each node's
- * own world-space bounding box.
+ * on-screen pixel size, and it only subdivides once that projected size crosses an
+ * effective threshold. That threshold starts at MAX_TILE_SCREEN_PX dead center and
+ * grows more lenient toward the edges of the viewport (see CENTER_BIAS_STRENGTH,
+ * centerBiasMultiplier()) - a deliberate foveated bias, not a flat FOV-aware ratio
+ * alone: reported as tiles "unhelpfully show[ing] smaller zoom off to the side" -
+ * i.e. periphery content refining inconsistently relative to what's actually near the
+ * camera's gaze, since a flat, position-agnostic threshold gives a screen corner (where
+ * detail matters least, and where a tile's true footprint is easiest to underestimate
+ * at a shallow/grazing viewing angle) exactly as much refinement priority as dead
+ * center. This is deliberately FOV/viewport-aware, not a flat distance-to-tile-size
+ * ratio either - the same real-world camera distance covers very different screen area
+ * depending on FOV and window size, so a fixed-ratio distance threshold is inherently
+ * wrong (too eager to refine on a typical FOV/window), not just mistunable. Reported as
+ * "zoom level 5 [renders] from quite far" even after an earlier fix (3D box distance
+ * instead of flat horizontal distance) - the residual bug was the ratio-based threshold
+ * itself having no real relationship to what's actually on screen. Nodes entirely
+ * outside the camera's view frustum are culled outright (not recursed into, not
+ * loaded, not rendered) via a THREE.Frustum test against each node's own world-space
+ * bounding box.
  */
 
 // Orbiting the same angle sweeps terrain past the camera much faster, visually, when
@@ -52,6 +60,19 @@ const MESH_RESOLUTION = 65;
 // reported as still refining to the finest zoom from too far away - this requires a
 // tile to visually dominate more of the screen before its children load in.
 const MAX_TILE_SCREEN_PX = 900;
+
+// How much more lenient the refine threshold (see MAX_TILE_SCREEN_PX,
+// centerBiasMultiplier()) gets for a tile projected at the very edge/corner of the
+// viewport versus one dead center - 1.0 would mean no bias at all; CENTER_BIAS_STRENGTH
+// = 2.5 means an edge tile may grow to 3.5x MAX_TILE_SCREEN_PX before subdividing.
+// Deliberately not 0/disabled: this is foveated, not cosmetic - a viewport corner is
+// both where a human viewer's attention least needs sharp detail and where the plain
+// distance-based screen-size estimate above is easiest to get wrong (a ground tile
+// viewed at a shallow/grazing angle near the horizon can occupy far more screen pixels
+// than its Euclidean camera distance alone suggests), so periphery tiles get real
+// slack instead of competing for refinement on equal footing with what's actually
+// centered in view.
+const CENTER_BIAS_STRENGTH = 2.5;
 
 // World-unit drop for the skirt (a thin vertical wall of extra geometry around every
 // tile's border, dropped straight down). Neighboring tiles at different zoom levels
@@ -122,6 +143,28 @@ function projectedScreenSizePx(distance, tileWorldSize, camera, viewportHeightPx
   return (angularSizeRad / verticalFovRad) * viewportHeightPx;
 }
 
+// Scratch vector reused by centerBiasMultiplier() every call - project() mutates in
+// place, and this runs once per visited quadtree node every ~150ms, so a fresh
+// allocation per call would just be needless GC churn.
+const _centerBiasScratch = new THREE.Vector3();
+
+/** How much more lenient MAX_TILE_SCREEN_PX should be for a tile whose bounding box
+ * is centered at `boxCenter`, given `camera`'s current pose - see
+ * CENTER_BIAS_STRENGTH. 1 dead center in the viewport, rising linearly to
+ * 1 + CENTER_BIAS_STRENGTH at the viewport's edge/corner. `Object3D.project()` yields
+ * NDC coordinates that are already aspect-ratio-corrected by the projection matrix (x
+ * and y both range over [-1, 1] at the viewport's actual left/right and top/bottom
+ * edges, regardless of window aspect ratio), so a plain radial NDC distance is a
+ * faithful "how far toward the edge of the rendered rectangle" measure - not an
+ * approximation that needs a separate aspect-ratio correction. The radial distance at
+ * the exact corner is sqrt(2); dividing by that (and clamping to 1) means "reached a
+ * corner" maps to the full bias, not something larger. */
+function centerBiasMultiplier(boxCenter, camera) {
+  _centerBiasScratch.copy(boxCenter).project(camera);
+  const radial = Math.hypot(_centerBiasScratch.x, _centerBiasScratch.y) / Math.SQRT2;
+  return 1 + CENTER_BIAS_STRENGTH * Math.min(radial, 1);
+}
+
 /** Walks the quadtree from z0, returning the [z, x, y] leaves the camera's current
  * position, view frustum, and viewport call for - see MAX_TILE_SCREEN_PX. A node
  * entirely outside the camera's frustum is skipped outright (not recursed into, not
@@ -170,8 +213,9 @@ function selectLeafTiles(camera, meta, viewportHeightPx) {
 
     const distance = box.distanceToPoint(camera.position); // full 3D, accounts for camera height
     const screenPx = projectedScreenSizePx(distance, tileSize, camera, viewportHeightPx);
+    const maxPx = MAX_TILE_SCREEN_PX * centerBiasMultiplier(box.getCenter(_centerBiasScratch), camera);
 
-    if (z < meta.maxZoom && screenPx > MAX_TILE_SCREEN_PX) {
+    if (z < meta.maxZoom && screenPx > maxPx) {
       visit(z + 1, x * 2, y * 2);
       visit(z + 1, x * 2 + 1, y * 2);
       visit(z + 1, x * 2, y * 2 + 1);

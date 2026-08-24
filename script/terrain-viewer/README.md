@@ -131,13 +131,14 @@ frustum culling, reused rather than rebuilt), projects that distance and the til
 world size through the camera's actual vertical FOV and the renderer's current viewport
 height into an on-screen pixel size (`projectedScreenSizePx()`), and recurses into the
 4 children instead of rendering the node once that projected size crosses
-`MAX_TILE_SCREEN_PX` (`900`) - a real screen-space-error budget, the same idea Cesium/
-OpenLayers-3D/etc. use.
+`MAX_TILE_SCREEN_PX` (`900`, itself scaled up toward screen edges/corners by
+`centerBiasMultiplier()` - see the fourth bug below) - a real screen-space-error
+budget, the same idea Cesium/OpenLayers-3D/etc. use.
 
-**Two bugs found via real browser use, neither caught by the Node-side partition
+**Four issues found via real browser use, none caught by the Node-side partition
 tests** (a partition/coverage test only checks that leaves tile the map exactly once,
-not *which* leaves get picked - both bugs are in the metric feeding the algorithm, not
-the algorithm's coverage logic):
+not *which* leaves get picked - each issue below is in the metric feeding the
+algorithm, not the algorithm's coverage logic):
 
 - The first version measured distance as a flat horizontal (XZ-plane only) distance to
   the tile's center, completely ignoring camera altitude. Looking mostly straight down
@@ -177,6 +178,25 @@ the algorithm's coverage logic):
   only one true 1:1 scale left, the box can just use the map's real height range
   (`meta.minZ`/`meta.maxZ`, no margin), which is naturally tight enough to make the
   vertical distance term meaningful again, for both culling and refinement.
+- A fourth issue is a deliberate design choice, not a bug fix: reported directly with a
+  screenshot showing a large, prominent low-zoom (`z2`) patch off to one side of the
+  frame while dead-center content stayed refined - "make it have screen center bias,
+  sometimes it unhelpfully show smaller zoom off to the side". Even with the box-reuse
+  bug above fixed, a flat FOV/viewport-aware screen-space-error budget still treats
+  every screen position identically: a tile at the extreme edge/corner of the frame
+  gets exactly as much refinement priority as one dead center, even though (a) that's
+  not where a viewer's attention actually is, and (b) a ground tile viewed at a
+  shallow/grazing angle near a screen edge can occupy far more actual screen area than
+  the plain distance-based estimate assumes, since that estimate treats the tile as if
+  it faced the camera head-on. Fixed with `centerBiasMultiplier()`: projects each
+  candidate tile's bounding-box center into NDC via `Object3D.project(camera)` (already
+  aspect-ratio-correct, so a corner is a corner regardless of window shape) and scales
+  the refine threshold up to `1 + CENTER_BIAS_STRENGTH` (`3.5x` at the exact
+  edge/corner) as that projected position moves away from screen center - `1x` (no
+  change at all) dead center. Verified in Node against the real `THREE.Vector3.project`
+  math: a point placed exactly at the camera's view-direction center yields a `1.0`
+  multiplier; a point placed exactly at the frustum's edge/corner yields exactly `3.5`;
+  intermediate screen positions interpolate smoothly between the two.
 
 Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
 `z4`) was confirmed to have both a height tile and a color tile actually present under
