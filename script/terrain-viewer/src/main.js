@@ -61,22 +61,27 @@ const MESH_RESOLUTION = 65;
 // tile to visually dominate more of the screen before its children load in.
 const MAX_TILE_SCREEN_PX = 900;
 
-// How much more lenient the refine threshold (see MAX_TILE_SCREEN_PX,
-// centerBiasMultiplier()) gets for a tile projected at the very edge/corner of the
-// viewport versus one dead center - CENTER_BIAS_STRENGTH=1.0 means an edge tile may
-// grow to 2x MAX_TILE_SCREEN_PX before subdividing; CENTER_BIAS_POWER=4 keeps that
-// leniency concentrated near the true edge instead of a linear ramp starting at the
-// center (a linear ramp was tried first and reported as a regression - "z1-z4 zoom
-// only show at extreme zoom": even a moderate 20-30% offset from dead center already
-// got ~1.5-1.75x leniency, which starves nearly the entire frame of refinement since
-// almost no on-screen content sits exactly at NDC (0,0); with power=4 that same
-// 20-30% offset is still ~1.0x, unbiased, and the bias only becomes material past
-// ~70% of the way to the corner - see centerBiasMultiplier()). Deliberately not
-// 0/disabled: this is foveated, not cosmetic - a viewport corner is both where a
-// human viewer's attention least needs sharp detail and where the plain
-// distance-based screen-size estimate above is easiest to get wrong (a ground tile
-// viewed at a shallow/grazing angle near the horizon can occupy far more screen
-// pixels than its Euclidean camera distance alone suggests).
+// How lenient (>1, refines later) or eager (<1, refines sooner) the refine threshold
+// (see MAX_TILE_SCREEN_PX, centerBiasMultiplier()) gets as a tile moves from dead
+// center to the very edge/corner of the viewport - CENTER_BIAS_MIN=0.6 means a
+// dead-center tile refines once it's just 0.6x MAX_TILE_SCREEN_PX, `1 +
+// CENTER_BIAS_STRENGTH` = 2.0 means an edge tile may grow to 2x MAX_TILE_SCREEN_PX
+// before subdividing; CENTER_BIAS_POWER=4 keeps most of the frame close to neutral
+// (~1x) and concentrates both the eagerness and the leniency near the true center
+// and true edge respectively, instead of a linear ramp (tried first, reported as a
+// regression - "z1-z4 zoom only show at extreme zoom": even a moderate 20-30% offset
+// from dead center already got real leniency, which starved nearly the entire frame
+// of refinement since almost no on-screen content sits exactly at NDC (0,0)).
+// CENTER_BIAS_MIN was added second, after leniency alone (the >=1 range, `1` at
+// center meaning "no penalty" but no *advantage* either) turned out unable to fix a
+// real case: a screenshot showing edge tiles reaching z4 while dead-center tiles -
+// at a genuinely farther real 3D distance, since looking forward-and-down puts the
+// near ground at the bottom of frame and the horizon-ish farther ground dead center -
+// stayed at z3. Leniency can only ever protect the center from being penalized; it
+// can't make center content refine *before* naturally-closer peripheral content does
+// - only an actual sub-1 multiplier at center can. Reported directly: "center bias
+// should be a bit more, there still case that edge have z4 but center still z3".
+const CENTER_BIAS_MIN = 0.6;
 const CENTER_BIAS_STRENGTH = 1.0;
 const CENTER_BIAS_POWER = 4;
 
@@ -156,12 +161,12 @@ const _centerBiasSphere = new THREE.Sphere();
 const _centerBiasToCenter = new THREE.Vector3();
 const _centerBiasForward = new THREE.Vector3();
 
-/** How much more lenient MAX_TILE_SCREEN_PX should be for `box`, given `camera`'s
- * current pose - see CENTER_BIAS_STRENGTH/CENTER_BIAS_POWER. Measured as an *angle*
- * off the camera's forward view direction to the box's bounding sphere, not an NDC
- * projection of any single representative point (centroid, corner, or closest
- * point) - every one of those was tried first and broke down for large/enclosing
- * boxes in a way this angular measure doesn't:
+/** How much more lenient (>1) or eager (<1) MAX_TILE_SCREEN_PX should be for `box`,
+ * given `camera`'s current pose - see CENTER_BIAS_MIN/CENTER_BIAS_STRENGTH/
+ * CENTER_BIAS_POWER. Measured as an *angle* off the camera's forward view direction
+ * to the box's bounding sphere, not an NDC projection of any single representative
+ * point (centroid, corner, or closest point) - every one of those was tried first and
+ * broke down for large/enclosing boxes in a way this angular measure doesn't:
  * - The centroid gave a real, reproduced bug: looking straight down at the map's own
  *   center, all 4 z1 quadrant tiles have centroids pushed into their own quadrant
  *   (away from center) even though each shares the exact center point as a corner,
@@ -189,19 +194,21 @@ const _centerBiasForward = new THREE.Vector3();
  * arbitrarily chosen point on it - is what's being measured against. If the camera is
  * inside the sphere, or the view axis passes through the sphere at all (the angle to
  * the sphere's center is smaller than the sphere's own angular radius as seen from the
- * camera), the bias is exactly 1 - correctly recognizing that the tile's silhouette
- * covers dead center regardless of where its centroid, corners, or nearest surface
- * point happen to sit. Only once the *entire* sphere sits off to one side of the view
- * axis does the leniency ramp up, based on how far past the sphere's own edge that
- * axis has to travel (`edgeAngle`) relative to the camera's diagonal half-FOV (so
- * "reached the corner" lines up with the same semantics used elsewhere: NDC radial
- * distance sqrt(2) at the exact corner, here expressed as the diagonal half-angle
- * instead of a screen-space distance). */
+ * camera), the multiplier is `CENTER_BIAS_MIN` (< 1, more eager than the flat
+ * baseline, not merely unpenalized) - correctly recognizing that the tile's
+ * silhouette covers dead center regardless of where its centroid, corners, or nearest
+ * surface point happen to sit. From there it ramps linearly (in `radial ^
+ * CENTER_BIAS_POWER` space) up to `1 + CENTER_BIAS_STRENGTH` (> 1, more lenient) as
+ * the *entire* sphere moves off to one side of the view axis, based on how far past
+ * the sphere's own edge that axis has to travel (`edgeAngle`) relative to the
+ * camera's diagonal half-FOV (so "reached the corner" lines up with the same
+ * semantics used elsewhere: NDC radial distance sqrt(2) at the exact corner, here
+ * expressed as the diagonal half-angle instead of a screen-space distance). */
 function centerBiasMultiplier(box, camera) {
   box.getBoundingSphere(_centerBiasSphere);
   _centerBiasToCenter.copy(_centerBiasSphere.center).sub(camera.position);
   const dist = _centerBiasToCenter.length();
-  if (dist <= _centerBiasSphere.radius) return 1; // camera inside/touching the tile's sphere
+  if (dist <= _centerBiasSphere.radius) return CENTER_BIAS_MIN; // camera inside/touching the tile's sphere - dead center
 
   _centerBiasToCenter.divideScalar(dist); // normalize
   camera.getWorldDirection(_centerBiasForward);
@@ -213,7 +220,7 @@ function centerBiasMultiplier(box, camera) {
   const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
   const halfDiagonal = Math.atan(Math.hypot(Math.tan(halfV), Math.tan(halfH)));
   const radial = Math.min(edgeAngle / halfDiagonal, 1);
-  return 1 + CENTER_BIAS_STRENGTH * Math.pow(radial, CENTER_BIAS_POWER);
+  return THREE.MathUtils.lerp(CENTER_BIAS_MIN, 1 + CENTER_BIAS_STRENGTH, Math.pow(radial, CENTER_BIAS_POWER));
 }
 
 /** Walks the quadtree from z0, returning the [z, x, y] leaves the camera's current

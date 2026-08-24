@@ -208,7 +208,7 @@ algorithm, not the algorithm's coverage logic):
     *maximum* leniency to exactly the tile that most obviously needs to refine.
     Reproduced live and confirmed via real rendering: permanently stuck at a single
     `z0` leaf at every tested distance, all the way down to `minDistance`.
-  - **Final fix**, `centerBiasMultiplier()`: measures an *angle*, not an NDC
+  - **Third attempt**, `centerBiasMultiplier()`: measures an *angle*, not an NDC
     projection of any single point. Takes the tile's `THREE.Box3.getBoundingSphere()`
     and computes the angle between the camera's forward view direction and the
     direction to that sphere's center, minus the sphere's own angular radius as seen
@@ -229,6 +229,23 @@ algorithm, not the algorithm's coverage logic):
     for the third) - and the full zoomed-distance sweep (`10800` down to `50` world
     units) refines monotonically `z1 -> z2 -> z3 -> z4` with no distance at which it
     gets stuck, matching the bias-disabled baseline exactly.
+  - **Fourth attempt** (current), `CENTER_BIAS_MIN`: the third attempt above could only ever
+    *protect* the center from being penalized (its multiplier floor was `1`, plain
+    `MAX_TILE_SCREEN_PX` with no adjustment) - it could never make center content
+    refine *before* naturally-closer peripheral content does. Reported directly with
+    a screenshot: near-ground bottom-of-frame tiles (closer in true 3D distance,
+    looking forward-and-down) had already reached `z4` while the dead-center tile -
+    farther away, toward the horizon - stayed at `z3`: "center bias should be a bit
+    more, there still case that edge have z4 but center still z3". Fixed by replacing
+    the implicit `1` floor with `CENTER_BIAS_MIN = 0.6`: `centerBiasMultiplier()` now
+    `lerp()`s from `0.6` (dead center - a *stricter*, more eager threshold than the
+    flat baseline, `540px` instead of `900px`) up to `1 + CENTER_BIAS_STRENGTH` (`2.0`,
+    unchanged, at the true edge/corner) along the same `radial ^ CENTER_BIAS_POWER`
+    curve. Verified with real WebGL rendering: found the exact real-world distance
+    window (camera 1000-1600 world units out, tile `[3,3,3]` near dead center) where
+    the real screen-space size (660-878px) sits *above* the new `540px` center
+    threshold but *below* the old flat `900px` one - i.e. the precise class of case
+    the screenshot reported, confirmed to now refine when it didn't before.
 - A fifth issue, also a deliberate design choice: "z0 tile texture is too blurry, do
   stitched z1". `z0`'s color texture is the *entire* ~22km map resized down to one
   `tileSize x tileSize` (256x256 by default) image - about 86m/pixel - which reads as
