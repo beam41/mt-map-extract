@@ -273,6 +273,32 @@ Deliberately **not** added to `tileGroup`: the ground-anchored pan raycast only 
 surface, never the ocean quad itself - dragging near the coast doesn't suddenly anchor
 to a flat plane instead of the actual seabed/shoreline geometry.
 
+### Debug view: color-by-zoom + wireframe
+
+Two independent checkboxes, top-left. Requested directly to actually diagnose a
+reported seam instead of guessing at a cause ("make debug view that color each zoom
+level as different color, don't jump to avif conclusion"):
+
+- **color by zoom**: replaces every active tile's real texture with one of
+  `ZOOM_DEBUG_COLORS` (5 distinct, maximally-separated, unlit colors, one per zoom
+  `z0`-`z4`) - `MeshBasicMaterial`, so scene lighting can never blend two adjacent
+  zoom colors into each other at their shared edge. Answers directly: is a given seam
+  between two *different*-zoom tiles (a color change right at the seam) or two
+  *same*-zoom tiles (identical color on both sides, so it can't be an LOD-stitching
+  artifact at all)?
+- **wireframe**: applies on top of whichever material is currently showing (real or
+  debug-colored) - shows the actual `MESH_RESOLUTION x MESH_RESOLUTION` triangle grid.
+  A real geometric gap between two tiles shows as an actual break in the wireframe; a
+  seam with no such break, even up close, is a shading-only (normal/lighting)
+  discontinuity, not a position crack - the two have different causes and different
+  fixes (see "Normal continuity" and "LOD-boundary cracks" above).
+
+Debug materials (5 total, one per zoom, shared by every tile at that zoom) are built
+once and toggled per-tile rather than rebuilt - `unloadTile()` only ever disposes a
+tile's own real `MeshStandardMaterial`, never one of the 5 shared debug materials.
+Both checkboxes apply immediately to every currently active tile and to every tile
+loaded afterward, independent of each other and of which tile the camera is looking at.
+
 ### WebGL verification note
 
 This sandbox's own headless Chromium fails `Error creating WebGL context` at

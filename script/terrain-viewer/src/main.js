@@ -77,6 +77,17 @@ const CULL_MAX_EXAGGERATION = 40;
 // bounded tile, out to and past the camera's own far clip plane (100000).
 const OCEAN_QUAD_SIZE = 200000;
 
+// Debug view: color each active tile by its own zoom level instead of its real
+// texture - lets you see directly whether a given seam sits between two *different*-
+// zoom tiles or two *same*-zoom ones, instead of assuming it's an LOD-stitching
+// artifact. One distinct, maximally-separated color per zoom (z0..z4) - unlit
+// (`MeshBasicMaterial`) so scene lighting never blends two adjacent zoom colors into
+// each other at their shared edge. Combine with the wireframe toggle below to also see
+// the actual triangle mesh at a boundary - a real geometric gap shows as a break in the
+// wireframe grid; a seam with no such break is a shading-only (normal/lighting)
+// artifact, not a position crack.
+const ZOOM_DEBUG_COLORS = [0xff3b30, 0xff9500, 0xffdd00, 0x34c759, 0x0a84ff];
+
 /**
  * Raw height unit (0-65535, as stored in the height tiles) -> world Z, in meters.
  * Matches `worldZFormulaCm` in Jeju_World.json exactly (that formula in cm, divided by
@@ -441,6 +452,17 @@ async function main() {
   const tileGroup = new THREE.Group();
   scene.add(tileGroup);
 
+  // Debug view state - see ZOOM_DEBUG_COLORS' doc comment. debugMaterials is built
+  // once (5 entries, one per zoom, shared by every tile at that zoom - no need for a
+  // per-tile copy since they carry no texture) and reused by every tile that has ever
+  // shown the debug view; wireframeEnabled applies independently, to whichever
+  // material (real or debug) is currently in use.
+  const debugMaterials = ZOOM_DEBUG_COLORS.map(
+    (color) => new THREE.MeshBasicMaterial({ color, wireframe: false })
+  );
+  let showZoomDebug = false;
+  let wireframeEnabled = false;
+
   const activeTiles = new Map();  // "z_x_y" -> { mesh, geometry, baseHeights, baseGradX, baseGradZ, skirtDrop, texture }
   const heightCache = new Map();  // "z_x_y" -> Promise<Uint16Array>
   const pending = new Set();      // "z_x_y" currently being loaded
@@ -468,11 +490,11 @@ async function main() {
         rawHeights, meta.tileSampleInnerCount, meta.tileSampleCount, worldX0, worldZ0, tileSize, currentExaggeration
       );
       const material = new THREE.MeshStandardMaterial({
-        map: texture, roughness: 0.95, metalness: 0, side: THREE.DoubleSide,
+        map: texture, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, wireframe: wireframeEnabled,
       });
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geometry, showZoomDebug ? debugMaterials[z] : material);
       tileGroup.add(mesh);
-      activeTiles.set(key, { mesh, geometry, material, baseHeights, baseGradX, baseGradZ, skirtDrop, texture });
+      activeTiles.set(key, { mesh, geometry, material, baseHeights, baseGradX, baseGradZ, skirtDrop, texture, z });
     } finally {
       pending.delete(key);
     }
@@ -616,6 +638,40 @@ async function main() {
       applyExaggeration(tile.geometry, tile.baseHeights, tile.baseGradX, tile.baseGradZ, tile.skirtDrop, currentExaggeration);
     }
     if (oceanMesh) oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration;
+  });
+
+  // Debug controls - see ZOOM_DEBUG_COLORS' doc comment. Independent toggles: zoom
+  // color replaces the real texture entirely; wireframe applies on top of whichever
+  // material (real or debug-colored) is currently showing.
+  const debugPanel = document.createElement("div");
+  Object.assign(debugPanel.style, {
+    position: "fixed", top: "8px", left: "8px", zIndex: 10,
+    font: "12px monospace", color: "#cfe3ff", background: "rgba(0,0,0,0.35)",
+    padding: "6px 8px", borderRadius: "4px",
+  });
+  document.body.appendChild(debugPanel);
+
+  function addDebugToggle(labelText, onChange) {
+    const row = document.createElement("label");
+    Object.assign(row.style, { display: "block", cursor: "pointer" });
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.addEventListener("change", () => onChange(checkbox.checked));
+    row.appendChild(checkbox);
+    row.appendChild(document.createTextNode(" " + labelText));
+    debugPanel.appendChild(row);
+  }
+
+  addDebugToggle("debug: color by zoom", (checked) => {
+    showZoomDebug = checked;
+    for (const tile of activeTiles.values()) {
+      tile.mesh.material = showZoomDebug ? debugMaterials[tile.z] : tile.material;
+    }
+  });
+  addDebugToggle("wireframe", (checked) => {
+    wireframeEnabled = checked;
+    for (const material of debugMaterials) material.wireframe = wireframeEnabled;
+    for (const tile of activeTiles.values()) tile.material.wireframe = wireframeEnabled;
   });
 
   const tileInfo = document.createElement("div");
