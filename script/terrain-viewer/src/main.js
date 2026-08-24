@@ -80,11 +80,13 @@ const OCEAN_QUAD_SIZE = 200000;
 // Debug view: color each active tile by its own zoom level instead of its real
 // texture - lets you see directly whether a given seam sits between two *different*-
 // zoom tiles or two *same*-zoom ones, instead of assuming it's an LOD-stitching
-// artifact. One distinct, maximally-separated color per zoom (z0..z4) - unlit
-// (`MeshBasicMaterial`) so scene lighting never blends two adjacent zoom colors into
-// each other at their shared edge. Combine with the wireframe toggle below to also see
-// the actual triangle mesh at a boundary - a real geometric gap shows as a break in the
-// wireframe grid; a seam with no such break is a shading-only (normal/lighting)
+// artifact. One distinct, maximally-separated color per zoom (z0..z4) - shaded
+// (`MeshStandardMaterial`, same roughness/metalness as the real tile material) rather
+// than flat/unlit, so terrain relief and any *normal*-continuity seam (a lighting
+// discontinuity, not a position crack) stay visible in this view too, not just the
+// zoom-level boundaries themselves. Combine with the wireframe toggle below to also
+// see the actual triangle mesh at a boundary - a real geometric gap shows as a break
+// in the wireframe grid; a seam with no such break is a shading-only (normal/lighting)
 // artifact, not a position crack.
 const ZOOM_DEBUG_COLORS = [0xff3b30, 0xff9500, 0xffdd00, 0x34c759, 0x0a84ff];
 
@@ -458,7 +460,7 @@ async function main() {
   // shown the debug view; wireframeEnabled applies independently, to whichever
   // material (real or debug) is currently in use.
   const debugMaterials = ZOOM_DEBUG_COLORS.map(
-    (color) => new THREE.MeshBasicMaterial({ color, wireframe: false })
+    (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, wireframe: false })
   );
   let showZoomDebug = false;
   let wireframeEnabled = false;

@@ -280,12 +280,13 @@ reported seam instead of guessing at a cause ("make debug view that color each z
 level as different color, don't jump to avif conclusion"):
 
 - **color by zoom**: replaces every active tile's real texture with one of
-  `ZOOM_DEBUG_COLORS` (5 distinct, maximally-separated, unlit colors, one per zoom
-  `z0`-`z4`) - `MeshBasicMaterial`, so scene lighting can never blend two adjacent
-  zoom colors into each other at their shared edge. Answers directly: is a given seam
-  between two *different*-zoom tiles (a color change right at the seam) or two
-  *same*-zoom tiles (identical color on both sides, so it can't be an LOD-stitching
-  artifact at all)?
+  `ZOOM_DEBUG_COLORS` (5 distinct, maximally-separated colors, one per zoom `z0`-`z4`)
+  - shaded (`MeshStandardMaterial`, same `roughness`/`metalness` as the real tile
+  material) rather than flat/unlit, so terrain relief and any normal-continuity seam
+  (a lighting discontinuity) stay visible in this view too, not just the flat
+  zoom-level color itself. Answers directly: is a given seam between two
+  *different*-zoom tiles (a color change right at the seam) or two *same*-zoom tiles
+  (identical color on both sides, so it can't be an LOD-stitching artifact at all)?
 - **wireframe**: applies on top of whichever material is currently showing (real or
   debug-colored) - shows the actual `MESH_RESOLUTION x MESH_RESOLUTION` triangle grid.
   A real geometric gap between two tiles shows as an actual break in the wireframe; a
