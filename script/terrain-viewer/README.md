@@ -282,6 +282,14 @@ tile meshes are tracked in `activeTiles` and disposed (geometry, material, textu
 moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long
 session.
 
+Bottom-right stat reads `N tiles, M tris` - `M` is `renderer.info.render.triangles`,
+read fresh every frame right after `renderer.render()` (Three.js resets and
+recomputes it per frame internally), not a hand-summed estimate over
+`activeTiles`' own geometries - it's the actual GPU-submitted triangle count for
+everything drawn that frame (every tile's main grid + skirt walls, plus the ocean
+quad), so it stays correct without having to keep it in sync by hand as tiles load,
+unload, or the ocean quad toggles.
+
 ### Load/unload ordering: fixing a flash, then a "dark patch" the first fix caused
 
 Reported after real browser use as "flashing problem when tile change zoom level". Root

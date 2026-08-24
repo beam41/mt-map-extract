@@ -811,10 +811,14 @@ async function main() {
     if (now - lastTileUpdate > TILE_UPDATE_INTERVAL_MS) {
       lastTileUpdate = now;
       updateVisibleTiles();
-      tileInfo.textContent = `${activeTiles.size} tiles`;
     }
 
     renderer.render(scene, camera);
+    // renderer.info.render.triangles is reset and recomputed by render() every frame
+    // (not throttled alongside updateVisibleTiles() above) - actual GPU-submitted
+    // triangle count for everything drawn this frame (tiles + skirts + the ocean
+    // quad), not just a per-tile estimate multiplied out by hand.
+    tileInfo.textContent = `${activeTiles.size} tiles, ${renderer.info.render.triangles.toLocaleString()} tris`;
   }
   animate(0);
 }
