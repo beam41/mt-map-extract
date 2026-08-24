@@ -135,7 +135,7 @@ height into an on-screen pixel size (`projectedScreenSizePx()`), and recurses in
 `centerBiasMultiplier()` - see the fourth bug below) - a real screen-space-error
 budget, the same idea Cesium/OpenLayers-3D/etc. use.
 
-**Five issues found via real browser use, none caught by the Node-side partition
+**Six issues found via real browser use, none caught by the Node-side partition
 tests** (a partition/coverage test only checks that leaves tile the map exactly once,
 not *which* leaves get picked - each issue below is in the metric feeding the
 algorithm, not the algorithm's coverage logic):
@@ -282,6 +282,24 @@ algorithm, not the algorithm's coverage logic):
     stitched-texture path actually ran rather than the direct-load path. Panning,
     orbiting, and zooming back into normal `z1`-`z4` range all continue to work with
     no console errors.
+- A sixth issue, also a deliberate design choice: "now you can make z4 selection
+  closer to max zoom". Every zoom transition, including the deepest one (`z3 -> z4`),
+  previously shared the exact same `MAX_TILE_SCREEN_PX` baseline - but `z4` tiles are
+  the most expensive to keep resident (highest vertex density per ground area, most
+  frequent load/unload churn as the camera moves) for the smallest incremental
+  sharpness gain over `z3`, so treating that one transition identically to every
+  shallower one wastes tiles on detail a viewer is unlikely to actually be close
+  enough to appreciate. Fixed with `MAX_TILE_SCREEN_PX_FINEST = 1500` (vs. the plain
+  `900`): `visit()` now picks the baseline per-transition -
+  `z === meta.maxZoom - 1 ? MAX_TILE_SCREEN_PX_FINEST : MAX_TILE_SCREEN_PX` - before
+  applying `centerBiasMultiplier()` on top as usual, so center-biased content still
+  refines proportionally sooner than the periphery; only the *baseline* every `z3`
+  tile is measured against went up, not the bias curve itself. Verified with real
+  WebGL rendering: the exact same zoom-in gesture that previously produced `z4` tiles
+  (color-by-zoom debug view) now stops at `z2`/`z3`, and only produces `z4` again
+  after additional zooming in - confirming `z4` now requires being genuinely closer
+  to `controls.minDistance` than before, without touching any other transition (`z0`
+  through `z3` still visibly refine at the same distances as before in the same test).
 
 Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
 `z4`) was confirmed to have both a height tile and a color tile actually present under

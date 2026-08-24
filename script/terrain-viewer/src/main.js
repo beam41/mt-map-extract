@@ -61,6 +61,22 @@ const MESH_RESOLUTION = 65;
 // tile to visually dominate more of the screen before its children load in.
 const MAX_TILE_SCREEN_PX = 900;
 
+// Extra-strict threshold for the transition into the *finest* zoom level specifically
+// (z(maxZoom-1) -> z(maxZoom)) - every other transition still uses the plain
+// MAX_TILE_SCREEN_PX above. z4 tiles are the most expensive to keep loaded (highest
+// vertex density per ground area, most frequent load/unload churn as the camera
+// moves) for the smallest possible sharpness gain over z3, so it's worth reserving
+// them for genuinely close range rather than letting the same 900px bar that governs
+// every shallower transition also govern the deepest one. Reported directly: "now you
+// can make z4 selection closer to max zoom" - i.e. require the camera to be nearer
+// its own `controls.minDistance` (fully zoomed in) before z4 tiles load, rather than
+// z4 triggering at the same relative closeness as z1/z2/z3 did. Center bias (see
+// CENTER_BIAS_MIN/CENTER_BIAS_STRENGTH) still applies on top of whichever threshold is
+// in effect, so content dead-ahead still refines proportionally sooner than the
+// periphery - this constant only raises the *baseline* every tile is measured
+// against for that one transition, it doesn't touch the bias curve itself.
+const MAX_TILE_SCREEN_PX_FINEST = 1500;
+
 // How lenient (>1, refines later) or eager (<1, refines sooner) the refine threshold
 // (see MAX_TILE_SCREEN_PX, centerBiasMultiplier()) gets as a tile moves from dead
 // center to the very edge/corner of the viewport - CENTER_BIAS_MIN=0.6 means a
@@ -270,7 +286,8 @@ function selectLeafTiles(camera, meta, viewportHeightPx) {
 
     const distance = box.distanceToPoint(camera.position); // full 3D, accounts for camera height
     const screenPx = projectedScreenSizePx(distance, tileSize, camera, viewportHeightPx);
-    const maxPx = MAX_TILE_SCREEN_PX * centerBiasMultiplier(box, camera);
+    const baseThreshold = z === meta.maxZoom - 1 ? MAX_TILE_SCREEN_PX_FINEST : MAX_TILE_SCREEN_PX;
+    const maxPx = baseThreshold * centerBiasMultiplier(box, camera);
 
     if (z < meta.maxZoom && screenPx > maxPx) {
       visit(z + 1, x * 2, y * 2);
