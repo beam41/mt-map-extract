@@ -19,3 +19,4 @@ script/terrain-viewer/public/assets/
 !script/terrain-viewer/package.json
 !script/terrain-viewer/pnpm-lock.yaml
 !script/terrain-viewer/pnpm-workspace.yaml
+!script/terrain-viewer/tsconfig.json

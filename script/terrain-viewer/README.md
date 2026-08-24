@@ -50,18 +50,22 @@ pyramids are already generated at the right zoom/resolution scheme in C#
 script is a pure direct-copy build step:
 
 - `tiles/height/<z>_<x>_<y>.bin` - copied from `out/heightmap/tiles/` - raw `uint16`,
-  little-endian, `tileSampleCount x tileSampleCount` (`tileSize+3` - see "1px border
-  overlap" and "Normal continuity" below), still in **raw height units** (not meters).
-  `src/main.js` applies the raw-height-to-meters formula client-side
-  (`rawHeightToWorldZMeters`), it does not arrive pre-converted.
+  little-endian, `tileSampleCounts[z-1] x tileSampleCounts[z-1]` samples per edge
+  (per-zoom: `tileInnerResolutions[z-1] + 2` = the zoom's mesh resolution + 1px border
+  overlap + 1px normal halo - see "1px border overlap" and "Normal continuity" below),
+  still in **raw height units** (not meters). `src/heightmap.ts` applies the
+  raw-height-to-meters formula client-side (`rawHeightToWorldZMeters`), it does not
+  arrive pre-converted. z0 is never generated (the viewer force-refines below z1).
 - `tiles/color/<z>_<x>_<y>.avif` - copied from `out/amc-web/map/tiles/`, only
   `z0..maxZoom` (the height pyramid's own depth) - skips `amc-web`'s own extra upscaled
   level if it generated one, since the height pyramid never has a matching level for it.
+  (`0_0_0.avif` is copied but never requested - z0 is never a leaf.)
 - `tiles.json` - a subset/rename passthrough of `Jeju_World.json`'s `"tiles"` object
-  (`tileSize`, `tileSampleCount`, `tileSampleInnerCount`, `maxZoom`, `dtype`,
+  (`tileInnerResolutions`, `tileSampleCounts`, `maxZoom`, `dtype`,
   `byteOrder`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
   `minZ`/`maxZ` in meters) - no computation, everything was already precomputed on the
-  C# side.
+  C# side. `tileInnerResolutions[z-1]` is the mesh vertex density for zoom `z`
+  (z1=8, z2=17, z3=33, z4=65); `tileSampleCounts[z-1] = tileInnerResolutions[z-1] + 2`.
 
 This replaced an earlier version that copied one fixed-resolution `heights.bin` and one
 flat `map.png` and built a single whole-map `BufferGeometry` - correct, but with no way
@@ -72,12 +76,12 @@ data).
 
 ### 1px border overlap + 1px normal halo: fixing two different seam bugs
 
-Each height tile file actually stores `(tileSize+3) x (tileSize+3)` samples
-(`tileSampleCount` in `tiles.json`), not `tileSize x tileSize`. That's two extra layers,
-fixing two genuinely different bugs found via real browser use, both reported as
-"seams between tile":
+Each height tile file actually stores `(inner+2) x (inner+2)` samples (where `inner`
+= the zoom's mesh resolution - `tileSampleCounts[z-1]` in `tiles.json`), not
+`inner x inner`. That's two extra layers, fixing two genuinely different bugs found
+via real browser use, both reported as "seams between tile":
 
-- **Position seam (1px border overlap, `tileSampleInnerCount` = `tileSize+1`)**: two
+- **Position seam (1px border overlap, `inner+1` real position samples)**: two
   adjacent tiles' shared edge reads from the exact same underlying canvas pixel on both
   sides. Without it, tile A's "last" column (canvas column `(tx+1)*tileSize - 1`) and
   tile B's "first" column (canvas column `(tx+1)*tileSize`) are neighbouring but
@@ -125,193 +129,52 @@ exaggeration factor anywhere in this pipeline to recompute them for.
 
 `selectLeafTiles()` walks the quadtree from `z0` every ~150ms (`TILE_UPDATE_INTERVAL_MS`
 - the walk itself is cheap, but tile load/unload churn on every single frame is not).
-At each node it computes the camera's full 3D distance to the *closest point of the
-tile's own bounding box* (`THREE.Box3.distanceToPoint` - the same box already built for
-frustum culling, reused rather than rebuilt), projects that distance and the tile's own
-world size through the camera's actual vertical FOV and the renderer's current viewport
-height into an on-screen pixel size (`projectedScreenSizePx()`), and recurses into the
-4 children instead of rendering the node once that projected size crosses
-`MAX_TILE_SCREEN_PX` (`900`, itself scaled up toward screen edges/corners by
-`centerBiasMultiplier()` - see the fourth bug below) - a real screen-space-error
-budget, the same idea Cesium/OpenLayers-3D/etc. use.
+Selection is pure orbit-cascade, no screen-space projection (the earlier
+screen-space-error budget with FOV/viewport projection, `MAX_TILE_SCREEN_PX`, and the
+`centerBiasMultiplier()` foveated-bias history that went with it were removed in favor
+of this - the history is preserved in git, the constants are gone):
 
-**Six issues found via real browser use, none caught by the Node-side partition
-tests** (a partition/coverage test only checks that leaves tile the map exactly once,
-not *which* leaves get picked - each issue below is in the metric feeding the
-algorithm, not the algorithm's coverage logic):
+- **Rule 1 (cascade from the orbit point)** - the "lod0 point" is the tile whose rect
+  contains the camera's orbit point (`controls.target`'s XZ, the ground point the
+  camera is orbiting - the tile a raycast from that point down would touch). A tile at
+  zoom `z` is refined into its 4 children when the orbit point is within
+  `CASCADE_FACTOR` (`1.5`) x the child level's tile width of the tile's rect, so the
+  finest zoom forms a compact dot at the orbit point and each coarser zoom rings
+  symmetrically out around it (concentric, not a quadrant-corner staircase - verified
+  live with the color-by-zoom debug view: a z4 core, z3 ring, z2 ring, z1 toward the
+  edges, regardless of which direction from the orbit point). Requested directly:
+  "only one 4x4 tile should shade blue then green then yellow, cascading out".
+- **Rule 2 (altitude cap, overrides rule 1)** - the camera's height above the ocean
+  (`camera.position.y - meta.oceanLevelMeters`) caps the maximum zoom any tile may
+  use, scaled linearly across the *full* zoom-out range (`ALTITUDE_CAP_MIN = 500` at
+  min zoom to `ALTITUDE_CAP_FULL = 55000` at max zoom-out) so it bands broadly, not
+  narrowly: flying really high up never selects fine LODs even directly under the
+  orbit point (where rule 1 alone would), but the cap doesn't kick in until genuinely
+  high - "measure height of camera to ocean, this will be restrict max lod it can
+  use, so if you fly really high up it won't have lod 0", compared against how far you
+  can actually zoom out.
+- **Frustum culling is unchanged**: a node entirely outside the camera's frustum is
+  culled outright (not recursed into, not selected, not loaded).
 
-- The first version measured distance as a flat horizontal (XZ-plane only) distance to
-  the tile's center, completely ignoring camera altitude. Looking mostly straight down
-  while fully zoomed out puts the camera's XZ position almost exactly above whatever
-  tile is underneath it, so that tile's horizontal distance reads as ~0 regardless of
-  how far the camera has actually zoomed out in true 3D - forcing max-zoom refinement
-  right under the camera no matter what. Reported as "tile level 5 [`z4`, the 5th zoom
-  level counting from `z0`] still got selected when I zoom out fully". Fixed by
-  measuring true 3D distance to the tile's bounding box instead of a 2D projection to
-  its center.
-- The second version fixed the distance metric but still used a flat
-  `distance < tileWorldSize * REFINE_DISTANCE_FACTOR` ratio (`REFINE_DISTANCE_FACTOR =
-  1.5`) to decide when to refine - a fixed ratio like that has no relationship to what's
-  actually on screen: the same real-world camera distance covers very different screen
-  area depending on FOV and window size, so the threshold was inherently too eager on a
-  typical FOV/window, not just mistuned. Reported as "zoom level 5 still render from
-  quite far" even after the first fix landed. Fixed by replacing the ratio with the
-  screen-space-error budget described above - deliberately more conservative than the
-  old ratio (`MAX_TILE_SCREEN_PX = 900` vs. the old ratio's roughly-900px-lower
-  equivalent at a typical viewport - see `projectedScreenSizePx()`'s doc comment for the
-  derivation), verified in Node to be uniformly ~1.5x less eager to refine at *every*
-  zoom level (not just the one level it happened to be tuned against), while still
-  partitioning the map exactly once per leaf at every tested camera position.
-- The third bug survived *both* fixes above, hiding in the frustum-culling box that
-  the fixed 3D-box-distance metric was reusing: that box's vertical range was padded
-  by a large, fixed margin (`CULL_MAX_EXAGGERATION = 40`, since removed along with the
-  exaggeration slider that margin existed for) so culling would stay correct if the
-  slider was cranked up later. That same oversized box was tall enough (thousands of
-  world units) to contain the camera's own altitude in almost any normal viewing
-  position, silently collapsing `box.distanceToPoint`'s vertical component back down
-  to 0 - reproducing the *exact* "ignores camera altitude" bug the first fix above
-  was meant to solve, just through a new code path. Reported as "zoom level 5 still
-  render from pretty far away" even after both earlier fixes, and confirmed (not just
-  theorized) with the color-by-zoom debug view showing the finest zoom selected
-  directly under a camera that was clearly still high above the terrain in the
-  screenshot. Fixed by removing the exaggeration slider entirely - with
-  only one true 1:1 scale left, the box can just use the map's real height range
-  (`meta.minZ`/`meta.maxZ`, no margin), which is naturally tight enough to make the
-  vertical distance term meaningful again, for both culling and refinement.
-- A fourth issue is a deliberate design choice, not a bug fix: reported directly with a
-  screenshot showing a large, prominent low-zoom (`z2`) patch off to one side of the
-  frame while dead-center content stayed refined - "make it have screen center bias,
-  sometimes it unhelpfully show smaller zoom off to the side". Even with the box-reuse
-  bug above fixed, a flat FOV/viewport-aware screen-space-error budget still treats
-  every screen position identically: a tile at the extreme edge/corner of the frame
-  gets exactly as much refinement priority as one dead center, even though (a) that's
-  not where a viewer's attention actually is, and (b) a ground tile viewed at a
-  shallow/grazing angle near a screen edge can occupy far more actual screen area than
-  the plain distance-based estimate assumes, since that estimate treats the tile as if
-  it faced the camera head-on.
-  - **First attempt** projected each tile's bounding-box *centroid* into NDC and
-    scaled the threshold by how far that one point sat from screen center. Shipped,
-    then immediately regressed real browser testing: "now the z1-z4 zoom only show at
-    extreme zoom". Root cause, found with real WebGL rendering (see "WebGL
-    verification note" below) rather than more Node math: looking straight down at the
-    map's own center, all 4 `z1` quadrant tiles have centroids pushed into their own
-    quadrant - away from center - even though each one *shares the exact center point
-    as a corner*. Every top-level candidate for refinement got penalized
-    simultaneously, so nothing past `z1` could refine except at artificial, extreme
-    closeness.
-  - **Second attempt** used the *closest of the box's 8 corners* to center instead of
-    the centroid, fixing the quadrant case (a shared corner now reads as dead center).
-    Broke differently: once a box is large enough for the camera to sit *inside* it
-    (true of the `z0` root tile at any normal viewing distance), most or all of its
-    corners project *behind* the camera (an unusable, negative-`w` projection), so the
-    measure fell back to "no valid corner - assume fully peripheral" - applying
-    *maximum* leniency to exactly the tile that most obviously needs to refine.
-    Reproduced live and confirmed via real rendering: permanently stuck at a single
-    `z0` leaf at every tested distance, all the way down to `minDistance`.
-  - **Third attempt**, `centerBiasMultiplier()`: measures an *angle*, not an NDC
-    projection of any single point. Takes the tile's `THREE.Box3.getBoundingSphere()`
-    and computes the angle between the camera's forward view direction and the
-    direction to that sphere's center, minus the sphere's own angular radius as seen
-    from the camera (`edgeAngle`) - so if the camera is inside the sphere, or the view
-    axis merely grazes it at all, the bias is exactly `1` (no leniency), regardless of
-    where the centroid, corners, or nearest surface point happen to fall. Only once
-    the *entire* sphere sits off to one side of the view axis does leniency ramp up,
-    scaled against the camera's diagonal half-FOV so "reached the corner" keeps the
-    same `1 + CENTER_BIAS_STRENGTH` (`2x`) semantics the earlier attempts used, along a
-    `radial ^ CENTER_BIAS_POWER` curve (power `4`) that concentrates the leniency in
-    the outer ring rather than starting immediately off-center (a straight linear
-    ramp was tried in the very first attempt too and was independently too eager - the
-    same "extreme zoom only" symptom - even before the centroid bug was found).
-    Verified with real WebGL rendering across the exact scenarios that broke the two
-    earlier attempts (camera standing on the ground inside the root tile, a `z1`
-    quadrant tile sharing the view target as a corner, a genuinely peripheral corner
-    tile) - each now returns the intended bias (`1` for the first two, real leniency
-    for the third) - and the full zoomed-distance sweep (`10800` down to `50` world
-    units) refines monotonically `z1 -> z2 -> z3 -> z4` with no distance at which it
-    gets stuck, matching the bias-disabled baseline exactly.
-  - **Fourth attempt** (current), `CENTER_BIAS_MIN`: the third attempt above could only ever
-    *protect* the center from being penalized (its multiplier floor was `1`, plain
-    `MAX_TILE_SCREEN_PX` with no adjustment) - it could never make center content
-    refine *before* naturally-closer peripheral content does. Reported directly with
-    a screenshot: near-ground bottom-of-frame tiles (closer in true 3D distance,
-    looking forward-and-down) had already reached `z4` while the dead-center tile -
-    farther away, toward the horizon - stayed at `z3`: "center bias should be a bit
-    more, there still case that edge have z4 but center still z3". Fixed by replacing
-    the implicit `1` floor with `CENTER_BIAS_MIN = 0.6`: `centerBiasMultiplier()` now
-    `lerp()`s from `0.6` (dead center - a *stricter*, more eager threshold than the
-    flat baseline, `540px` instead of `900px`) up to `1 + CENTER_BIAS_STRENGTH` (`2.0`,
-    unchanged, at the true edge/corner) along the same `radial ^ CENTER_BIAS_POWER`
-    curve. Verified with real WebGL rendering: found the exact real-world distance
-    window (camera 1000-1600 world units out, tile `[3,3,3]` near dead center) where
-    the real screen-space size (660-878px) sits *above* the new `540px` center
-    threshold but *below* the old flat `900px` one - i.e. the precise class of case
-    the screenshot reported, confirmed to now refine when it didn't before.
-- A fifth issue, also a deliberate design choice: "z0 tile texture is too blurry, do
-  stitched z1". `z0`'s color texture is the *entire* ~22km map resized down to one
-  `tileSize x tileSize` (256x256 by default) image - about 86m/pixel - which reads as
-  visibly blurry well before the screen-space-error budget above would ever ask the
-  *geometry* to refine (from directly overhead or far away, a single huge `z0` tile
-  can legitimately project under `MAX_TILE_SCREEN_PX` and stay a leaf).
-  - **First attempt** was `MIN_LEAF_ZOOM = 1`: force-refine `z0` unconditionally in
-    `visit()`, so the coarsest the viewer would ever show was 4 geometrically-seamless
-    `z1` tiles (same-zoom neighbours, no LOD-boundary crack to skirt over) - trading
-    texture sharpness for triangle count. Superseded immediately by a follow-up
-    request: "I want it to do z0 height map to reduce triangle at min zoom, just
-    don't use z0 texture" - i.e. keep `z0`'s single, cheap mesh (one
-    `MESH_RESOLUTION x MESH_RESOLUTION` tile, not four) and fix *only* the texture.
-  - **Final fix**, `loadZ0StitchedTexture()`: `MIN_LEAF_ZOOM` removed entirely - `z0`
-    is a valid leaf again, at true single-tile triangle cost. `loadColorTexture()`
-    special-cases `z === 0` to fetch the four real `z1` color images
-    (`1_0_0`/`1_1_0`/`1_0_1`/`1_1_1.avif`) and composite them with the 2D canvas API
-    into one `THREE.CanvasTexture`, applied to `z0`'s own single geometry instead of
-    loading `0_0_0.avif`. Quadrant `(x, y)` is drawn at canvas pixel offset
-    `(x * tileW, y * tileH)` - `x` increasing left-to-right matches `u`/`worldX`
-    increasing, `y` increasing top-to-bottom matches `v`/`worldZ` increasing, the same
-    top-down convention `flipY = false` relies on for every other tile - so this
-    reconstructs exactly the full-map image `amc-web/TileGenerator.cs` cropped those
-    four tiles from in the first place (mod AVIF's own lossy encoding): 2x the linear
-    resolution (4x the pixels) of `z0`'s own texture, for the same ground footprint,
-    at zero extra triangle cost. Canvas size is derived from the loaded images' own
-    `naturalWidth`/`naturalHeight`, not assumed from `meta.tileSize` (that field
-    describes the *height* tile pyramid, independent of amc-web's own color tile size
-    by design even though both default to 256).
-  - Verified with real WebGL rendering: at `controls.maxDistance` (the actual worst
-    case), the color-by-zoom debug view shows exactly 1 red (`z0`) tile - confirming
-    the single-mesh geometry claim - while the browser's own network log shows
-    requests for the four `z1` AVIF images and *not* `0_0_0.avif`, confirming the
-    stitched-texture path actually ran rather than the direct-load path. Panning,
-    orbiting, and zooming back into normal `z1`-`z4` range all continue to work with
-    no console errors.
-- A sixth issue, also a deliberate design choice: "now you can make z4 selection
-  closer to max zoom". Every zoom transition, including the deepest one (`z3 -> z4`),
-  previously shared the exact same `MAX_TILE_SCREEN_PX` baseline - but `z4` tiles are
-  the most expensive to keep resident (highest vertex density per ground area, most
-  frequent load/unload churn as the camera moves) for the smallest incremental
-  sharpness gain over `z3`, so treating that one transition identically to every
-  shallower one wastes tiles on detail a viewer is unlikely to actually be close
-  enough to appreciate. Fixed with `MAX_TILE_SCREEN_PX_FINEST = 1500` (vs. the plain
-  `900`): `visit()` now picks the baseline per-transition -
-  `z === meta.maxZoom - 1 ? MAX_TILE_SCREEN_PX_FINEST : MAX_TILE_SCREEN_PX` - before
-  applying `centerBiasMultiplier()` on top as usual, so center-biased content still
-  refines proportionally sooner than the periphery; only the *baseline* every `z3`
-  tile is measured against went up, not the bias curve itself. Verified with real
-  WebGL rendering: the exact same zoom-in gesture that previously produced `z4` tiles
-  (color-by-zoom debug view) now stops at `z2`/`z3`, and only produces `z4` again
-  after additional zooming in - confirming `z4` now requires being genuinely closer
-  to `controls.minDistance` than before, without touching any other transition (`z0`
-  through `z3` still visibly refine at the same distances as before in the same test).
+Zooming also limits the **look-up angle** (0 = looking straight down at the map, 90 =
+horizontal, 180 = straight up): `controls.maxPolarAngle` ramps from `60` at full
+zoom-*out* (stay near-overhead so the coarse far terrain reads as a map, not a
+horizon - you should NOT be able to look up when fully zoomed out) to `180` at full
+zoom-*in* (at ground level, tilting up to and past the horizon is expected). Verified
+live: at `controls.maxDistance` the camera clamps at exactly 60 deg polar no matter
+how hard you tilt up; at `minDistance` it reaches 180.
 
-Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
-`z4`) was confirmed to have both a height tile and a color tile actually present under
-`public/assets/tiles/` - zero possible 404s from the LOD system's own tile requests.
+Every one of the 340 `(z, x, y)` positions the quadtree can ever reach (`z1` through
+`z4`; z0 is never a leaf, see `MIN_RENDER_ZOOM`) was confirmed to have both a height
+tile and a color tile actually present under `public/assets/tiles/` - zero possible
+404s from the LOD system's own tile requests. (The z0 color tile `0_0_0.avif` is still
+copied by `prepare-assets.js` but never requested.)
 
-Each visible tile is its own small `BufferGeometry` (`MESH_RESOLUTION x MESH_RESOLUTION`
-= `65x65` vertices, independent of the tile's own raw data resolution - fixed density
-regardless of zoom, so total scene triangle count is bounded by how many leaf tiles are
-currently selected, not by the underlying raw height tile resolution) and its own
-`MeshStandardMaterial` textured with that tile's color `.avif` - except `z0`, whose
-texture is the 4-way `z1` composite described above instead of `0_0_0.avif` (see
-`loadZ0StitchedTexture()`). `heightCache` (keyed by
+Each visible tile is its own small `BufferGeometry` at that zoom's per-zoom vertex
+resolution (z1=8, z2=17, z3=33, z4=65 - derived from the fetched height `.bin`'s own
+size, so a tile's mesh uses every stored inner sample as exactly one vertex, nothing
+unused) plus its own `MeshStandardMaterial` textured with that tile's color `.avif`.
+`heightCache` (keyed by
 `z_x_y`) avoids re-fetching a height tile's raw bytes if the camera revisits it; loaded
 tile meshes are tracked in `activeTiles` and disposed (geometry, material, texture) the
 moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long
@@ -364,9 +227,9 @@ not recursed into, not fetched, not built, not rendered - so panning the camera 
 from part of the map stops loading and holding geometry/textures for tiles that are no
 longer (or never were) visible, not just relying on Three.js's own per-mesh
 `frustumCulled` draw-call skip after the fact. Each node's bounding box uses the map's
-real, true-scale vertical range (`meta.minZ`/`meta.maxZ`) - the same range the
-refine-distance check now uses too (see "Tiled LOD terrain"'s third bug above for why
-that box must stay tight, not generously padded).
+real, true-scale vertical range (`meta.minZ`/`meta.maxZ`) - a node's bounding box is
+only used for this culling test, not for any distance/refinement decision (selection
+is the orbit-cascade described above), so it doesn't need any safety margin.
 
 ### LOD-boundary cracks: skirts, not seamless stitching
 
@@ -428,7 +291,8 @@ level as different color, don't jump to avif conclusion"):
   *different*-zoom tiles (a color change right at the seam) or two *same*-zoom tiles
   (identical color on both sides, so it can't be an LOD-stitching artifact at all)?
 - **wireframe**: applies on top of whichever material is currently showing (real or
-  debug-colored) - shows the actual `MESH_RESOLUTION x MESH_RESOLUTION` triangle grid.
+  debug-colored) - shows the actual per-zoom triangle grid (the zoom's mesh resolution,
+  z1=8 .. z4=65).
   A real geometric gap between two tiles shows as an actual break in the wireframe; a
   seam with no such break, even up close, is a shading-only (normal/lighting)
   discontinuity, not a position crack - the two have different causes and different
