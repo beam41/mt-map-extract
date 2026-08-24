@@ -12,13 +12,19 @@ internal static class ImageWriter
 {
     private const string Label = "Jeju_World";
 
-    /// <summary>Per-zoom inner sample resolution (samples per tile edge, before thePer-zoom inner sample resolution (samples per tile edge, before the
-    /// +1 border-overlap / +1 normal-halo padding) - kept in sync with
-    /// script/terrain-viewer/src/main.js's MESH_RESOLUTION_PER_ZOOM so that every
-    /// inner sample a bin tile stores becomes exactly one mesh vertex in the viewer
-    /// (nothing unused, nothing resampled). Indexed by zoom: z0 is unused/never
-    /// rendered (the viewer force-refines below z1), z1=8, z2=17, z3=33, z4=65.</summary>
-    private static readonly int[] TileInnerResolutions = { 0, 8, 17, 33, 65 };
+    /// <summary>Inner sample resolution (samples per tile edge, before the +1
+    /// border-overlap / +1 normal-halo padding) - uniform across every zoom level,
+    /// the standard Leaflet/OpenLayers/Slippy-map tile-pyramid convention: each
+    /// tile covers a shrinking world-space rect as zoom increases (the grid
+    /// quadruples per level), so a FIXED per-tile sample count already yields
+    /// exponentially finer absolute (world-units-per-sample) detail at higher
+    /// zoom - no need to also grow the per-tile sample count itself. Every stored
+    /// inner sample becomes exactly one mesh vertex in the viewer (nothing unused,
+    /// nothing resampled - see script/terrain-viewer/src/tileGeometry.ts's
+    /// buildTileGeometry, which derives its mesh resolution from the fetched .bin
+    /// tile directly, not from a hardcoded table, so the two can never drift).
+    /// z0 is unused/never rendered (the viewer force-refines below z1).</summary>
+    private const int TileInnerResolution = 32;
 
     public static void Write(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom, int debugSize, string outDir)
     {
@@ -64,20 +70,18 @@ internal static class ImageWriter
     /// `script/terrain-viewer` can fetch a height tile and a color tile for the same
     /// (z, x, y) and know they cover the exact same world-space rectangle - the world
     /// rect per tile is governed purely by the grid (zN = 2^N x 2^N tiles over
-    /// widthMeters x heightMeters), matching amc-web's color tiles exactly; only the
-    /// *sample density within* that rect differs, and it's set per-zoom by
-    /// TileInnerResolutions to exactly match the viewer's mesh vertex density for that
-    /// zoom (script/terrain-viewer/src/main.js's MESH_RESOLUTION_PER_ZOOM), so every
-    /// stored sample becomes one mesh vertex - nothing unused. `maxZoom` is tied to
-    /// amc-web's own *native* zoom (4, for its 4096px map at its default tile size) as
-    /// a manually-kept-in-sync constant, not auto-derived from amc-web's on-disk
-    /// output - this project has no runtime dependency on amc-web's, matching the
-    /// existing "manually kept in sync with the game's own map" pattern used by
-    /// --origin-x/--origin-y/--map-size. Deliberately never generates amc-web's extra
-    /// upscaled level (z5 by its default) - upscaling raw elevation data invents no
-    /// real detail, only interpolates, which would be actively misleading for a
-    /// heightmap. Every level here is a genuine area-average downsample of the native
-    /// data.
+    /// widthMeters x heightMeters), matching amc-web's color tiles exactly, and the
+    /// *sample density within* that rect is TileInnerResolution (see its own doc
+    /// comment) at every zoom, so every stored sample becomes one mesh vertex in the
+    /// viewer - nothing unused. `maxZoom` defaults to 5, matching amc-web's own
+    /// default `--zoom` (also 5 - one level past its native zoom of 4 for its 4096px
+    /// map at its default tile size): amc-web's z5 color tiles are its own upscaled
+    /// level (upscaling raw *color* pixels is a reasonable one-zoom overscroll
+    /// tradeoff amc-web already makes by default), while this project's z5 height
+    /// tiles are a genuine area-average downsample of the native ~11000x11000
+    /// heightmap, not an upscale - real elevation detail, not interpolated. Every
+    /// level here is a genuine downsample of the native data, never chained from a
+    /// coarser level.
     ///
     /// Each tile file actually stores `(inner+2) x (inner+2)` samples, not just
     /// `inner x inner`: a 1px border overlap (as above) *plus* one more "halo" sample
@@ -105,12 +109,11 @@ internal static class ImageWriter
         if (Directory.Exists(tilesDir)) Directory.Delete(tilesDir, recursive: true);
         Directory.CreateDirectory(tilesDir);
 
-        // z0 is never rendered (see TileInnerResolutions) - start at z1. Each zoom's
-        // bin tile stores (TileInnerResolutions[z] + 2) samples per edge: `inner`
-        // position samples (one per viewer mesh vertex for that zoom - see
-        // TileInnerResolutions' doc comment, so nothing stored is ever unused) plus a
-        // 1px border overlap + 1px normal halo per edge (same scheme the old uniform
-        // tileSize+3 used).
+        // z0 is never rendered (see TileInnerResolution) - start at z1. Every zoom's
+        // bin tile stores the same (TileInnerResolution + 2) samples per edge: `inner`
+        // position samples (one per viewer mesh vertex, so nothing stored is ever
+        // unused - see TileInnerResolution's doc comment) plus a 1px border overlap +
+        // 1px normal halo per edge (same scheme the old uniform tileSize+3 used).
         //
         // The canvas step between adjacent tiles is `inner - 1`, NOT `inner`: with
         // `inner` samples per tile covering the tile's world rect, tile tx's last
@@ -119,11 +122,11 @@ internal static class ImageWriter
         // of the 1px border overlap - losing it made every same-zoom tile boundary
         // read two different neighbouring canvas pixels and rendered as visible gaps
         // between tiles). The full canvas is therefore grid*(inner-1)+1 samples.
+        const int inner = TileInnerResolution;
+        const int step = inner - 1;
+        const int sampleCount = inner + 2; // inner position samples + 1px border overlap + 1px normal halo per edge
         for (var zoom = 1; zoom <= maxZoom; zoom++)
         {
-            var inner = TileInnerResolutions[zoom];
-            var step = inner - 1;
-            var sampleCount = inner + 2; // inner position samples + 1px border overlap + 1px normal halo per edge
             var grid = 1 << zoom;
             var canvasSize = grid * step + 1;
             var canvas = DownsampleAreaAverage(map, canvasSize);
@@ -257,8 +260,8 @@ internal static class ImageWriter
                 ["dtype"] = "uint16",
                 ["byteOrder"] = "little",
                 ["maxZoom"] = maxZoom,
-                ["tileInnerResolutions"] = new JArray(TileInnerResolutions.Where(z => z > 0).Select(z => z)),
-                ["tileSampleCounts"] = new JArray(TileInnerResolutions.Where(z => z > 0).Select(z => z + 2)),
+                ["tileInnerResolutions"] = new JArray(Enumerable.Repeat(TileInnerResolution, maxZoom)),
+                ["tileSampleCounts"] = new JArray(Enumerable.Repeat(TileInnerResolution + 2, maxZoom)),
                 ["layout"] = "Leaflet/OpenLayers XYZ scheme matching amc-web's color tiles: z0 is never " +
                     "generated (the viewer force-refines below z1), zN is 2^N x 2^N (grid/world-size math " +
                     "is by grid, matching amc-web's color tiles), each tile file is tileSampleCounts[z-1] x " +

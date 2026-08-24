@@ -31,7 +31,7 @@ export const MIN_RENDER_ZOOM = 1;
 //
 // Each zoom level's ring size is tied to that level's OWN tile size, but the
 // diameter FACTOR differs between the finest currently-active zoom (maxZoomByAltitude
-// - what's usually z4) and every coarser one: the finest level's own ring is
+// - what's usually z5 now) and every coarser one: the finest level's own ring is
 // deliberately kept tight (RING_EXTENT_FINEST_MULTIPLIER, 1.88x its own tile width),
 // while every coarser level uses the wider RING_EXTENT_COARSER_MULTIPLIER (2.88x its
 // own tile width) - each coarser ring is sized to comfortably contain the next
@@ -78,7 +78,7 @@ export const OCEAN_QUAD_SIZE = 200000;
 // Debug view: color each active tile by its own zoom level instead of its real
 // texture - lets you see directly whether a given seam sits between two *different*-
 // zoom tiles or two *same*-zoom ones, instead of assuming it's an LOD-stitching
-// artifact. One distinct, maximally-separated color per zoom (z0..z4) - shaded
+// artifact. One distinct, maximally-separated color per zoom (z0..z5) - shaded
 // (`MeshStandardMaterial`, same roughness/metalness as the real tile material) rather
 // than flat/unlit, so terrain relief and any *normal*-continuity seam (a lighting
 // discontinuity, not a position crack) stay visible in this view too, not just the
@@ -86,7 +86,7 @@ export const OCEAN_QUAD_SIZE = 200000;
 // see the actual triangle mesh at a boundary - a real geometric gap shows as a break
 // in the wireframe grid; a seam with no such break is a shading-only (normal/lighting)
 // artifact, not a position crack.
-export const ZOOM_DEBUG_COLORS = [0xff3b30, 0xff9500, 0xffdd00, 0x34c759, 0x0a84ff];
+export const ZOOM_DEBUG_COLORS = [0xff3b30, 0xff9500, 0xffdd00, 0x34c759, 0x0a84ff, 0xaf52de];
 
 // World-unit lift for the debug per-tile border line (see tileGeometry.ts's
 // buildTileBorder()) above the tile's own terrain surface - just enough to avoid

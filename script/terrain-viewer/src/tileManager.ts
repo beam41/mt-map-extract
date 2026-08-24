@@ -34,7 +34,7 @@ export function createTileManager(
   scene.add(tileGroup);
 
   // Debug view state - see ZOOM_DEBUG_COLORS' doc comment. debugMaterials is built
-  // once (5 entries, one per zoom, shared by every tile at that zoom - no need for a
+  // once (6 entries, one per zoom, shared by every tile at that zoom - no need for a
   // per-tile copy since they carry no texture) and reused by every tile that has ever
   // shown the debug view; wireframeEnabled applies independently, to whichever
   // material (real or debug) is currently in use. borderMaterial is likewise a single

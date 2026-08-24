@@ -8,13 +8,17 @@
  *   tiles/height/<z>_<x>_<y>.bin   copied from out/heightmap/tiles/ (heightmap/
  *                                  ImageWriter.cs's WriteHeightTiles) - raw uint16,
  *                                  little-endian, tileSize x tileSize, still raw height
- *                                  units (not meters - src/main.js applies
+ *                                  units (not meters - src/heightmap.ts applies
  *                                  worldZFormulaCm client-side, see
  *                                  rawHeightToWorldZMeters()).
  *   tiles/color/<z>_<x>_<y>.avif   copied from out/amc-web/map/tiles/ (amc-web/
- *                                  TileGenerator.cs) - only z0..maxZoom (the heightmap
- *                                  pyramid's depth), skipping amc-web's own extra
- *                                  upscaled level if it generated one.
+ *                                  TileGenerator.cs) - z0..maxZoom (the heightmap
+ *                                  pyramid's own depth); at the default maxZoom (5)
+ *                                  this includes amc-web's own upscaled top level
+ *                                  (its native zoom is 4 for its default map/tile
+ *                                  size - z5 is color pixels upscaled, unlike the
+ *                                  matching height z5 tile, which is a genuine
+ *                                  downsample of the native heightmap, not upscaled).
  *   tiles.json                     tileSize, maxZoom, real-world width/height/origin in
  *                                  meters, min/max Z in meters, oceanLevelMeters (null if
  *                                  the pak build has no MTOceanConfig) - copied from

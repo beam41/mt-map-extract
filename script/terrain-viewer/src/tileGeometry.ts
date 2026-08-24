@@ -60,14 +60,15 @@ export interface TileGeometryResult {
  * anywhere in this pipeline.
  *
  * The mesh resolution is derived from the bin tile's own size, so the two can never
- * drift apart: the tile stores `haloSize x haloSize` samples (the `tileSize+3` scheme
- * from heightmap/ImageWriter.cs's WriteHeightTiles), of which the outer 1-ring is the
- * normal halo, so `innerSize = haloSize - 2` inner samples remain per edge and
- * `resolution = innerSize` - the mesh uses every single stored inner sample as
- * exactly one vertex, nothing unused. (The per-zoom inner resolutions are defined by
- * heightmap/ImageWriter.cs's TileInnerResolutions: z1=8, z2=17, z3=33, z4=65.
- * Deriving them from the fetched array instead of trusting a JS-side copy means a
- * stale/mismatched .bin fails loud rather than building a wrong-stride mesh.)
+ * drift apart: the tile stores `haloSize x haloSize` samples (the `TileInnerResolution
+ * + 2` scheme from heightmap/ImageWriter.cs's WriteHeightTiles), of which the outer
+ * 1-ring is the normal halo, so `innerSize = haloSize - 2` inner samples remain per
+ * edge and `resolution = innerSize` - the mesh uses every single stored inner sample
+ * as exactly one vertex, nothing unused. (heightmap/ImageWriter.cs's
+ * TileInnerResolution is uniform (32) across every zoom - deriving the actual
+ * resolution from the fetched array here instead of trusting a JS-side copy of that
+ * constant means a stale/mismatched .bin fails loud rather than building a
+ * wrong-stride mesh.)
  *
  * Normals are computed analytically from the height field via central finite
  * differences (`-dh/dx, 1, -dh/dz`, matching the mesh's own winding - verified against

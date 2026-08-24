@@ -56,16 +56,20 @@ script is a pure direct-copy build step:
   still in **raw height units** (not meters). `src/heightmap.ts` applies the
   raw-height-to-meters formula client-side (`rawHeightToWorldZMeters`), it does not
   arrive pre-converted. z0 is never generated (the viewer force-refines below z1).
-- `tiles/color/<z>_<x>_<y>.avif` - copied from `out/amc-web/map/tiles/`, only
-  `z0..maxZoom` (the height pyramid's own depth) - skips `amc-web`'s own extra upscaled
-  level if it generated one, since the height pyramid never has a matching level for it.
+- `tiles/color/<z>_<x>_<y>.avif` - copied from `out/amc-web/map/tiles/`, `z0..maxZoom`
+  (the height pyramid's own depth); at the default `maxZoom` (5) this includes
+  `amc-web`'s own upscaled top level (its native zoom is 4 for its default map/tile
+  size - z5 is color pixels upscaled, unlike the matching height z5 tile, which is a
+  genuine downsample of the native heightmap, not upscaled).
   (`0_0_0.avif` is copied but never requested - z0 is never a leaf.)
 - `tiles.json` - a subset/rename passthrough of `Jeju_World.json`'s `"tiles"` object
   (`tileInnerResolutions`, `tileSampleCounts`, `maxZoom`, `dtype`,
   `byteOrder`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
   `minZ`/`maxZ` in meters) - no computation, everything was already precomputed on the
-  C# side. `tileInnerResolutions[z-1]` is the mesh vertex density for zoom `z`
-  (z1=8, z2=17, z3=33, z4=65); `tileSampleCounts[z-1] = tileInnerResolutions[z-1] + 2`.
+  C# side. `tileInnerResolutions[z-1]` is the mesh vertex density for zoom `z` - `32`
+  at every zoom (the standard Leaflet/OpenLayers/Slippy-map tile-pyramid convention:
+  fixed per-tile resolution, detail scales via tile *count*, not per-tile density);
+  `tileSampleCounts[z-1] = tileInnerResolutions[z-1] + 2 = 34`.
 
 This replaced an earlier version that copied one fixed-resolution `heights.bin` and one
 flat `map.png` and built a single whole-map `BufferGeometry` - correct, but with no way
@@ -157,21 +161,23 @@ of this - the history is preserved in git, the constants are gone):
   culled outright (not recursed into, not selected, not loaded).
 
 Zooming also limits the **look-up angle** (0 = looking straight down at the map, 90 =
-horizontal, 180 = straight up): `controls.maxPolarAngle` ramps from `60` at full
-zoom-*out* (stay near-overhead so the coarse far terrain reads as a map, not a
-horizon - you should NOT be able to look up when fully zoomed out) to `180` at full
-zoom-*in* (at ground level, tilting up to and past the horizon is expected). Verified
-live: at `controls.maxDistance` the camera clamps at exactly 60 deg polar no matter
-how hard you tilt up; at `minDistance` it reaches 180.
+horizontal, 180 = straight up): `controls.maxPolarAngle` is continuously lerped from
+`60` at full zoom-*out* (stay near-overhead so the coarse far terrain reads as a map,
+not a horizon - you should NOT be able to look up much when fully zoomed out) to `90`
+at full zoom-*in* (at ground level, tilting up to the horizon - but never past it -
+is expected). Verified live (`cameraRig.ts`): at `controls.maxDistance` the camera
+clamps at exactly 60 deg polar no matter how hard you tilt up; at `minDistance` it
+reaches 90; at the midpoint distance it clamps at exactly 75, confirming a true
+linear lerp rather than a hard threshold snap.
 
-Every one of the 340 `(z, x, y)` positions the quadtree can ever reach (`z1` through
-`z4`; z0 is never a leaf, see `MIN_RENDER_ZOOM`) was confirmed to have both a height
+Every one of the 1364 `(z, x, y)` positions the quadtree can ever reach (`z1` through
+`z5`; z0 is never a leaf, see `MIN_RENDER_ZOOM`) was confirmed to have both a height
 tile and a color tile actually present under `public/assets/tiles/` - zero possible
 404s from the LOD system's own tile requests. (The z0 color tile `0_0_0.avif` is still
 copied by `prepare-assets.js` but never requested.)
 
-Each visible tile is its own small `BufferGeometry` at that zoom's per-zoom vertex
-resolution (z1=8, z2=17, z3=33, z4=65 - derived from the fetched height `.bin`'s own
+Each visible tile is its own small `BufferGeometry` at that zoom's per-tile vertex
+resolution (32, uniform at every zoom - derived from the fetched height `.bin`'s own
 size, so a tile's mesh uses every stored inner sample as exactly one vertex, nothing
 unused) plus its own `MeshStandardMaterial` textured with that tile's color `.avif`.
 `heightCache` (keyed by
@@ -283,7 +289,7 @@ reported seam instead of guessing at a cause ("make debug view that color each z
 level as different color, don't jump to avif conclusion"):
 
 - **color by zoom**: replaces every active tile's real texture with one of
-  `ZOOM_DEBUG_COLORS` (5 distinct, maximally-separated colors, one per zoom `z0`-`z4`)
+  `ZOOM_DEBUG_COLORS` (6 distinct, maximally-separated colors, one per zoom `z0`-`z5`)
   - shaded (`MeshStandardMaterial`, same `roughness`/`metalness` as the real tile
   material) rather than flat/unlit, so terrain relief and any normal-continuity seam
   (a lighting discontinuity) stay visible in this view too, not just the flat
@@ -291,8 +297,8 @@ level as different color, don't jump to avif conclusion"):
   *different*-zoom tiles (a color change right at the seam) or two *same*-zoom tiles
   (identical color on both sides, so it can't be an LOD-stitching artifact at all)?
 - **wireframe**: applies on top of whichever material is currently showing (real or
-  debug-colored) - shows the actual per-zoom triangle grid (the zoom's mesh resolution,
-  z1=8 .. z4=65).
+  debug-colored) - shows the actual per-zoom triangle grid (32 mesh vertices per tile
+  edge, uniform at every zoom).
   A real geometric gap between two tiles shows as an actual break in the wireframe; a
   seam with no such break, even up close, is a shading-only (normal/lighting)
   discontinuity, not a position crack - the two have different causes and different

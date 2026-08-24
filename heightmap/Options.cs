@@ -42,12 +42,15 @@ internal sealed record Options
           --map-size <cm>    map width and height, in world cm (must cover both islands
                              plus the ocean between them to match the game's own map)
                                                       (default 2200000, i.e. 22km square)
-          --max-zoom <n>     highest height tile zoom (tiles are 1..n; z0 is never generated - the viewer force-refines below z1) - kept in sync
-                             with amc-web's own native zoom (4, for its 4096px map at
-                             the default tile size); never generates an upscaled level,
-                             unlike amc-web's default - upscaling raw elevation invents
-                             no real detail
-                                                      (default 4)
+          --max-zoom <n>     highest height tile zoom (tiles are 1..n; z0 is never
+                             generated - the viewer force-refines below z1); default
+                             matches amc-web's own default `--zoom` (5 - one level
+                             past its native zoom of 4 for its 4096px map at the
+                             default tile size). Unlike amc-web's own z5, which is an
+                             upscale of its native z4, this project's height z5 is a
+                             genuine area-average downsample of the native heightmap -
+                             every level here is real elevation detail, never upscaled
+                                                      (default 5)
           --exclude-guid <substring>
                              never place components whose LandscapeGuid contains this
                              (case-insensitive); repeatable. Replaces the default exclusion
@@ -100,7 +103,7 @@ internal sealed record Options
     public double OriginYCm => OriginYCmOverride ?? -320_000;
     public double MapSizeCm => MapSizeCmOverride ?? 2_200_000;
 
-    public int MaxZoom { get; private init; } = 4;
+    public int MaxZoom { get; private init; } = 5;
     public string? DebugGuidFilter { get; private init; }
     public int DebugSize { get; private init; } = 2048;
     public bool DebugAutoFit { get; private init; }

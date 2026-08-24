@@ -220,34 +220,41 @@ dotnet run -c Release --project heightmap --
   is strictly more useful for point queries than a directory of PNG tiles (no tile-size
   math, no per-tile PNG/zlib decode), and the full native PNG already covers the
   "load it all at once in an image viewer" case.
-- `tiles/{z}_{x}_{y}.bin` (`--max-zoom`, default `4`) — a Leaflet/OpenLayers-style tile
+- `tiles/{z}_{x}_{y}.bin` (`--max-zoom`, default `5`) — a Leaflet/OpenLayers-style tile
   pyramid, same raw `uint16` little-endian layout as `heights.bin`, deliberately using
   the **same `{z}_{x}_{y}` naming and the same zoom-to-grid scheme as
   `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1 grid, zN = 2^N × 2^N) - so
   `script/terrain-viewer` can fetch a height tile and a color tile for the same
   `(z, x, y)` and know they cover the exact same world-space rectangle. The world rect
   per tile is governed purely by the grid (zN = 2^N × 2^N tiles over the map's
-  `widthMeters`), which matches `amc-web`'s color tiles *exactly*; only the **sample
-  density within** that rect differs, set per-zoom by `TileInnerResolutions` (z1=8,
-  z2=17, z3=33, z4=65) to match the viewer's per-zoom mesh vertex density for that
-  zoom (see `script/terrain-viewer/src/tileGeometry.ts`'s `buildTileGeometry`, which derives
-  sizes from the fetched `.bin` itself so the two can't drift) - every stored inner
-  sample becomes exactly one mesh vertex, nothing unused. `--max-zoom` defaults to
-  `4`, matching `amc-web`'s current *native* zoom for its 4096px map at its default
-  tile size (ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist with
-  1/4/16/64/256 tiles respectively, z5's extra 1024 tiles are `amc-web`'s own upscaled
-  level) - a manually-kept-in-sync constant, not auto-derived, matching the existing
-  `--origin-x`/`--origin-y`/`--map-size` pattern of trusting a verified, documented
-  constant over a fragile cross-project runtime dependency. **z0 is never generated**
-  (the viewer force-refines below z1, so it would never be rendered anyway), and the
-  pyramid is deliberately never upscaled - upscaling raw elevation invents no real
-  detail.
+  `widthMeters`), which matches `amc-web`'s color tiles *exactly*; the **sample
+  density within** that rect is `TileInnerResolution` = `32` at **every** zoom (the
+  standard Leaflet/OpenLayers/Slippy-map tile-pyramid convention - a fixed per-tile
+  sample count already yields exponentially finer absolute detail at higher zoom
+  since each tile covers a shrinking world-space rect, no need to also grow the
+  per-tile sample count itself), matching the viewer's own per-tile mesh vertex count
+  (see `script/terrain-viewer/src/tileGeometry.ts`'s `buildTileGeometry`, which
+  derives its mesh resolution from the fetched `.bin` itself so the two can't drift)
+  - every stored inner sample becomes exactly one mesh vertex, nothing unused.
+  `--max-zoom` defaults to `5`, matching `amc-web`'s own default `--zoom` (also `5` -
+  one level past its *native* zoom of `4` for its 4096px map at its default tile
+  size, ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist with
+  1/4/16/64/256 tiles respectively, z5's extra 1024 tiles are `amc-web`'s own
+  *upscaled* level). Unlike `amc-web`'s z5 color tiles, which are genuinely upscaled
+  (interpolated, no new color detail), this project's z5 height tiles are a real
+  area-average downsample of the native ~11000×11000 heightmap - real elevation
+  detail, not invented. `--max-zoom` is a manually-kept-in-sync constant, not
+  auto-derived, matching the existing `--origin-x`/`--origin-y`/`--map-size` pattern
+  of trusting a verified, documented constant over a fragile cross-project runtime
+  dependency. **z0 is never generated** (the viewer force-refines below z1, so it
+  would never be rendered anyway).
 
   Each zoom's canvas is `(grid * (inner-1) + 1)` samples; each tile file stores
-  `(inner+2) x (inner+2)` samples (`Jeju_World.json`'s `tiles.tileSampleCounts[z-1]`,
-  `10/19/35/67` respectively = inner + 2) - two extra layers beyond the `inner`
-  position samples, fixing two different seam bugs found via real browser use of
-  `script/terrain-viewer`, both originally reported as "seam[s] between tile":
+  `(inner+2) x (inner+2)` = `34 x 34` samples (`Jeju_World.json`'s
+  `tiles.tileSampleCounts[z-1]`, `34` at every zoom since `inner` is now uniform) -
+  two extra layers beyond the `inner` position samples, fixing two different seam
+  bugs found via real browser use of `script/terrain-viewer`, both originally
+  reported as "seam[s] between tile":
 
   - **1px border overlap**: the canvas step between adjacent tiles is `inner-1`, NOT
     `inner`, so tile A's last position sample and tile B's first are the *exact same*
