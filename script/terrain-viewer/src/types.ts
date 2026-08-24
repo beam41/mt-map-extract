@@ -40,4 +40,6 @@ export interface ActiveTile {
   texture: THREE.Texture;
   border: THREE.LineLoop;
   z: number;
+  x: number;
+  y: number;
 }

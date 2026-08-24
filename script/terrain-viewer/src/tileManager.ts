@@ -21,8 +21,9 @@ export interface TileManager {
 
 /** Owns the tile load/unload/replace lifecycle: fetches height + color data for
  * every quadtree leaf selectLeafTiles() currently wants, builds its mesh once both
- * resolve, and swaps out whatever's stale only once every replacement is actually
- * ready - see updateVisibleTiles()'s own doc comment for why that ordering matters. */
+ * resolve, and swaps out a given stale tile only once whatever's replacing *it
+ * specifically* is actually ready - see updateVisibleTiles()'s own doc comment for
+ * why that's per-region, not an all-or-nothing gate on the whole desired set. */
 export function createTileManager(
   scene: THREE.Scene,
   meta: TilesMeta,
@@ -103,7 +104,7 @@ export function createTileManager(
       const border = new THREE.LineLoop(buildTileBorder(geometry, N), borderMaterial);
       border.visible = showZoomDebug;
       tileGroup.add(border);
-      activeTiles.set(key, { mesh, geometry, material, texture, border, z });
+      activeTiles.set(key, { mesh, geometry, material, texture, border, z, x, y });
     } finally {
       pending.delete(key);
     }
@@ -121,12 +122,21 @@ export function createTileManager(
     activeTiles.delete(key);
   }
 
-  /** Only unload stale tiles once every desired tile is actually active (loaded, not
-   * merely pending) - otherwise a tile gets removed the instant it's no longer
-   * desired, but its replacement (a fetch + texture decode + geometry build) hasn't
-   * finished yet, leaving a visible gap/flash for however long that takes. Briefly
-   * rendering both the old and new tiles overlapped is a strictly better tradeoff
-   * than a hole where terrain used to be. */
+  /** True if two tile world rects (as tileWorldRect() returns) share more than a
+   * sliver of area - a small epsilon excludes exactly-touching adjacent tiles
+   * (which share a zero-width edge, not real overlap) from counting as replacements
+   * for each other. */
+  function rectsOverlap(
+    a: { worldX0: number; worldZ0: number; tileSize: number },
+    b: { worldX0: number; worldZ0: number; tileSize: number }
+  ): boolean {
+    const EPS = 1e-6;
+    return (
+      a.worldX0 < b.worldX0 + b.tileSize - EPS && b.worldX0 < a.worldX0 + a.tileSize - EPS &&
+      a.worldZ0 < b.worldZ0 + b.tileSize - EPS && b.worldZ0 < a.worldZ0 + a.tileSize - EPS
+    );
+  }
+
   function updateVisibleTiles(): void {
     const desired = selectLeafTiles(camera, meta, controls.target);
     const desiredKeys = new Set(desired.map(([z, x, y]) => `${z}_${x}_${y}`));
@@ -139,11 +149,27 @@ export function createTileManager(
       }
     }
 
-    const replacementReady = desired.every(([z, x, y]) => activeTiles.has(`${z}_${x}_${y}`));
-    if (replacementReady) {
-      for (const key of [...activeTiles.keys()]) {
-        if (!desiredKeys.has(key)) unloadTile(key);
-      }
+    // Per-old-tile unload: a no-longer-desired tile is safe to remove as soon as
+    // EVERY desired tile whose world rect overlaps its own is actually active -
+    // decoupled per screen region, not gated on the whole desired set being ready.
+    // The earlier all-or-nothing gate (unload nothing until every desired tile is
+    // active) caused a sustained triangle-count spike while moving: camera movement
+    // typically transitions LOD across many unrelated regions of the screen at
+    // once, and the single slowest straggler anywhere blocked every other,
+    // already-ready region's old tile from unloading too - so old and new tiles
+    // piled up together for as long as the slowest fetch/decode took, not just the
+    // fast ones. Each region now swaps the instant *its own* replacement is ready,
+    // independent of how long any other region's fetch/decode takes. A genuinely
+    // brand-new tile (never fetched before) still can't render in the same tick
+    // it's first requested - fetch + texture decode is inherently asynchronous,
+    // there's no way around at least one round trip - but this removes the
+    // artificial extra delay of waiting on unrelated tiles too.
+    const desiredRects = desired.map(([z, x, y]) => ({ key: `${z}_${x}_${y}`, ...tileWorldRect(meta, z, x, y) }));
+    for (const [key, tile] of [...activeTiles]) {
+      if (desiredKeys.has(key)) continue; // still desired - not stale
+      const oldRect = tileWorldRect(meta, tile.z, tile.x, tile.y);
+      const replacementReady = desiredRects.every((d) => !rectsOverlap(oldRect, d) || activeTiles.has(d.key));
+      if (replacementReady) unloadTile(key);
     }
   }
 
