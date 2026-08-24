@@ -63,16 +63,22 @@ const MAX_TILE_SCREEN_PX = 900;
 
 // How much more lenient the refine threshold (see MAX_TILE_SCREEN_PX,
 // centerBiasMultiplier()) gets for a tile projected at the very edge/corner of the
-// viewport versus one dead center - 1.0 would mean no bias at all; CENTER_BIAS_STRENGTH
-// = 2.5 means an edge tile may grow to 3.5x MAX_TILE_SCREEN_PX before subdividing.
-// Deliberately not 0/disabled: this is foveated, not cosmetic - a viewport corner is
-// both where a human viewer's attention least needs sharp detail and where the plain
+// viewport versus one dead center - CENTER_BIAS_STRENGTH=1.0 means an edge tile may
+// grow to 2x MAX_TILE_SCREEN_PX before subdividing; CENTER_BIAS_POWER=4 keeps that
+// leniency concentrated near the true edge instead of a linear ramp starting at the
+// center (a linear ramp was tried first and reported as a regression - "z1-z4 zoom
+// only show at extreme zoom": even a moderate 20-30% offset from dead center already
+// got ~1.5-1.75x leniency, which starves nearly the entire frame of refinement since
+// almost no on-screen content sits exactly at NDC (0,0); with power=4 that same
+// 20-30% offset is still ~1.0x, unbiased, and the bias only becomes material past
+// ~70% of the way to the corner - see centerBiasMultiplier()). Deliberately not
+// 0/disabled: this is foveated, not cosmetic - a viewport corner is both where a
+// human viewer's attention least needs sharp detail and where the plain
 // distance-based screen-size estimate above is easiest to get wrong (a ground tile
-// viewed at a shallow/grazing angle near the horizon can occupy far more screen pixels
-// than its Euclidean camera distance alone suggests), so periphery tiles get real
-// slack instead of competing for refinement on equal footing with what's actually
-// centered in view.
-const CENTER_BIAS_STRENGTH = 2.5;
+// viewed at a shallow/grazing angle near the horizon can occupy far more screen
+// pixels than its Euclidean camera distance alone suggests).
+const CENTER_BIAS_STRENGTH = 1.0;
+const CENTER_BIAS_POWER = 4;
 
 // World-unit drop for the skirt (a thin vertical wall of extra geometry around every
 // tile's border, dropped straight down). Neighboring tiles at different zoom levels
@@ -143,26 +149,71 @@ function projectedScreenSizePx(distance, tileWorldSize, camera, viewportHeightPx
   return (angularSizeRad / verticalFovRad) * viewportHeightPx;
 }
 
-// Scratch vector reused by centerBiasMultiplier() every call - project() mutates in
-// place, and this runs once per visited quadtree node every ~150ms, so a fresh
-// allocation per call would just be needless GC churn.
-const _centerBiasScratch = new THREE.Vector3();
+// Scratch objects reused by centerBiasMultiplier() every call - a fresh allocation
+// per call (once per visited quadtree node every ~150ms) would just be needless GC
+// churn.
+const _centerBiasSphere = new THREE.Sphere();
+const _centerBiasToCenter = new THREE.Vector3();
+const _centerBiasForward = new THREE.Vector3();
 
-/** How much more lenient MAX_TILE_SCREEN_PX should be for a tile whose bounding box
- * is centered at `boxCenter`, given `camera`'s current pose - see
- * CENTER_BIAS_STRENGTH. 1 dead center in the viewport, rising linearly to
- * 1 + CENTER_BIAS_STRENGTH at the viewport's edge/corner. `Object3D.project()` yields
- * NDC coordinates that are already aspect-ratio-corrected by the projection matrix (x
- * and y both range over [-1, 1] at the viewport's actual left/right and top/bottom
- * edges, regardless of window aspect ratio), so a plain radial NDC distance is a
- * faithful "how far toward the edge of the rendered rectangle" measure - not an
- * approximation that needs a separate aspect-ratio correction. The radial distance at
- * the exact corner is sqrt(2); dividing by that (and clamping to 1) means "reached a
- * corner" maps to the full bias, not something larger. */
-function centerBiasMultiplier(boxCenter, camera) {
-  _centerBiasScratch.copy(boxCenter).project(camera);
-  const radial = Math.hypot(_centerBiasScratch.x, _centerBiasScratch.y) / Math.SQRT2;
-  return 1 + CENTER_BIAS_STRENGTH * Math.min(radial, 1);
+/** How much more lenient MAX_TILE_SCREEN_PX should be for `box`, given `camera`'s
+ * current pose - see CENTER_BIAS_STRENGTH/CENTER_BIAS_POWER. Measured as an *angle*
+ * off the camera's forward view direction to the box's bounding sphere, not an NDC
+ * projection of any single representative point (centroid, corner, or closest
+ * point) - every one of those was tried first and broke down for large/enclosing
+ * boxes in a way this angular measure doesn't:
+ * - The centroid gave a real, reproduced bug: looking straight down at the map's own
+ *   center, all 4 z1 quadrant tiles have centroids pushed into their own quadrant
+ *   (away from center) even though each shares the exact center point as a corner,
+ *   so every candidate for refinement got penalized simultaneously and nothing past
+ *   z1 could ever refine except at extreme, artificial closeness - reported as
+ *   "z1-z4 zoom only show at extreme zoom".
+ * - The 8 corners broke down differently: once a box is large enough for the camera
+ *   to sit *inside* it (true of the z0 root tile at any reasonable viewing distance),
+ *   most or all of its corners project behind the camera (`w <= 0`, unusable), so the
+ *   measure degenerated to "no valid corner - assume fully peripheral", applying
+ *   *maximum* leniency to exactly the tile that most obviously needs to refine (the
+ *   camera standing inside it) - permanently stuck at a single `z0` leaf at every
+ *   distance.
+ * - The closest point (`Box3.clampPoint`) fixed the inside-the-box case (closest
+ *   point coincides with the camera itself there) but broke a different, common case:
+ *   for a box that's mostly *below* the camera (the typical relationship between a
+ *   near-ground-level camera and the terrain it's flying over), the nearest Euclidean
+ *   point is straight down - which can be far off the camera's actual, forward-and-
+ *   down *view* direction, so a tile the camera is clearly looking at got penalized
+ *   as if it were off to the side, just because "straight down" isn't "straight
+ *   ahead".
+ * The angular measure sidesteps all three failure modes at once: it asks "how far off
+ * my view axis does this tile's silhouette start", using the box's bounding sphere
+ * (`Box3.getBoundingSphere`) so the whole tile's angular footprint - not one
+ * arbitrarily chosen point on it - is what's being measured against. If the camera is
+ * inside the sphere, or the view axis passes through the sphere at all (the angle to
+ * the sphere's center is smaller than the sphere's own angular radius as seen from the
+ * camera), the bias is exactly 1 - correctly recognizing that the tile's silhouette
+ * covers dead center regardless of where its centroid, corners, or nearest surface
+ * point happen to sit. Only once the *entire* sphere sits off to one side of the view
+ * axis does the leniency ramp up, based on how far past the sphere's own edge that
+ * axis has to travel (`edgeAngle`) relative to the camera's diagonal half-FOV (so
+ * "reached the corner" lines up with the same semantics used elsewhere: NDC radial
+ * distance sqrt(2) at the exact corner, here expressed as the diagonal half-angle
+ * instead of a screen-space distance). */
+function centerBiasMultiplier(box, camera) {
+  box.getBoundingSphere(_centerBiasSphere);
+  _centerBiasToCenter.copy(_centerBiasSphere.center).sub(camera.position);
+  const dist = _centerBiasToCenter.length();
+  if (dist <= _centerBiasSphere.radius) return 1; // camera inside/touching the tile's sphere
+
+  _centerBiasToCenter.divideScalar(dist); // normalize
+  camera.getWorldDirection(_centerBiasForward);
+  const angleRad = Math.acos(THREE.MathUtils.clamp(_centerBiasToCenter.dot(_centerBiasForward), -1, 1));
+  const angularRadius = Math.asin(Math.min(_centerBiasSphere.radius / dist, 1));
+  const edgeAngle = Math.max(angleRad - angularRadius, 0); // 0 if the sphere overlaps the view axis at all
+
+  const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
+  const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+  const halfDiagonal = Math.atan(Math.hypot(Math.tan(halfV), Math.tan(halfH)));
+  const radial = Math.min(edgeAngle / halfDiagonal, 1);
+  return 1 + CENTER_BIAS_STRENGTH * Math.pow(radial, CENTER_BIAS_POWER);
 }
 
 /** Walks the quadtree from z0, returning the [z, x, y] leaves the camera's current
@@ -197,9 +248,8 @@ function centerBiasMultiplier(boxCenter, camera) {
  * which is naturally tight enough to make the vertical distance term meaningful again. */
 function selectLeafTiles(camera, meta, viewportHeightPx) {
   camera.updateMatrixWorld(); // ensures matrixWorldInverse below reflects this frame's pose
-  const frustum = new THREE.Frustum().setFromProjectionMatrix(
-    new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-  );
+  const viewProjMatrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(viewProjMatrix);
   const minY = Math.min(meta.minZ, meta.maxZ, 0);
   const maxY = Math.max(meta.minZ, meta.maxZ, 0);
 
@@ -213,7 +263,7 @@ function selectLeafTiles(camera, meta, viewportHeightPx) {
 
     const distance = box.distanceToPoint(camera.position); // full 3D, accounts for camera height
     const screenPx = projectedScreenSizePx(distance, tileSize, camera, viewportHeightPx);
-    const maxPx = MAX_TILE_SCREEN_PX * centerBiasMultiplier(box.getCenter(_centerBiasScratch), camera);
+    const maxPx = MAX_TILE_SCREEN_PX * centerBiasMultiplier(box, camera);
 
     if (z < meta.maxZoom && screenPx > maxPx) {
       visit(z + 1, x * 2, y * 2);

@@ -188,15 +188,47 @@ algorithm, not the algorithm's coverage logic):
   not where a viewer's attention actually is, and (b) a ground tile viewed at a
   shallow/grazing angle near a screen edge can occupy far more actual screen area than
   the plain distance-based estimate assumes, since that estimate treats the tile as if
-  it faced the camera head-on. Fixed with `centerBiasMultiplier()`: projects each
-  candidate tile's bounding-box center into NDC via `Object3D.project(camera)` (already
-  aspect-ratio-correct, so a corner is a corner regardless of window shape) and scales
-  the refine threshold up to `1 + CENTER_BIAS_STRENGTH` (`3.5x` at the exact
-  edge/corner) as that projected position moves away from screen center - `1x` (no
-  change at all) dead center. Verified in Node against the real `THREE.Vector3.project`
-  math: a point placed exactly at the camera's view-direction center yields a `1.0`
-  multiplier; a point placed exactly at the frustum's edge/corner yields exactly `3.5`;
-  intermediate screen positions interpolate smoothly between the two.
+  it faced the camera head-on.
+  - **First attempt** projected each tile's bounding-box *centroid* into NDC and
+    scaled the threshold by how far that one point sat from screen center. Shipped,
+    then immediately regressed real browser testing: "now the z1-z4 zoom only show at
+    extreme zoom". Root cause, found with real WebGL rendering (see "WebGL
+    verification note" below) rather than more Node math: looking straight down at the
+    map's own center, all 4 `z1` quadrant tiles have centroids pushed into their own
+    quadrant - away from center - even though each one *shares the exact center point
+    as a corner*. Every top-level candidate for refinement got penalized
+    simultaneously, so nothing past `z1` could refine except at artificial, extreme
+    closeness.
+  - **Second attempt** used the *closest of the box's 8 corners* to center instead of
+    the centroid, fixing the quadrant case (a shared corner now reads as dead center).
+    Broke differently: once a box is large enough for the camera to sit *inside* it
+    (true of the `z0` root tile at any normal viewing distance), most or all of its
+    corners project *behind* the camera (an unusable, negative-`w` projection), so the
+    measure fell back to "no valid corner - assume fully peripheral" - applying
+    *maximum* leniency to exactly the tile that most obviously needs to refine.
+    Reproduced live and confirmed via real rendering: permanently stuck at a single
+    `z0` leaf at every tested distance, all the way down to `minDistance`.
+  - **Final fix**, `centerBiasMultiplier()`: measures an *angle*, not an NDC
+    projection of any single point. Takes the tile's `THREE.Box3.getBoundingSphere()`
+    and computes the angle between the camera's forward view direction and the
+    direction to that sphere's center, minus the sphere's own angular radius as seen
+    from the camera (`edgeAngle`) - so if the camera is inside the sphere, or the view
+    axis merely grazes it at all, the bias is exactly `1` (no leniency), regardless of
+    where the centroid, corners, or nearest surface point happen to fall. Only once
+    the *entire* sphere sits off to one side of the view axis does leniency ramp up,
+    scaled against the camera's diagonal half-FOV so "reached the corner" keeps the
+    same `1 + CENTER_BIAS_STRENGTH` (`2x`) semantics the earlier attempts used, along a
+    `radial ^ CENTER_BIAS_POWER` curve (power `4`) that concentrates the leniency in
+    the outer ring rather than starting immediately off-center (a straight linear
+    ramp was tried in the very first attempt too and was independently too eager - the
+    same "extreme zoom only" symptom - even before the centroid bug was found).
+    Verified with real WebGL rendering across the exact scenarios that broke the two
+    earlier attempts (camera standing on the ground inside the root tile, a `z1`
+    quadrant tile sharing the view target as a corner, a genuinely peripheral corner
+    tile) - each now returns the intended bias (`1` for the first two, real leniency
+    for the third) - and the full zoomed-distance sweep (`10800` down to `50` world
+    units) refines monotonically `z1 -> z2 -> z3 -> z4` with no distance at which it
+    gets stuck, matching the bias-disabled baseline exactly.
 
 Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
 `z4`) was confirmed to have both a height tile and a color tile actually present under
@@ -357,30 +389,42 @@ investigation left no drift from `amc-web/Options.cs`'s committed defaults.
 
 ### WebGL verification note
 
-This sandbox's own headless Chromium fails `Error creating WebGL context` at
-`new THREE.WebGLRenderer()` - reproduced before any of this feature's code runs, and
-persists across full browser/tab restarts - so screenshots from *this* environment
-aren't possible; real-browser testing (a normal desktop browser, which does have
-working WebGL) is the actual source of truth and has already caught bugs the
-algorithmic checks below couldn't (the altitude-blind LOD distance metric, the
-load/unload flash, the lighting seam at tile boundaries - none are visible in a
-partition/coverage/completeness test, only in an actual render). Everything checkable
-without a live WebGL context was also checked, as a second line of defense: the tile
-pyramids' data (spot-checked against the native `heights.bin` at every zoom level, and
-the halo-based normal formula re-implemented in Node against the real generated tile
-files - 0 difference at every tested boundary vertex), the quadtree selection algorithm
-(partition correctness, distance-based behavior, `maxZoom` clamping), frustum culling
-(a hand-rolled 2D wedge-intersection sanity check in Node confirmed a narrower view
-cone selects strictly fewer tiles, and a camera looking entirely away from the map
-selects zero - not a substitute for testing the real `THREE.Frustum`/matrix code, which
-needs a browser), the ocean quad's Y math (confirmed `oceanLevelMeters` sits strictly
-between the raw height floor and the highest observed peak, so terrain never crosses
-to the wrong side of the water plane), and asset completeness (every reachable tile file
-exists). A `vite build` of the full bundle succeeds cleanly. Depth-precision fixes
-(`logarithmicDepthBuffer`, the raised near plane) and the analytic-normal lighting fix
-have no equivalent static check - they can only be confirmed by looking at the actual
-render, which is exactly how the underlying bugs (heavy ocean z-fighting, a visible
-tile-boundary lighting seam) were originally reported.
+**Update: real WebGL rendering *is* available in this sandbox**, via a real, full
+Google Chrome binary (found at `/opt/google/chrome/chrome`, not the tool-managed
+headless Chromium that fails `Error creating WebGL context`) launched headless with
+software rendering flags - `--headless=new --use-gl=angle --use-angle=swiftshader
+--enable-webgl --ignore-gpu-blocklist --enable-unsafe-swiftshader --no-sandbox
+--disable-dev-shm-usage --remote-debugging-port=<port>` - kept alive as a persistent
+background process (`hub`'s `start`, with `ready: { port: <port> }`, not a plain
+`bash` background job - a `bash` call's children die with the call) and driven via the
+browser tool's `app.cdp_url` connect-to-existing-instance mode, pointed at a `vite`
+dev server (also `hub`-managed) serving this project. Confirmed with a real
+`canvas.getContext('webgl2')` call *and* actually loading this app and screenshotting
+real rendered frames (terrain relief, `map.png` texture, the color-by-zoom debug view,
+wireframe) - not a synthetic canvas test. This is how the fourth "Tiled LOD terrain"
+bug's two failed intermediate fixes were caught for real: both looked correct in
+isolated Node-side math checks and were only revealed as broken by loading the actual
+app and sweeping real camera distances against `selectLeafTiles()`, executed live via
+`tab.evaluate()` against a temporary `window.__debug` hook (removed before finalizing
+each fix) rather than guessed at from a screenshot alone.
+
+Before this, real-browser testing had already caught bugs the algorithmic checks below
+couldn't (the altitude-blind LOD distance metric, the load/unload flash, the lighting
+seam at tile boundaries - none are visible in a partition/coverage/completeness test,
+only in an actual render), but relied on the user's own desktop browser and
+screenshots rather than anything drivable from inside this sandbox. Everything
+checkable without a live WebGL context is still checked too, as a second line of
+defense: the tile pyramids' data (spot-checked against the native `heights.bin` at
+every zoom level, and the halo-based normal formula re-implemented in Node against the
+real generated tile files - 0 difference at every tested boundary vertex), the
+quadtree selection algorithm (partition correctness, distance-based behavior, `maxZoom`
+clamping), frustum culling (a hand-rolled 2D wedge-intersection sanity check in Node
+confirmed a narrower view cone selects strictly fewer tiles, and a camera looking
+entirely away from the map selects zero), the ocean quad's Y math (confirmed
+`oceanLevelMeters` sits strictly between the raw height floor and the highest observed
+peak, so terrain never crosses to the wrong side of the water plane), and asset
+completeness (every reachable tile file exists). A `vite build` of the full bundle
+succeeds cleanly.
 
 ## Texture-vs-geometry north/south flip gotcha
 
