@@ -117,10 +117,9 @@ derive that halo sample from the exact same deterministic area-average of the sa
 canvas pixel, the two independently-computed edge normals come out **bit-identical**,
 not just close. Verified numerically in Node (re-implementing the exact formula against
 the real generated tile files, not a synthetic model): 0 difference across every vertex
-on 2 tested same-zoom boundary pairs (65 vertices each). The exaggeration slider
-recomputes normals the same way every time it moves (`writeGradientNormals()`, shared
-by the initial build and `applyExaggeration()`), scaling the stored unexaggerated
-gradient by the current exaggeration factor rather than re-deriving it from scratch.
+on 2 tested same-zoom boundary pairs (65 vertices each). Normals are computed once, at
+build time, alongside positions - heights render at true 1:1 world scale, with no
+exaggeration factor anywhere in this pipeline to recompute them for.
 
 ## Tiled LOD terrain
 
@@ -162,6 +161,22 @@ the algorithm's coverage logic):
   derivation), verified in Node to be uniformly ~1.5x less eager to refine at *every*
   zoom level (not just the one level it happened to be tuned against), while still
   partitioning the map exactly once per leaf at every tested camera position.
+- The third bug survived *both* fixes above, hiding in the frustum-culling box that
+  the fixed 3D-box-distance metric was reusing: that box's vertical range was padded
+  by a large, fixed margin (`CULL_MAX_EXAGGERATION = 40`, since removed along with the
+  exaggeration slider that margin existed for) so culling would stay correct if the
+  slider was cranked up later. That same oversized box was tall enough (thousands of
+  world units) to contain the camera's own altitude in almost any normal viewing
+  position, silently collapsing `box.distanceToPoint`'s vertical component back down
+  to 0 - reproducing the *exact* "ignores camera altitude" bug the first fix above
+  was meant to solve, just through a new code path. Reported as "zoom level 5 still
+  render from pretty far away" even after both earlier fixes, and confirmed (not just
+  theorized) with the color-by-zoom debug view showing the finest zoom selected
+  directly under a camera that was clearly still high above the terrain in the
+  screenshot. Fixed by removing the exaggeration slider entirely - with
+  only one true 1:1 scale left, the box can just use the map's real height range
+  (`meta.minZ`/`meta.maxZ`, no margin), which is naturally tight enough to make the
+  vertical distance term meaningful again, for both culling and refinement.
 
 Every one of the 341 `(z, x, y)` positions the quadtree can ever reach (`z0` through
 `z4`) was confirmed to have both a height tile and a color tile actually present under
@@ -215,11 +230,10 @@ recursing or selecting a leaf. A node entirely outside the frustum is skipped ou
 not recursed into, not fetched, not built, not rendered - so panning the camera away
 from part of the map stops loading and holding geometry/textures for tiles that are no
 longer (or never were) visible, not just relying on Three.js's own per-mesh
-`frustumCulled` draw-call skip after the fact. Each node's bounding box uses a generous,
-not exaggeration-accurate vertical range (`[minZ, maxZ] * CULL_MAX_EXAGGERATION`, `40` -
-the slider's max) so a tile is never wrongly culled just because the exaggeration slider
-is turned up after the box was sized; culling only needs to be *not too tight*, not
-exact.
+`frustumCulled` draw-call skip after the fact. Each node's bounding box uses the map's
+real, true-scale vertical range (`meta.minZ`/`meta.maxZ`) - the same range the
+refine-distance check now uses too (see "Tiled LOD terrain"'s third bug above for why
+that box must stay tight, not generously padded).
 
 ### LOD-boundary cracks: skirts, not seamless stitching
 
@@ -235,12 +249,9 @@ the four skirt walls wasn't rigorously derived (four different edge orientations
 tile material is `side: THREE.DoubleSide` specifically so an inverted skirt triangle
 still renders instead of being backface-culled into a visible gap of its own.
 
-The exaggeration slider (see below) recomputes every active tile's vertex `Y` in place
-(`applyExaggeration()`, using each vertex's stored pre-exaggeration `baseHeights` meters
-and per-vertex `skirtDrop` - `0` for main-grid vertices, `SKIRT_DROP` for skirt
-vertices) - no re-fetch, no re-sampling, and skirts stay `SKIRT_DROP` world units below
-their main-grid twin at any exaggeration level, since the drop is applied *after*
-exaggeration rather than scaled by it.
+Heights render at true 1:1 world scale everywhere - there's no exaggeration slider or
+per-frame recompute to keep in sync; a tile's geometry (skirts included) is built once
+and never changes afterward.
 
 ### Ocean quad
 
@@ -251,12 +262,8 @@ where `oceanLevelMeters` comes from (`MTOceanConfig.OceanConfig.OceanLevel`,
 cross-verified against `WaterBodyOcean`'s own transform) and how `tiles.json` carries
 it through. Colored/opacity-tuned for clarity, not the first version's darker, more
 opaque look (`color: 0x1c5f8a, opacity: 0.85` -> `color: 0x2f7fa8, opacity: 0.45`) -
-reported as "make water clearer". It's exaggerated by the exact same factor as the
-terrain (`oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration`, updated
-alongside every tile's geometry in the slider handler) so the crossover between
-"terrain above sea level" and "terrain sculpted down to the ocean floor, hidden
-underwater" stays correct at any exaggeration - both scale linearly from world Z=0, so
-neither can cross the other just because the slider moved.
+reported as "make water clearer". Sits at the map's true, unexaggerated ocean level -
+no exaggeration slider to keep it in sync with anymore.
 
 **Known limitation, not fixed by the clarity tweak**: real in-game bridges (an elevated
 road deck spanning open water) have no separate geometry here - only the landscape
@@ -347,9 +354,8 @@ files - 0 difference at every tested boundary vertex), the quadtree selection al
 cone selects strictly fewer tiles, and a camera looking entirely away from the map
 selects zero - not a substitute for testing the real `THREE.Frustum`/matrix code, which
 needs a browser), the ocean quad's Y math (confirmed `oceanLevelMeters` sits strictly
-between the raw height floor and the highest observed peak at every exaggeration from
-`1x` to the slider's `40x` max, so terrain never crosses to the wrong side of the water
-plane just because the slider moved), and asset completeness (every reachable tile file
+between the raw height floor and the highest observed peak, so terrain never crosses
+to the wrong side of the water plane), and asset completeness (every reachable tile file
 exists). A `vite build` of the full bundle succeeds cleanly. Depth-precision fixes
 (`logarithmicDepthBuffer`, the raised near plane) and the analytic-normal lighting fix
 have no equivalent static check - they can only be confirmed by looking at the actual
