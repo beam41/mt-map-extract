@@ -427,7 +427,7 @@ async function main() {
     // section.
     const oceanMaterial = new THREE.MeshStandardMaterial({
       color: 0x2f7fa8, roughness: 0.2, metalness: 0.05,
-      transparent: true, opacity: 0.45, side: THREE.DoubleSide,
+      transparent: true, opacity: 0.15, side: THREE.DoubleSide,
     });
     oceanMesh = new THREE.Mesh(oceanGeometry, oceanMaterial);
     oceanMesh.position.y = meta.oceanLevelMeters * currentExaggeration;
