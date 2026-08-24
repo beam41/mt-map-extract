@@ -49,8 +49,16 @@ export function loadColorTexture(
 export interface TileGeometryResult {
   geometry: THREE.BufferGeometry;
   /** Mesh resolution (vertices per edge) - see buildTileBorder(), which needs this
-   * to walk the geometry's perimeter without duplicating the layout logic. */
+   * to walk the geometry's perimeter without duplicating the layout logic. Forced to
+   * 2 (a single quad) for a perfectly flat tile - see `flat` below. */
   N: number;
+  /** True if every sample this tile stores (inner + border-overlap + normal-halo,
+   * the whole fetched array) is exactly the same raw height - a real, common case
+   * (open ocean floor, large flat plains) where a full mesh grid is pure waste: the
+   * surface has zero curvature, so a single quad (this function's N=2 case) renders
+   * pixel-identical to the full-resolution grid at a fraction of the triangle
+   * count. */
+  flat: boolean;
 }
 
 /**
@@ -69,6 +77,13 @@ export interface TileGeometryResult {
  * resolution from the fetched array here instead of trusting a JS-side copy of that
  * constant means a stale/mismatched .bin fails loud rather than building a
  * wrong-stride mesh.)
+ *
+ * Perfectly flat tiles (every stored sample the same raw height - common for open
+ * ocean floor and large flat plains) collapse the mesh resolution to N=2, a single
+ * quad: with zero curvature the full-resolution grid and the single quad are the
+ * exact same flat plane, so the extra vertices/triangles are pure waste. This reuses
+ * the general N-vertex-per-edge code below unchanged - N=2 is simply the smallest
+ * valid grid it already knows how to build (one quad, one skirt segment per edge).
  *
  * Normals are computed analytically from the height field via central finite
  * differences (`-dh/dx, 1, -dh/dz`, matching the mesh's own winding - verified against
@@ -100,7 +115,8 @@ export function buildTileGeometry(
     throw new Error(`height tile is not square: ${rawHeights.length} samples`);
   }
   const innerSize = haloSize - 2; // outer 1-ring is the normal halo
-  const N = innerSize;            // every inner sample becomes exactly one mesh vertex
+  const flat = rawHeights.every((h) => h === rawHeights[0]);
+  const N = flat ? 2 : innerSize; // collapse to a single quad if the tile is flat - see doc comment
   const mainCount = N * N;
   const skirtCount = 4 * N;
   const total = mainCount + skirtCount;
@@ -198,7 +214,7 @@ export function buildTileGeometry(
   geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
   geometry.setIndex(indices);
 
-  return { geometry, N };
+  return { geometry, N, flat };
 }
 
 /** Debug view: a closed loop tracing one tile's real outer edge (main-grid vertices
