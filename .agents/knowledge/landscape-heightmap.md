@@ -220,36 +220,42 @@ dotnet run -c Release --project heightmap --
   is strictly more useful for point queries than a directory of PNG tiles (no tile-size
   math, no per-tile PNG/zlib decode), and the full native PNG already covers the
   "load it all at once in an image viewer" case.
-- `tiles/{z}_{x}_{y}.bin` (`--tile-size`/`--max-zoom`, defaults `256`/`4`) — a
-  Leaflet/OpenLayers-style tile pyramid, same raw `uint16` little-endian layout as
-  `heights.bin`, deliberately using the **same `{z}_{x}_{y}` naming and the same
-  zoom-to-grid scheme as `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1 grid,
-  zN = 2^N × 2^N) - so `script/terrain-viewer` can fetch a height tile and a color tile
-  for the same `(z, x, y)` and know they cover the exact same world-space rectangle.
-  `--tile-size` (raw sample resolution per tile) is independent of `amc-web`'s own
-  `--tile-size` - the two pyramids share the same grid/zoom layout but can carry
-  different detail levels per tile. `--max-zoom` defaults to `4`, matching `amc-web`'s
-  current *native* zoom for its 4096px map at its default tile size
-  (ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist with
+- `tiles/{z}_{x}_{y}.bin` (`--max-zoom`, default `4`) — a Leaflet/OpenLayers-style tile
+  pyramid, same raw `uint16` little-endian layout as `heights.bin`, deliberately using
+  the **same `{z}_{x}_{y}` naming and the same zoom-to-grid scheme as
+  `amc-web/TileGenerator.cs`'s color tiles** (z0 = 1×1 grid, zN = 2^N × 2^N) - so
+  `script/terrain-viewer` can fetch a height tile and a color tile for the same
+  `(z, x, y)` and know they cover the exact same world-space rectangle. The world rect
+  per tile is governed purely by the grid (zN = 2^N × 2^N tiles over the map's
+  `widthMeters`), which matches `amc-web`'s color tiles *exactly*; only the **sample
+  density within** that rect differs, set per-zoom by `TileInnerResolutions` (z1=8,
+  z2=17, z3=33, z4=65) to match the viewer's per-zoom mesh vertex density for that
+  zoom (see `script/terrain-viewer/src/tileGeometry.ts`'s `buildTileGeometry`, which derives
+  sizes from the fetched `.bin` itself so the two can't drift) - every stored inner
+  sample becomes exactly one mesh vertex, nothing unused. `--max-zoom` defaults to
+  `4`, matching `amc-web`'s current *native* zoom for its 4096px map at its default
+  tile size (ground-truth-checked against `out/amc-web/map/tiles/`: z0..z4 exist with
   1/4/16/64/256 tiles respectively, z5's extra 1024 tiles are `amc-web`'s own upscaled
   level) - a manually-kept-in-sync constant, not auto-derived, matching the existing
   `--origin-x`/`--origin-y`/`--map-size` pattern of trusting a verified, documented
-  constant over a fragile cross-project runtime dependency. Deliberately never
-  generates an upscaled level itself - upscaling raw elevation invents no real detail.
+  constant over a fragile cross-project runtime dependency. **z0 is never generated**
+  (the viewer force-refines below z1, so it would never be rendered anyway), and the
+  pyramid is deliberately never upscaled - upscaling raw elevation invents no real
+  detail.
 
-  Each tile file actually stores `(tileSize+3) x (tileSize+3)` samples
-  (`Jeju_World.json`'s `tiles.tileSampleCount`, `259` at the default) - two extra
-  layers beyond the nominal `tileSize`, fixing two different seam bugs found via real
-  browser use of `script/terrain-viewer`, both originally reported as "seam[s] between
-  tile":
+  Each zoom's canvas is `(grid * (inner-1) + 1)` samples; each tile file stores
+  `(inner+2) x (inner+2)` samples (`Jeju_World.json`'s `tiles.tileSampleCounts[z-1]`,
+  `10/19/35/67` respectively = inner + 2) - two extra layers beyond the `inner`
+  position samples, fixing two different seam bugs found via real browser use of
+  `script/terrain-viewer`, both originally reported as "seam[s] between tile":
 
-  - **1px border overlap** (`tiles.tileSampleInnerCount` = `tileSize+1`, `257` at the
-    default): two adjacent tiles' shared edge reads from the exact same underlying
-    pixel on both sides. Without it, tile A's "last" column and tile B's "first" column
-    are neighbouring but genuinely *different* source pixels - a real, visible
-    same-zoom position seam. Verified by construction: every sampled shared edge
-    between adjacent same-zoom tiles matches exactly, 0 mismatches across 257 samples
-    at 4 tested boundary pairs spanning z2-z4.
+  - **1px border overlap**: the canvas step between adjacent tiles is `inner-1`, NOT
+    `inner`, so tile A's last position sample and tile B's first are the *exact same*
+    canvas sample (this is the whole point of the overlap - losing it once by using
+    `inner` as the step made every same-zoom tile boundary read two neighbouring
+    pixels and rendered as **visible gaps between same-zoom tiles**; fixed by restoring
+    the `inner-1` step). Verified by construction at every zoom: shared edges match
+    exactly.
   - **1px normal halo** (one more sample beyond the border-overlap edge): a
     *different* bug that survives the position fix above, because it's about lighting,
     not position - see `script/terrain-viewer/README.md`'s "Normal continuity" section
@@ -265,8 +271,16 @@ dotnet run -c Release --project heightmap --
   pyramid (no real neighbour) just clamps every extra sample to the last valid canvas
   pixel, harmlessly duplicating it.
 
+  Downsampling is **max-preserving** (each output cell takes the max of its source
+  block), not an area-average: a plain mean flattens summits, and measured on this
+  dataset the native `343.9m` peak collapsed to `222.8m` (~35% down) at the coarsest
+  zoom under area-averaging - very visible as missing mountains on the low-zoom tiles.
+  Max keeps the dominant summit of each block as its representative height; flat
+  regions are unaffected (max of a uniform block is that value; the open ocean is flat
+  `0`, verified as not inflated).
+
   `Jeju_World.json`'s `"tiles"` object carries every consumer-needed field precomputed
-  (`tileSize`, `tileSampleCount`, `tileSampleInnerCount`, `maxZoom`,
+  (`tileInnerResolutions`, `tileSampleCounts`, `maxZoom`,
   `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`, `minZMeters`/
   `maxZMeters`). Replaced the earlier single flat `heights_<n>px.bin` (`--web-size`)
   export - a real tile pyramid is what lets the viewer show coarser/finer detail by
@@ -326,7 +340,7 @@ own `WaterBodyOceanComponent.RelativeLocation.Z`, which matches exactly (both `-
 cm = `-223.74` m). Written to `Jeju_World.json`'s `"ocean"` object
 (`levelCm`/`levelMeters`) and passed through
 `script/terrain-viewer/scripts/prepare-assets.js` into `tiles.json` as
-`oceanLevelMeters`, where `src/main.js` renders it as a large flat quad.
+`oceanLevelMeters`, where `src/oceanQuad.ts` renders it as a large flat quad.
 
 This also gives the missing context for the "Known limitations" note below about raw
 height `0` (`-256m`, the absolute floor of the 16-bit encoding): the landscape is
@@ -358,8 +372,9 @@ node script/get-height.js <worldX_cm> <worldY_cm>
 A Three.js viewer with Leaflet/OpenLayers-style tiled 3D terrain: it drapes
 `out/amc-web/map/map.png`'s color tile pyramid over a quadtree of terrain patches built
 from this project's matching height tile pyramid, refining to smaller/higher-zoom
-tiles via a real screen-space-error budget (camera-FOV/viewport-aware, not a flat
-distance ratio) - confirming visually that the two pyramids share a coordinate frame
+tiles via an orbit-cascade rule (the tile under the camera's orbit point is the finest
+zoom and coarser zooms ring out around it, with a camera-height-above-ocean cap) -
+confirming visually that the two pyramids share a coordinate frame
 (desert plateau / mountain / forest color regions land exactly on the matching relief)
 - plus a huge flat, clarity-tuned ocean quad at the pak's own ocean level (see "Ocean
 level" above; real in-game bridges have no separate deck geometry here, so a road

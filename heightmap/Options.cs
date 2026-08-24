@@ -42,16 +42,7 @@ internal sealed record Options
           --map-size <cm>    map width and height, in world cm (must cover both islands
                              plus the ocean between them to match the game's own map)
                                                       (default 2200000, i.e. 22km square)
-          --tile-size <px>   height tile raw-sample resolution (independent of
-                             amc-web's own --tile-size - same {z}_{x}_{y} grid/zoom
-                             layout either way, just more or less height detail per
-                             tile; each tile file is actually (tile-size+3) samples per
-                             edge - a 1px border overlap so adjacent tiles share their
-                             boundary pixel exactly, plus a 1px normal halo so they also
-                             agree on lighting normals at that edge - see
-                             landscape-heightmap.md)
-                                                      (default 256)
-          --max-zoom <n>     highest height tile zoom (tiles are 0..n) - kept in sync
+          --max-zoom <n>     highest height tile zoom (tiles are 1..n; z0 is never generated - the viewer force-refines below z1) - kept in sync
                              with amc-web's own native zoom (4, for its 4096px map at
                              the default tile size); never generates an upscaled level,
                              unlike amc-web's default - upscaling raw elevation invents
@@ -109,7 +100,6 @@ internal sealed record Options
     public double OriginYCm => OriginYCmOverride ?? -320_000;
     public double MapSizeCm => MapSizeCmOverride ?? 2_200_000;
 
-    public int TileSize { get; private init; } = 256;
     public int MaxZoom { get; private init; } = 4;
     public string? DebugGuidFilter { get; private init; }
     public int DebugSize { get; private init; } = 2048;
@@ -138,7 +128,6 @@ internal sealed record Options
                 case "--origin-x": o = o with { OriginXCmOverride = Double(Value("--origin-x"), "--origin-x") }; break;
                 case "--origin-y": o = o with { OriginYCmOverride = Double(Value("--origin-y"), "--origin-y") }; break;
                 case "--map-size": o = o with { MapSizeCmOverride = Double(Value("--map-size"), "--map-size") }; break;
-                case "--tile-size": o = o with { TileSize = Number(Value("--tile-size"), "--tile-size", 16, 8192) }; break;
                 case "--max-zoom": o = o with { MaxZoom = Number(Value("--max-zoom"), "--max-zoom", 0, 12) }; break;
                 case "--exclude-guid":
                 {

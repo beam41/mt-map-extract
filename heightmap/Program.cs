@@ -72,7 +72,7 @@ internal static class Program
             : "warning: no MTOceanConfig found - ocean level omitted from metadata");
 
         Console.WriteLine($"writing to {opts.OutDir}...");
-        ImageWriter.Write(map, oceanLevelCm, opts.TileSize, opts.MaxZoom, opts.DebugSize, opts.OutDir);
+        ImageWriter.Write(map, oceanLevelCm, opts.MaxZoom, opts.DebugSize, opts.OutDir);
 
         Console.WriteLine("Done.");
         return 0;

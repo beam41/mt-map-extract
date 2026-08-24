@@ -50,10 +50,13 @@ function loadMetadata() {
   return meta;
 }
 
-function copyPyramid(srcDir, destDir, maxZoom, extension, label) {
+function copyPyramid(srcDir, destDir, maxZoom, extension, label, { minZoom = 0 } = {}) {
+  // Clear the dest so stale tiles from a previous run (different minZoom, old
+  // per-zoom resolution, old format) can't linger and get served.
+  if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
   fs.mkdirSync(destDir, { recursive: true });
   let copied = 0;
-  for (let z = 0; z <= maxZoom; z++) {
+  for (let z = minZoom; z <= maxZoom; z++) {
     const grid = 1 << z;
     for (let y = 0; y < grid; y++) {
       for (let x = 0; x < grid; x++) {
@@ -67,7 +70,7 @@ function copyPyramid(srcDir, destDir, maxZoom, extension, label) {
       }
     }
   }
-  console.log(`copied ${copied} ${label} tiles (z0-z${maxZoom}) -> ${path.relative(REPO_ROOT, destDir)}`);
+  console.log(`copied ${copied} ${label} tiles (z${minZoom}-z${maxZoom}) -> ${path.relative(REPO_ROOT, destDir)}`);
 }
 
 function main() {
@@ -75,7 +78,7 @@ function main() {
   const tiles = meta.tiles;
 
   const heightTilesSrc = path.join(HEIGHTMAP_DIR, tiles.directory);
-  copyPyramid(heightTilesSrc, path.join(ASSETS_DIR, "tiles", "height"), tiles.maxZoom, "bin", "height");
+  copyPyramid(heightTilesSrc, path.join(ASSETS_DIR, "tiles", "height"), tiles.maxZoom, "bin", "height", { minZoom: 1 });
 
   if (!fs.existsSync(COLOR_TILES_DIR)) {
     throw new Error(`${COLOR_TILES_DIR} not found - run 'dotnet run -c Release --project amc-web' first (tiles are not skippable with --skip-tiles).`);
@@ -83,10 +86,12 @@ function main() {
   copyPyramid(COLOR_TILES_DIR, path.join(ASSETS_DIR, "tiles", "color"), tiles.maxZoom, "avif", "color");
 
   const metaOut = {
-    tileSize: tiles.tileSize,
-    tileSampleCount: tiles.tileSampleCount,
-    tileSampleInnerCount: tiles.tileSampleInnerCount,
     maxZoom: tiles.maxZoom,
+    // per-zoom height-tile sample layout (index z-1): innerResolutions[z-1] = mesh
+    // vertices per edge for that zoom (buildTileGeometry derives sizes from the fetched
+    // .bin directly, so these are informational), sampleCounts[z-1] = inner + 2.
+    tileInnerResolutions: tiles.tileInnerResolutions,
+    tileSampleCounts: tiles.tileSampleCounts,
     dtype: tiles.dtype,
     byteOrder: tiles.byteOrder,
     widthMeters: tiles.widthMeters,
