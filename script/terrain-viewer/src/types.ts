@@ -38,7 +38,6 @@ export interface ActiveTile {
   geometry: THREE.BufferGeometry;
   material: THREE.MeshStandardMaterial;
   texture: THREE.Texture;
-  border: THREE.LineLoop;
   z: number;
   x: number;
   y: number;

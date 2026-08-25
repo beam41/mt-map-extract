@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { SKIRT_DROP, DEBUG_BORDER_Y_OFFSET } from "./constants";
+import { SKIRT_DROP, COLOR_MAX_ZOOM } from "./constants";
 import { rawHeightToWorldZMeters } from "./heightmap";
 
 /** Fetches one height tile's raw uint16 samples (tileSampleCount x tileSampleCount,
@@ -31,26 +31,44 @@ export function loadColorTexture(
   y: number,
   renderer: THREE.WebGLRenderer
 ): Promise<THREE.Texture> {
+  // COLOR-TILE FALLBACK: the height pyramid goes deeper than the color pyramid
+  // (COLOR_MAX_ZOOM - amc-web's color tiles stop there; deeper color is pure
+  // upscaled blur and isn't generated). For a height tile at zoom > COLOR_MAX_ZOOM
+  // this fetches the color tile of its COLOR_MAX_ZOOM ANCESTOR instead (same world
+  // rect, coarser) and sets repeat/offset so the geometry's 0..1 UVs sample exactly
+  // the ancestor's sub-rect this tile covers - the GPU upscales the slowly-varying
+  // color for free, while the geometry (real height detail) carries the resolution.
   const { promise, resolve, reject } = Promise.withResolvers<THREE.Texture>();
+  const depth = Math.max(0, z - COLOR_MAX_ZOOM);
+  const colorZ = z - depth;
+  const colorX = x >> depth;
+  const colorY = y >> depth;
+  const frac = 1 / (1 << depth);
+  const offX = (x - (colorX << depth)) * frac;
+  const offY = (y - (colorY << depth)) * frac;
   new THREE.TextureLoader().load(
-    `/assets/tiles/color/${z}_${x}_${y}.avif`,
+    `/assets/tiles/color/${colorZ}_${colorX}_${colorY}.avif`,
     (texture) => {
       texture.flipY = false;
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      if (depth > 0) {
+        texture.repeat.set(frac, frac);
+        texture.offset.set(offX, offY);
+      }
       resolve(texture);
     },
     undefined,
-    (err) => reject(new Error(`color tile ${z}_${x}_${y}.avif failed to load: ${(err as ErrorEvent)?.message ?? err}`))
+    (err) => reject(new Error(`color tile ${colorZ}_${colorX}_${colorY}.avif failed to load: ${(err as ErrorEvent)?.message ?? err}`))
   );
   return promise;
 }
 
 export interface TileGeometryResult {
   geometry: THREE.BufferGeometry;
-  /** Mesh resolution (vertices per edge) - see buildTileBorder(), which needs this
-   * to walk the geometry's perimeter without duplicating the layout logic. Forced to
-   * 2 (a single quad) for a perfectly flat tile - see `flat` below. */
+  /** Mesh resolution (vertices per edge) - the number of main-grid vertices along
+   * one edge of the tile. Forced to 2 (a single quad) for a perfectly flat tile -
+   * see `flat` below. */
   N: number;
   /** True if every sample this tile stores (inner + border-overlap + normal-halo,
    * the whole fetched array) is exactly the same raw height - a real, common case
@@ -217,29 +235,3 @@ export function buildTileGeometry(
   return { geometry, N, flat };
 }
 
-/** Debug view: a closed loop tracing one tile's real outer edge (main-grid vertices
- * only, walked top row left-to-right, right column down, bottom row right-to-left,
- * left column up - excludes the skirt's dropped mirror vertices entirely), lifted by
- * DEBUG_BORDER_Y_OFFSET so it doesn't z-fight the tile surface it traces. Terrain-
- * following (uses each vertex's real sampled height, not a flat rectangle), so it
- * shows the tile's exact boundary - including where a neighbor at a different zoom
- * doesn't quite line up with it - rather than an idealized flat outline. */
-export function buildTileBorder(geometry: THREE.BufferGeometry, N: number): THREE.BufferGeometry {
-  const pos = geometry.getAttribute("position");
-  const order: number[] = [];
-  for (let col = 0; col < N; col++) order.push(col);                     // top row, L->R
-  for (let row = 1; row < N; row++) order.push(row * N + (N - 1));       // right col, T->B
-  for (let col = N - 2; col >= 0; col--) order.push((N - 1) * N + col);  // bottom row, R->L
-  for (let row = N - 2; row >= 1; row--) order.push(row * N);            // left col, B->T
-
-  const positions = new Float32Array(order.length * 3);
-  order.forEach((mainIdx, i) => {
-    positions[i * 3 + 0] = pos.getX(mainIdx);
-    positions[i * 3 + 1] = pos.getY(mainIdx) + DEBUG_BORDER_Y_OFFSET;
-    positions[i * 3 + 2] = pos.getZ(mainIdx);
-  });
-
-  const borderGeometry = new THREE.BufferGeometry();
-  borderGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  return borderGeometry;
-}

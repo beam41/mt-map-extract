@@ -24,9 +24,9 @@ internal static class ImageWriter
     /// buildTileGeometry, which derives its mesh resolution from the fetched .bin
     /// tile directly, not from a hardcoded table, so the two can never drift).
     /// z0 is unused/never rendered (the viewer force-refines below z1).</summary>
-    private const int TileInnerResolution = 32;
-
-    public static void Write(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom, int debugSize, string outDir)
+    /// `tileSize` is the mesh-vertex resolution per tile edge (the old fixed 32),
+    /// set by --tile-size; resolution(z) = tileSize * 2^z.
+    public static void Write(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom, int tileSize, int debugSize, string outDir)
     {
         Directory.CreateDirectory(outDir);
 
@@ -38,10 +38,10 @@ internal static class ImageWriter
         Console.WriteLine($"  wrote {heightmapPath} ({map.Width}x{map.Height}, 16-bit, native resolution)");
 
         Output.Write(Path.Combine(outDir, $"{Label}.json"),
-            BuildMetadata(map, oceanLevelCm, maxZoom).ToString(Newtonsoft.Json.Formatting.Indented));
+            BuildMetadata(map, oceanLevelCm, maxZoom, tileSize).ToString(Newtonsoft.Json.Formatting.Indented));
 
         WriteHeightsBin(map, Path.Combine(outDir, "heights.bin"));
-        WriteHeightTiles(map, maxZoom, Path.Combine(outDir, "tiles"));
+        WriteHeightTiles(map, maxZoom, tileSize, Path.Combine(outDir, "tiles"));
         WriteDebugPreview(native, map, debugSize, Path.Combine(outDir, "debug"));
     }
 
@@ -102,7 +102,7 @@ internal static class ImageWriter
     /// identical. The outermost edge of the whole pyramid (no real neighbour) clamps
     /// the halo to the last valid canvas pixel, same as the border-overlap
     /// sample.</summary>
-    private static void WriteHeightTiles(LandscapeExtractor.Map map, int maxZoom, string tilesDir)
+    private static void WriteHeightTiles(LandscapeExtractor.Map map, int maxZoom, int tileSize, string tilesDir)
     {
         // The pyramid shape changed (per-zoom resolutions, no z0) - clear any stale
         // tiles from a previous run rather than leaving old-format files behind.
@@ -122,9 +122,9 @@ internal static class ImageWriter
         // of the 1px border overlap - losing it made every same-zoom tile boundary
         // read two different neighbouring canvas pixels and rendered as visible gaps
         // between tiles). The full canvas is therefore grid*(inner-1)+1 samples.
-        const int inner = TileInnerResolution;
-        const int step = inner - 1;
-        const int sampleCount = inner + 2; // inner position samples + 1px border overlap + 1px normal halo per edge
+        var inner = tileSize;
+        var step = inner - 1;
+        var sampleCount = inner + 2; // inner position samples + 1px border overlap + 1px normal halo per edge
         for (var zoom = 1; zoom <= maxZoom; zoom++)
         {
             var grid = 1 << zoom;
@@ -233,7 +233,7 @@ internal static class ImageWriter
         Console.WriteLine($"  wrote {previewPath} ({resized.Width}x{resized.Height}, 8-bit normalized preview)");
     }
 
-    private static JObject BuildMetadata(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom)
+    private static JObject BuildMetadata(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom, int tileSize)
     {
         // worldZFormulaCm is linear and monotonically increasing in rawHeight, so the
         // native rawHeightRange's min/max map directly to the world-Z min/max - a safe
@@ -260,8 +260,8 @@ internal static class ImageWriter
                 ["dtype"] = "uint16",
                 ["byteOrder"] = "little",
                 ["maxZoom"] = maxZoom,
-                ["tileInnerResolutions"] = new JArray(Enumerable.Repeat(TileInnerResolution, maxZoom)),
-                ["tileSampleCounts"] = new JArray(Enumerable.Repeat(TileInnerResolution + 2, maxZoom)),
+                ["tileInnerResolutions"] = new JArray(Enumerable.Repeat(tileSize, maxZoom)),
+                ["tileSampleCounts"] = new JArray(Enumerable.Repeat(tileSize + 2, maxZoom)),
                 ["layout"] = "Leaflet/OpenLayers XYZ scheme matching amc-web's color tiles: z0 is never " +
                     "generated (the viewer force-refines below z1), zN is 2^N x 2^N (grid/world-size math " +
                     "is by grid, matching amc-web's color tiles), each tile file is tileSampleCounts[z-1] x " +

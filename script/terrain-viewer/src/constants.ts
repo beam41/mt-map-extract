@@ -36,6 +36,24 @@ export const PAN_FLING_SAMPLE_MS = 90;
 // is z1 (a 2x2 grid, at its own low mesh resolution).
 export const MIN_RENDER_ZOOM = 1;
 
+// The finest zoom held in the JS data cache / built-tile memo (`dataCache` /
+// `builtTiles` in tileManager.ts). Tiles at zoom > CACHE_MAX_ZOOM are still fetched
+// and rendered, but NOT retained in the JS cache - they come back from the
+// browser's HTTP cache (and are rebuilt) on revisit. Keeps the cache bounded: with
+// the default resolution scheme the quadtree at z8 reaches ~65k distinct tiles, too
+// many to hold cheaply in JS; the browser HTTP cache is the right place for the fine
+// levels (the reliable victim cache), so we only persist the coarse base.
+export const CACHE_MAX_ZOOM = 5;
+
+// The deepest zoom of the COLOR pyramid (amc-web's tiles). The height pyramid goes
+// deeper (CACHE_MAX_ZOOM+ and up to the height maxZoom - the real elevation detail),
+// but the color map's native texture is 4096px (amc-web's native zoom 4, one upscale
+// to z5) and generating color beyond z5 is pure upscaled blur. So fine height tiles
+// fetch their color from this level's ancestor tile instead: the material's
+// repeat/offset maps the ancestor's sub-rect onto the tile, and the GPU upscales the
+// (slowly-varying) color for free. (See loadColorTexture.)
+export const COLOR_MAX_ZOOM = 5;
+
 // Tile-selection range of vision (rule 1): the orbit point (`controls.target`'s XZ -
 // the ground point the camera is orbiting) is the "lod0 point". The finest zoom
 // level's grid of cells is placed over the map. Each zoom level z owns a vision ring
@@ -99,7 +117,7 @@ export const OCEAN_QUAD_SIZE = 200000;
 // Debug view: color each active tile by its own zoom level instead of its real
 // texture - lets you see directly whether a given seam sits between two *different*-
 // zoom tiles or two *same*-zoom ones, instead of assuming it's an LOD-stitching
-// artifact. One distinct, maximally-separated color per zoom (z0..z5) - shaded
+// artifact. One distinct, maximally-separated color per zoom (z0..z8) - shaded
 // (`MeshStandardMaterial`, same roughness/metalness as the real tile material) rather
 // than flat/unlit, so terrain relief and any *normal*-continuity seam (a lighting
 // discontinuity, not a position crack) stay visible in this view too, not just the
@@ -107,13 +125,8 @@ export const OCEAN_QUAD_SIZE = 200000;
 // see the actual triangle mesh at a boundary - a real geometric gap shows as a break
 // in the wireframe grid; a seam with no such break is a shading-only (normal/lighting)
 // artifact, not a position crack.
-export const ZOOM_DEBUG_COLORS = [0xff3b30, 0xff9500, 0xffdd00, 0x34c759, 0x0a84ff, 0xaf52de];
-
-// World-unit lift for the debug per-tile border line (see tileGeometry.ts's
-// buildTileBorder()) above the tile's own terrain surface - just enough to avoid
-// z-fighting with the tile mesh it traces, negligible next to the map's real
-// elevation range.
-export const DEBUG_BORDER_Y_OFFSET = 2;
+// z0..z8 (the pyramid now reaches z8): 9 distinct, maximally-separated hues.
+export const ZOOM_DEBUG_COLORS = [0xff3b30, 0xff9500, 0xffdd00, 0x34c759, 0x0a84ff, 0xaf52de, 0xff6b6b, 0x2dd4bf, 0x845ef7];
 
 // Debug view: how many segments approximate each vision-ring circle (see
 // ringDebugView.ts) - high enough that the polygon reads as a smooth circle at any

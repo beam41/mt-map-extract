@@ -43,14 +43,21 @@ internal sealed record Options
                              plus the ocean between them to match the game's own map)
                                                       (default 2200000, i.e. 22km square)
           --max-zoom <n>     highest height tile zoom (tiles are 1..n; z0 is never
-                             generated - the viewer force-refines below z1); default
-                             matches amc-web's own default `--zoom` (5 - one level
-                             past its native zoom of 4 for its 4096px map at the
-                             default tile size). Unlike amc-web's own z5, which is an
-                             upscale of its native z4, this project's height z5 is a
-                             genuine area-average downsample of the native heightmap -
-                             every level here is real elevation detail, never upscaled
-                                                      (default 5)
+                             generated - the viewer force-refines below z1). The
+                             native heightmap is 11000 samples/edge; z5 at the
+                             default TileSize 44 gives 1408 samples/edge (higher
+                             per-tile density than the old fixed 32: 32*2^5=1024).
+                             Every level is a genuine area-average downsample of the
+                             native heightmap - real elevation detail, never
+                             upscaled                         (default 5)
+          --tile-size <n>    mesh-vertex resolution per tile edge (the old fixed
+                             32x32). resolution(z) = TileSize * 2^z; raise it to
+                             reach native detail at a lower zoom, lower it to keep
+                             high zoom cheap. The default 44 gives 44*2^5=1408
+                             samples/edge at z5, denser than the old fixed 32
+                             (1024) at every zoom. Raise maxZoom later (--max-zoom)
+                             to reach native: 44*2^8=11264 ~= 11000 at z8.
+                                                      (default 44)
           --exclude-guid <substring>
                              never place components whose LandscapeGuid contains this
                              (case-insensitive); repeatable. Replaces the default exclusion
@@ -104,6 +111,10 @@ internal sealed record Options
     public double MapSizeCm => MapSizeCmOverride ?? 2_200_000;
 
     public int MaxZoom { get; private init; } = 5;
+    /** Mesh-vertex resolution per tile edge - tunable so the zoom that reaches
+     * native detail can change without code: resolution(z) = TileSize * 2^z.
+     * Default 44 -> 44*2^8 = 11264 at z8, closest fit to the native 11000. */
+    public int TileSize { get; private init; } = 44;
     public string? DebugGuidFilter { get; private init; }
     public int DebugSize { get; private init; } = 2048;
     public bool DebugAutoFit { get; private init; }
@@ -132,6 +143,7 @@ internal sealed record Options
                 case "--origin-y": o = o with { OriginYCmOverride = Double(Value("--origin-y"), "--origin-y") }; break;
                 case "--map-size": o = o with { MapSizeCmOverride = Double(Value("--map-size"), "--map-size") }; break;
                 case "--max-zoom": o = o with { MaxZoom = Number(Value("--max-zoom"), "--max-zoom", 0, 12) }; break;
+                case "--tile-size": o = o with { TileSize = Number(Value("--tile-size"), "--tile-size", 4, 512) }; break;
                 case "--exclude-guid":
                 {
                     var v = Value("--exclude-guid");

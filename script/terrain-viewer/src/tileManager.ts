@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { ZOOM_DEBUG_COLORS, MIN_RENDER_ZOOM } from "./constants";
+import { ZOOM_DEBUG_COLORS, MIN_RENDER_ZOOM, CACHE_MAX_ZOOM } from "./constants";
 import { tileWorldRect } from "./heightmap";
 import { selectLeafTiles } from "./lod";
-import { fetchHeightTile, loadColorTexture, buildTileGeometry, buildTileBorder } from "./tileGeometry";
+import { fetchHeightTile, loadColorTexture, buildTileGeometry } from "./tileGeometry";
 import type { TilesMeta, ActiveTile, LeafTile } from "./types";
 
 export interface TileManager {
@@ -91,17 +91,13 @@ export function createTileManager(
   scene.add(tileGroup);
 
   // Debug view state - see ZOOM_DEBUG_COLORS' doc comment. debugMaterials is built
-  // once (6 entries, one per zoom, shared by every tile at that zoom - no need for a
-  // per-tile copy since they carry no texture) and reused by every tile that has ever
-  // shown the debug view; wireframeEnabled applies independently, to whichever
-  // material (real or debug) is currently in use. borderMaterial is likewise a single
-  // shared instance - every tile's border LineLoop (see tileGeometry.ts's
-  // buildTileBorder()) just reuses it, toggled alongside the zoom-color debug view
-  // itself.
+  // once (9 entries, one per zoom z0..z8, shared by every tile at that zoom - no need
+  // for a per-tile copy since they carry no texture) and reused by every tile that
+  // has ever shown the debug view; wireframeEnabled applies independently, to
+  // whichever material (real or debug) is currently in use.
   const debugMaterials = ZOOM_DEBUG_COLORS.map(
     (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, wireframe: false })
   );
-  const borderMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
   let showZoomDebug = false;
   let wireframeEnabled = false;
 
@@ -264,7 +260,7 @@ export function createTileManager(
   // their built resources so a revisit re-mounts without rebuilding.
   // ---------------------------------------------------------------------------
 
-  /** Builds one tile's mesh/geometry/material/border from its cached data - the
+  /** Builds one tile's mesh/geometry/material from its cached data - the
    * actual GENERATION step. Called lazily by mountTile() the first time a cached
    * tile enters the cover, then memoized in `builtTiles` for reuse. */
   function buildTile(cached: CachedTile): ActiveTile {
@@ -275,9 +271,7 @@ export function createTileManager(
       map: texture, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, wireframe: wireframeEnabled,
     });
     const mesh = new THREE.Mesh(geometry, showZoomDebug ? debugMaterials[z] : material);
-    const border = new THREE.LineLoop(buildTileBorder(geometry, N), borderMaterial);
-    border.visible = showZoomDebug;
-    return { mesh, geometry, material, texture, border, z, x, y };
+    return { mesh, geometry, material, texture, z, x, y };
   }
 
   /** Ensure the tile is built (from cached data, memoized) and add it to the scene. */
@@ -294,19 +288,28 @@ export function createTileManager(
     // cached tile never re-enters the scene looking wrong.
     tile.mesh.material = showZoomDebug ? debugMaterials[tile.z] : tile.material;
     tile.material.wireframe = wireframeEnabled;
-    tile.border.visible = showZoomDebug;
     tileGroup.add(tile.mesh);
-    tileGroup.add(tile.border);
     activeTiles.set(key, tile);
   }
 
   function unmountTile(tile: ActiveTile): void {
     tileGroup.remove(tile.mesh);
-    tileGroup.remove(tile.border);
     activeTiles.delete(keyOf(tile.z, tile.x, tile.y));
-    // Resources intentionally NOT disposed - the built tile stays in `builtTiles`
-    // for reuse (see the createTileManager doc comment). Both caches are bounded
-    // (1364 tiles max).
+    // Retention policy: coarse tiles (z <= CACHE_MAX_ZOOM) stay in `dataCache` +
+    // `builtTiles` for reuse - that is the persistent, state-preserving cache, and
+    // it is bounded (CACHE_MAX_ZOOM's full grid, ~1364 tiles at the default). Fine
+    // tiles (z > CACHE_MAX_ZOOM) are EVICTED here instead: their data is re-fetched
+    // from the browser's HTTP cache on revisit (see CACHE_MAX_ZOOM's doc comment),
+    // so the JS cache never balloons to the fine grid's ~16k tiles. Eviction only
+    // ever removes tiles that have ALREADY left the cover (they're out of the scene
+    // above), so it never creates a gap or overlaps a still-mounted tile.
+    const key = keyOf(tile.z, tile.x, tile.y);
+    if (tile.z > CACHE_MAX_ZOOM) {
+      const cached = dataCache.get(key);
+      if (cached) { cached.texture.dispose(); dataCache.delete(key); }
+      const built = builtTiles.get(key);
+      if (built) { built.geometry.dispose(); built.material.dispose(); builtTiles.delete(key); }
+    }
   }
 
   function runGenerationStage(tick: TickContext): void {
@@ -344,11 +347,9 @@ export function createTileManager(
       showZoomDebug = enabled;
       for (const tile of activeTiles.values()) {
         tile.mesh.material = showZoomDebug ? debugMaterials[tile.z] : tile.material;
-        tile.border.visible = showZoomDebug;
       }
       for (const tile of builtTiles.values()) {
         tile.mesh.material = showZoomDebug ? debugMaterials[tile.z] : tile.material;
-        tile.border.visible = showZoomDebug;
       }
     },
     setWireframe(enabled: boolean) {

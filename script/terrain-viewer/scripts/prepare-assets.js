@@ -41,6 +41,8 @@ const REPO_ROOT = path.join(__dirname, "..", "..", "..");
 const HEIGHTMAP_DIR = path.join(REPO_ROOT, "out", "heightmap");
 const COLOR_TILES_DIR = path.join(REPO_ROOT, "out", "amc-web", "map", "tiles");
 const ASSETS_DIR = path.join(__dirname, "..", "public", "assets");
+// Deepest zoom of the COLOR pyramid (amc-web's tiles). Must match the viewer constant.
+const COLOR_MAX_ZOOM = 5;
 
 function loadMetadata() {
   const metaPath = path.join(HEIGHTMAP_DIR, "Jeju_World.json");
@@ -87,7 +89,10 @@ function main() {
   if (!fs.existsSync(COLOR_TILES_DIR)) {
     throw new Error(`${COLOR_TILES_DIR} not found - run 'dotnet run -c Release --project amc-web' first (tiles are not skippable with --skip-tiles).`);
   }
-  copyPyramid(COLOR_TILES_DIR, path.join(ASSETS_DIR, "tiles", "color"), tiles.maxZoom, "avif", "color");
+  // Color only exists up to COLOR_MAX_ZOOM (amc-web's pyramid stops there; deeper
+  // color is pure upscaled blur - the viewer's loadColorTexture falls back to a
+  // coarser color tile for deeper height tiles). Copy what's actually generated.
+  copyPyramid(COLOR_TILES_DIR, path.join(ASSETS_DIR, "tiles", "color"), Math.min(tiles.maxZoom, COLOR_MAX_ZOOM), "avif", "color");
 
   const metaOut = {
     maxZoom: tiles.maxZoom,
