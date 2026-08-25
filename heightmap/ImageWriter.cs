@@ -308,24 +308,27 @@ internal static class ImageWriter
 
     /// <summary>The terrain viewer's metadata file (tiles.json): exactly the fields
     /// src/heightmap.ts's loadTilesMeta() reads, in its final shape - no renaming or
-    /// reshaping by the copy step. minZ/maxZ are world-space meters (ZMeters), the
-    /// same values as Jeju_World.json's tiles.minZ/maxZ.</summary>
+    /// reshaping by the copy step. All spatial values are in CENTIMETERS - Unreal's
+    /// native world unit (quadScaleCm = 200, and worldX/Y/ZFormulaCm in Jeju_World.json
+    /// are cm), matching the extractor's own internal representation; callers convert
+    /// to meters where needed. minZ/maxZ in cm = the same ZMeters() map x100, and
+    /// oceanLevelCm is passed straight through.</summary>
     private static JObject BuildViewerTilesJson(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom, int tileSize)
     {
-        double ZMeters(ushort rawHeight) => (rawHeight - 32768) / 128.0;
+        double ZCm(ushort rawHeight) => (rawHeight - 32768) / 128.0 * 100.0;
 
         return new JObject
         {
             ["maxZoom"] = maxZoom,
             ["tileInnerResolution"] = tileSize,
             ["tileSampleCount"] = tileSize + 2,
-            ["widthMeters"] = map.Width * map.QuadScaleCm / 100.0,
-            ["heightMeters"] = map.Height * map.QuadScaleCm / 100.0,
-            ["originMetersX"] = map.OriginXCm / 100.0,
-            ["originMetersY"] = map.OriginYCm / 100.0,
-            ["minZ"] = ZMeters(map.RawMin),
-            ["maxZ"] = ZMeters(map.RawMax),
-            ["oceanLevelMeters"] = oceanLevelCm is null ? null : oceanLevelCm / 100.0,
+            ["widthCm"] = map.Width * map.QuadScaleCm,
+            ["heightCm"] = map.Height * map.QuadScaleCm,
+            ["originXCm"] = map.OriginXCm,
+            ["originYCm"] = map.OriginYCm,
+            ["minZ"] = ZCm(map.RawMin),
+            ["maxZ"] = ZCm(map.RawMax),
+            ["oceanLevelCm"] = oceanLevelCm,
         };
     }
 }
