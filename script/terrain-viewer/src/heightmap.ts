@@ -15,10 +15,11 @@ export function rawHeightToWorldZMeters(rawHeight: number): number {
 export async function loadTilesMeta(): Promise<TilesMeta> {
   const r = await fetch("/assets/tiles.json");
   if (!r.ok) throw new Error(`tiles.json: HTTP ${r.status}`);
+  // The height tile format is an invariant of the extractor (heightmap/ImageWriter.cs):
+  // raw uint16, little-endian, tileSampleCount x tileSampleCount samples per tile. The
+  // dtype/byteOrder were dropped from the metadata as constants; buildTileGeometry
+  // derives the sample count from the fetched .bin directly anyway.
   const meta = (await r.json()) as TilesMeta;
-  if (meta.dtype !== "uint16" || meta.byteOrder !== "little") {
-    throw new Error(`unsupported height tile format: dtype=${meta.dtype} byteOrder=${meta.byteOrder}`);
-  }
   return meta;
 }
 

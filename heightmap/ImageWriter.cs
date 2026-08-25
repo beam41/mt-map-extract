@@ -40,6 +40,14 @@ internal static class ImageWriter
         Output.Write(Path.Combine(outDir, $"{Label}.json"),
             BuildMetadata(map, oceanLevelCm, maxZoom, tileSize).ToString(Newtonsoft.Json.Formatting.Indented));
 
+        // tiles.json - the CONSUMER-READY metadata (the viewer's public/assets/tiles.json
+        // is a straight copy of this file by scripts/prepare-assets.js, which does no
+        // reshaping): a flat subset of the fields above that the terrain viewer reads.
+        // dtype/byteOrder/colorExtension are format invariants, not data - the viewer
+        // hardcodes them.
+        Output.Write(Path.Combine(outDir, "tiles.json"),
+            BuildViewerTilesJson(map, oceanLevelCm, maxZoom, tileSize).ToString(Newtonsoft.Json.Formatting.Indented));
+
         WriteHeightsBin(map, Path.Combine(outDir, "heights.bin"));
         WriteHeightTiles(map, maxZoom, tileSize, Path.Combine(outDir, "tiles"));
         WriteDebugPreview(native, map, debugSize, Path.Combine(outDir, "debug"));
@@ -249,16 +257,12 @@ internal static class ImageWriter
             ["heightsBin"] = new JObject
             {
                 ["fileName"] = "heights.bin",
-                ["dtype"] = "uint16",
-                ["byteOrder"] = "little",
                 ["layout"] = "row-major, one value per quad, native resolution - offset (row * width + col) * 2 bytes",
             },
             ["tiles"] = new JObject
             {
                 ["directory"] = "tiles/",
                 ["fileNamePattern"] = "{z}_{x}_{y}.bin",
-                ["dtype"] = "uint16",
-                ["byteOrder"] = "little",
                 ["maxZoom"] = maxZoom,
                 ["tileInnerResolution"] = tileSize,
                 ["tileSampleCount"] = tileSize + 2,
@@ -278,8 +282,8 @@ internal static class ImageWriter
                 ["heightMeters"] = map.Height * map.QuadScaleCm / 100.0,
                 ["originMetersX"] = map.OriginXCm / 100.0,
                 ["originMetersY"] = map.OriginYCm / 100.0,
-                ["minZMeters"] = ZMeters(map.RawMin),
-                ["maxZMeters"] = ZMeters(map.RawMax),
+                ["minZ"] = ZMeters(map.RawMin),
+                ["maxZ"] = ZMeters(map.RawMax),
             },
             ["originCm"] = new JObject { ["X"] = map.OriginXCm, ["Y"] = map.OriginYCm },
             ["quadScaleCm"] = map.QuadScaleCm,
@@ -299,6 +303,29 @@ internal static class ImageWriter
                     "cross-verified against WaterBodyOcean's own WaterBodyOceanComponent.RelativeLocation.Z, " +
                     "which matches exactly",
             },
+        };
+    }
+
+    /// <summary>The terrain viewer's metadata file (tiles.json): exactly the fields
+    /// src/heightmap.ts's loadTilesMeta() reads, in its final shape - no renaming or
+    /// reshaping by the copy step. minZ/maxZ are world-space meters (ZMeters), the
+    /// same values as Jeju_World.json's tiles.minZ/maxZ.</summary>
+    private static JObject BuildViewerTilesJson(LandscapeExtractor.Map map, double? oceanLevelCm, int maxZoom, int tileSize)
+    {
+        double ZMeters(ushort rawHeight) => (rawHeight - 32768) / 128.0;
+
+        return new JObject
+        {
+            ["maxZoom"] = maxZoom,
+            ["tileInnerResolution"] = tileSize,
+            ["tileSampleCount"] = tileSize + 2,
+            ["widthMeters"] = map.Width * map.QuadScaleCm / 100.0,
+            ["heightMeters"] = map.Height * map.QuadScaleCm / 100.0,
+            ["originMetersX"] = map.OriginXCm / 100.0,
+            ["originMetersY"] = map.OriginYCm / 100.0,
+            ["minZ"] = ZMeters(map.RawMin),
+            ["maxZ"] = ZMeters(map.RawMax),
+            ["oceanLevelMeters"] = oceanLevelCm is null ? null : oceanLevelCm / 100.0,
         };
     }
 }

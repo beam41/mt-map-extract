@@ -62,14 +62,16 @@ script is a pure direct-copy build step:
   size - z5 is color pixels upscaled, unlike the matching height z5 tile, which is a
   genuine downsample of the native heightmap, not upscaled).
   (`0_0_0.avif` is copied but never requested - z0 is never a leaf.)
-- `tiles.json` - a subset/rename passthrough of `Jeju_World.json`'s `"tiles"` object
-  (`tileInnerResolution`, `tileSampleCount`, `maxZoom`, `dtype`,
-  `byteOrder`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
-  `minZ`/`maxZ` in meters) - no computation, everything was already precomputed on the
-  C# side. `tileInnerResolution` is the mesh vertex density - uniform `32` at every
-  zoom (the standard Leaflet/OpenLayers/Slippy-map tile-pyramid convention:
-  fixed per-tile resolution, detail scales via tile *count*, not per-tile density);
-  `tileSampleCount = tileInnerResolution + 2 = 34`.
+- `tiles.json` - a straight copy of `out/heightmap/tiles.json`, which the extractor
+  (`heightmap/ImageWriter.cs`'s `BuildViewerTilesJson`) writes directly in its final
+  consumer shape - `tileInnerResolution`, `tileSampleCount`, `maxZoom`,
+  `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`, `minZ`/`maxZ` in
+  meters, `oceanLevelMeters` - no computation or reshaping in the copy step. Moved out
+  of `Jeju_World.json` so `prepare-assets.js` only ever copies a -> b. `tileInnerResolution`
+  is the mesh vertex density - uniform `44` at every zoom (the standard
+  Leaflet/OpenLayers/Slippy-map tile-pyramid convention: fixed per-tile resolution,
+  detail scales via tile *count*, not per-tile density);
+  `tileSampleCount = tileInnerResolution + 2 = 46`.
 
 This replaced an earlier version that copied one fixed-resolution `heights.bin` and one
 flat `map.png` and built a single whole-map `BufferGeometry` - correct, but with no way

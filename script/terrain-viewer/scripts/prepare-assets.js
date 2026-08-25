@@ -94,29 +94,17 @@ function main() {
   // coarser color tile for deeper height tiles). Copy what's actually generated.
   copyPyramid(COLOR_TILES_DIR, path.join(ASSETS_DIR, "tiles", "color"), Math.min(tiles.maxZoom, COLOR_MAX_ZOOM), "avif", "color");
 
-  const metaOut = {
-    maxZoom: tiles.maxZoom,
-    // height-tile sample layout (uniform at every zoom): tileInnerResolution = mesh
-    // vertices per edge (buildTileGeometry derives sizes from the fetched .bin
-    // directly, so these are informational), tileSampleCount = inner + 2.
-    tileInnerResolution: tiles.tileInnerResolution,
-    tileSampleCount: tiles.tileSampleCount,
-    dtype: tiles.dtype,
-    byteOrder: tiles.byteOrder,
-    widthMeters: tiles.widthMeters,
-    heightMeters: tiles.heightMeters,
-    originMetersX: tiles.originMetersX,
-    originMetersY: tiles.originMetersY,
-    minZ: tiles.minZMeters,
-    maxZ: tiles.maxZMeters,
-    colorExtension: "avif",
-    // null when the pak build this ran against has no MTOceanConfig (shouldn't happen for
-    // Jeju_World, but a consumer must not assume every map has an ocean).
-    oceanLevelMeters: meta.ocean ? meta.ocean.levelMeters : null,
-  };
+  // tiles.json is the EXTRACTOR's consumer-ready metadata file
+  // (heightmap/ImageWriter.cs's BuildViewerTilesJson writes it as out/heightmap/tiles.json
+  // in its final shape). Copy it verbatim - this step never reshapes metadata, it only
+  // copies a -> b.
+  const metaSrcPath = path.join(HEIGHTMAP_DIR, "tiles.json");
+  if (!fs.existsSync(metaSrcPath)) {
+    throw new Error(`${metaSrcPath} not found - run 'dotnet run -c Release --project heightmap' first.`);
+  }
   const metaOutPath = path.join(ASSETS_DIR, "tiles.json");
-  fs.writeFileSync(metaOutPath, JSON.stringify(metaOut, null, 2));
-  console.log(`wrote ${path.relative(REPO_ROOT, metaOutPath)}`);
+  fs.copyFileSync(metaSrcPath, metaOutPath);
+  console.log(`copied ${path.relative(REPO_ROOT, metaSrcPath)} -> ${path.relative(REPO_ROOT, metaOutPath)}`);
 
   console.log("Done.");
 }

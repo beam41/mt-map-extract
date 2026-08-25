@@ -11,8 +11,6 @@ export interface TilesMeta {
   oceanLevelMeters: number | null;
   minZ: number;
   maxZ: number;
-  dtype: string;
-  byteOrder: string;
   [key: string]: unknown;
 }
 
