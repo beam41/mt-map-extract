@@ -3,7 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   ROTATE_SPEED_NEAR,
   ROTATE_SPEED_FAR,
-  ZOOM_UNITS_PER_WHEEL_DELTA,
+  ZOOM_LOG_PER_WHEEL_DELTA,
   ZOOM_DAMPING_FACTOR,
   LOOK_UP_ANGLE_FAR_DEG,
   LOOK_UP_ANGLE_NEAR_DEG,
@@ -24,10 +24,9 @@ export interface CameraRig {
  * faster, visually, when zoomed in close than when zoomed far out, and looking up
  * past the horizon only makes sense once zoomed all the way in to ground level - both
  * scaled by the same zoom fraction `t` (0 at controls.minDistance, 1 at
- * controls.maxDistance) every frame. Also owns the inertial wheel-zoom handler
- * (with the same inertia as the orbit - see update()), replacing OrbitControls' own
- * multiplicative dolly (fast when zoomed out, barely perceptible up close) with a
- * constant world-unit step per wheel tick. */
+ * controls.maxDistance) every frame. Also owns the inertial exponential wheel-zoom
+ * handler (with the same inertia as the orbit - see update()), replacing OrbitControls'
+ * own multiplicative dolly. */
 export function createCameraRig(renderer: THREE.WebGLRenderer): CameraRig {
   // near=5, not 1: also reduces the near/far ratio (5:100000 instead of 1:100000),
   // compounding with logarithmicDepthBuffer (see main.ts) rather than fighting it -
@@ -57,50 +56,48 @@ export function createCameraRig(renderer: THREE.WebGLRenderer): CameraRig {
   controls.enablePan = false;
   // OrbitControls' own wheel zoom is multiplicative (percentage-of-distance per
   // tick) - fast when far out, barely perceptible when close in. Replaced below with
-  // a constant linear step per wheel tick, independent of current distance.
+  // a multiplicative (exponential) wheel zoom, independent of current distance.
   controls.enableZoom = false;
 
-  // Inertial wheel-zoom: wheel deltas accumulate into a velocity (world-units per
-  // second), which update(dt) integrates each frame and exponentially damps toward
-  // zero - so a spin of the wheel keeps gliding after the finger stops, exactly like
-  // the orbit does. Clamped to [minDistance, maxDistance] once per frame, so the
-  // inertia never carries the camera past its zoom bounds.
-  let zoomVelocity = 0;
+  // Inertial exponential wheel-zoom: wheel deltas accumulate into a LOG-DISTANCE
+  // change (sum of deltaY * ZOOM_LOG_PER_WHEEL_DELTA), applied each frame as
+  // `distance *= exp(logChange)` and damped toward zero - a spin of the wheel keeps
+  // gliding after the finger stops, exactly like the orbit, and relative motion per
+  // tick is uniform at every zoom (so scroll feel doesn't change with distance).
+  // Clamped to [minDistance, maxDistance] once per frame.
+  let zoomLog = 0; // accumulated log-distance change still to be applied
   renderer.domElement.addEventListener(
     "wheel",
     (event) => {
       event.preventDefault();
-      // A wheel tick's world-unit step converted into a per-second velocity (ticks
-      // arrive in bursts, so accumulate over the ~16ms they typically span; actual
-      // distance integration + clamping happens in update()).
-      const tickVel = (event.deltaY * ZOOM_UNITS_PER_WHEEL_DELTA) / 0.016;
+      const deltaLog = event.deltaY * ZOOM_LOG_PER_WHEEL_DELTA;
       // Rolling the wheel back the other way should countermand accumulated zoom
       // rather than sliding on top of it (feels sticky otherwise).
-      if (tickVel !== 0 && (zoomVelocity > 0) !== (tickVel > 0)) {
-        zoomVelocity = 0;
+      if (deltaLog !== 0 && (zoomLog > 0) !== (deltaLog > 0)) {
+        zoomLog = 0;
       }
-      zoomVelocity += tickVel;
+      zoomLog += deltaLog;
     },
     { passive: false }
   );
 
-  /** Integrate + damp the inertial zoom velocity. OrbitControls' own damping is
-   * frame-rate-dependent (dampingFactor decays position/angle deltas, applied in
-   * update()); we use the same per-frame exponential form so the zoom glide feels
+  /** Apply + damp the accumulated exponential zoom. Damping uses the same per-frame
+   * exponential form as OrbitControls' own damping, so the zoom glide feels
    * consistent with the orbit glide. */
   function integrateZoom(dt: number): void {
-    if (zoomVelocity === 0) return;
+    if (zoomLog === 0) return;
     const offset = camera.position.clone().sub(controls.target);
     const distance = offset.length();
+    // exponential integration: distance *= exp(logChange)
     const newDistance = THREE.MathUtils.clamp(
-      distance + zoomVelocity * dt,
+      distance * Math.exp(zoomLog),
       controls.minDistance,
       controls.maxDistance
     );
     offset.setLength(newDistance);
     camera.position.copy(controls.target).add(offset);
-    zoomVelocity *= Math.pow(1 - ZOOM_DAMPING_FACTOR, dt * 60); // 60 = frames/sec normalization
-    if (Math.abs(zoomVelocity) < 0.5) zoomVelocity = 0; // stop the micro-glide jitter
+    zoomLog *= Math.pow(1 - ZOOM_DAMPING_FACTOR, dt * 60); // 60 = frames/sec normalization
+    if (Math.abs(zoomLog) < 0.002) zoomLog = 0; // stop the micro-glide jitter
   }
 
   function update(dt: number): void {

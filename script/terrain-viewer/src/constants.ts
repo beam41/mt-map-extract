@@ -4,9 +4,13 @@
 export const ROTATE_SPEED_NEAR = 0.15; // at controls.minDistance
 export const ROTATE_SPEED_FAR = 1.0;   // at controls.maxDistance
 
-// World units of camera distance per unit of wheel deltaY - constant regardless of
-// current zoom level (unlike OrbitControls' default multiplicative dolly).
-export const ZOOM_UNITS_PER_WHEEL_DELTA = 5;
+// How much a full wheel notch (unit of deltaY) scales distance when zooming -
+// MULTIPLICATIVE (exponential), not a constant world-unit step. Constant per unit
+// world distance is what made scroll feel faster the closer you zoom: the same
+// fixed step is a tiny fraction of the footprint at max zoom-out but a large one
+// at max zoom-in. A constant log-distance factor per notch (e.g. ~1.127x per notch
+// here) makes relative motion uniform at every zoom, so scroll feel is consistent.
+export const ZOOM_LOG_PER_WHEEL_DELTA = 0.00012; // log(distance) change per unit deltaY (~1.13x per full 100-unit wheel notch)
 
 // Inertia (physics) for zoom and pan, matching the feel of the OrbitControls orbit
 // (which glides to a stop via controls.enableDamping / dampingFactor). Zoom and pan
@@ -58,8 +62,8 @@ export const MIN_RENDER_ZOOM = 1;
 // of touching leaves stays within one zoom level of each other the way a single
 // uniform factor can be (see lod.ts's selectLeafTiles doc comment) - occasional
 // sharper steps between neighboring tiles are still expected.
-export const RING_EXTENT_FINEST_MULTIPLIER = 1.88;
-export const RING_EXTENT_COARSER_MULTIPLIER = 2.88;
+export const RING_EXTENT_FINEST_MULTIPLIER = 2.88;
+export const RING_EXTENT_COARSER_MULTIPLIER = 3.88;
 
 // Altitude cap (rule 2, overrides rule 1): the camera's height above the ocean sets
 // the maximum zoom any tile may use - looking down from very high up, fine tiles
