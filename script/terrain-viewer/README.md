@@ -50,8 +50,8 @@ pyramids are already generated at the right zoom/resolution scheme in C#
 script is a pure direct-copy build step:
 
 - `tiles/height/<z>_<x>_<y>.bin` - copied from `out/heightmap/tiles/` - raw `uint16`,
-  little-endian, `tileSampleCounts[z-1] x tileSampleCounts[z-1]` samples per edge
-  (per-zoom: `tileInnerResolutions[z-1] + 2` = the zoom's mesh resolution + 1px border
+  little-endian, `tileSampleCount x tileSampleCount` samples per edge
+  (`tileInnerResolution + 2` = the mesh resolution + 1px border
   overlap + 1px normal halo - see "1px border overlap" and "Normal continuity" below),
   still in **raw height units** (not meters). `src/heightmap.ts` applies the
   raw-height-to-meters formula client-side (`rawHeightToWorldZMeters`), it does not
@@ -63,13 +63,13 @@ script is a pure direct-copy build step:
   genuine downsample of the native heightmap, not upscaled).
   (`0_0_0.avif` is copied but never requested - z0 is never a leaf.)
 - `tiles.json` - a subset/rename passthrough of `Jeju_World.json`'s `"tiles"` object
-  (`tileInnerResolutions`, `tileSampleCounts`, `maxZoom`, `dtype`,
+  (`tileInnerResolution`, `tileSampleCount`, `maxZoom`, `dtype`,
   `byteOrder`, `widthMeters`/`heightMeters`, `originMetersX`/`originMetersY`,
   `minZ`/`maxZ` in meters) - no computation, everything was already precomputed on the
-  C# side. `tileInnerResolutions[z-1]` is the mesh vertex density for zoom `z` - `32`
-  at every zoom (the standard Leaflet/OpenLayers/Slippy-map tile-pyramid convention:
+  C# side. `tileInnerResolution` is the mesh vertex density - uniform `32` at every
+  zoom (the standard Leaflet/OpenLayers/Slippy-map tile-pyramid convention:
   fixed per-tile resolution, detail scales via tile *count*, not per-tile density);
-  `tileSampleCounts[z-1] = tileInnerResolutions[z-1] + 2 = 34`.
+  `tileSampleCount = tileInnerResolution + 2 = 34`.
 
 This replaced an earlier version that copied one fixed-resolution `heights.bin` and one
 flat `map.png` and built a single whole-map `BufferGeometry` - correct, but with no way
@@ -81,7 +81,7 @@ data).
 ### 1px border overlap + 1px normal halo: fixing two different seam bugs
 
 Each height tile file actually stores `(inner+2) x (inner+2)` samples (where `inner`
-= the zoom's mesh resolution - `tileSampleCounts[z-1]` in `tiles.json`), not
+= the zoom's mesh resolution - `tileSampleCount` in `tiles.json`), not
 `inner x inner`. That's two extra layers, fixing two genuinely different bugs found
 via real browser use, both reported as "seams between tile":
 

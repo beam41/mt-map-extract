@@ -96,11 +96,11 @@ function main() {
 
   const metaOut = {
     maxZoom: tiles.maxZoom,
-    // per-zoom height-tile sample layout (index z-1): innerResolutions[z-1] = mesh
-    // vertices per edge for that zoom (buildTileGeometry derives sizes from the fetched
-    // .bin directly, so these are informational), sampleCounts[z-1] = inner + 2.
-    tileInnerResolutions: tiles.tileInnerResolutions,
-    tileSampleCounts: tiles.tileSampleCounts,
+    // height-tile sample layout (uniform at every zoom): tileInnerResolution = mesh
+    // vertices per edge (buildTileGeometry derives sizes from the fetched .bin
+    // directly, so these are informational), tileSampleCount = inner + 2.
+    tileInnerResolution: tiles.tileInnerResolution,
+    tileSampleCount: tiles.tileSampleCount,
     dtype: tiles.dtype,
     byteOrder: tiles.byteOrder,
     widthMeters: tiles.widthMeters,

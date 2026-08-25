@@ -260,12 +260,12 @@ internal static class ImageWriter
                 ["dtype"] = "uint16",
                 ["byteOrder"] = "little",
                 ["maxZoom"] = maxZoom,
-                ["tileInnerResolutions"] = new JArray(Enumerable.Repeat(tileSize, maxZoom)),
-                ["tileSampleCounts"] = new JArray(Enumerable.Repeat(tileSize + 2, maxZoom)),
+                ["tileInnerResolution"] = tileSize,
+                ["tileSampleCount"] = tileSize + 2,
                 ["layout"] = "Leaflet/OpenLayers XYZ scheme matching amc-web's color tiles: z0 is never " +
                     "generated (the viewer force-refines below z1), zN is 2^N x 2^N (grid/world-size math " +
-                    "is by grid, matching amc-web's color tiles), each tile file is tileSampleCounts[z-1] x " +
-                    "tileSampleCounts[z-1] samples = tileInnerResolutions[z-1] + 2 (inner position samples - " +
+                    "is by grid, matching amc-web's color tiles), each tile file is tileSampleCount x " +
+                    "tileSampleCount samples = tileInnerResolution + 2 (inner position samples - " +
                     "one per viewer mesh vertex, so nothing is unused - plus a 1px border overlap so adjacent " +
                     "tiles share their boundary pixel exactly, plus 1 more halo sample beyond each edge purely " +
                     "for computing vertex normals that agree exactly with the neighbouring tile at the " +

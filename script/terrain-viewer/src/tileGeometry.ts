@@ -2,8 +2,9 @@ import * as THREE from "three";
 import { SKIRT_DROP, COLOR_MAX_ZOOM } from "./constants";
 import { rawHeightToWorldZMeters } from "./heightmap";
 
-/** Fetches one height tile's raw uint16 samples (tileSampleCount x tileSampleCount,
- * row-major - see meta.tileSampleCount/tileSampleInnerCount in tiles.json). */
+/** Fetches one height tile's raw uint16 samples, row-major. The tile is square with
+ * tileSampleCount (= tileInnerResolution + 2) samples per edge - the exact size is
+ * derived from the returned array when building geometry, not from metadata. */
 export async function fetchHeightTile(z: number, x: number, y: number): Promise<Uint16Array> {
   const r = await fetch(`/assets/tiles/height/${z}_${x}_${y}.bin`);
   if (!r.ok) throw new Error(`height tile ${z}_${x}_${y}: HTTP ${r.status}`);
