@@ -12,6 +12,23 @@ export function rawHeightToWorldZMeters(rawHeight: number): number {
   return (rawHeight - 32768) / 128.0;
 }
 
+/** tiles.json's raw shape from the extractor (heightmap/ImageWriter.cs's
+ * BuildViewerTilesJson) - all spatial values are in CENTIMETERS (Unreal's native
+ * unit). Kept separate from TilesMeta so the raw file stays untouched and we convert
+ * once here. */
+interface RawTilesJson {
+  maxZoom: number;
+  tileInnerResolution: number;
+  tileSampleCount: number;
+  widthCm: number;
+  heightCm: number;
+  originXCm: number;
+  originYCm: number;
+  minZ: number;   // cm
+  maxZ: number;   // cm
+  oceanLevelCm: number | null;
+}
+
 export async function loadTilesMeta(): Promise<TilesMeta> {
   const r = await fetch("/assets/tiles.json");
   if (!r.ok) throw new Error(`tiles.json: HTTP ${r.status}`);
@@ -19,8 +36,18 @@ export async function loadTilesMeta(): Promise<TilesMeta> {
   // raw uint16, little-endian, tileSampleCount x tileSampleCount samples per tile. The
   // dtype/byteOrder were dropped from the metadata as constants; buildTileGeometry
   // derives the sample count from the fetched .bin directly anyway.
-  const meta = (await r.json()) as TilesMeta;
-  return meta;
+  const raw = (await r.json()) as RawTilesJson;
+  // The file is in Unreal's cm; the rest of the viewer works in meters - convert once.
+  return {
+    widthMeters: raw.widthCm / 100,
+    heightMeters: raw.heightCm / 100,
+    maxZoom: raw.maxZoom,
+    oceanLevelMeters: raw.oceanLevelCm === null ? null : raw.oceanLevelCm / 100,
+    minZ: raw.minZ / 100,
+    maxZ: raw.maxZ / 100,
+    tileInnerResolution: raw.tileInnerResolution,
+    tileSampleCount: raw.tileSampleCount,
+  };
 }
 
 export interface TileWorldRect {
