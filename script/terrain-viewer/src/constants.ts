@@ -8,6 +8,23 @@ export const ROTATE_SPEED_FAR = 1.0;   // at controls.maxDistance
 // current zoom level (unlike OrbitControls' default multiplicative dolly).
 export const ZOOM_UNITS_PER_WHEEL_DELTA = 5;
 
+// Inertia (physics) for zoom and pan, matching the feel of the OrbitControls orbit
+// (which glides to a stop via controls.enableDamping / dampingFactor). Zoom and pan
+// are custom handlers (see cameraRig.ts / groundPan.ts) that update the camera
+// directly with no damping of their own, so they snapped to a dead stop the moment
+// input ended while orbiting still coasted - these constants give them the same
+// exponential decay per frame.
+//   ZOOM_DAMPING_FACTOR  - how quickly wheel-zoom velocity dies out each frame
+//     (higher = shorter glide). Matches the orbit feel: 0.08 is near-instant, ~0.35
+//     gives a short, perceptible coast.
+//   PAN_DAMPING_FACTOR   - same, for the post-release pan fling.
+//   PAN_FLING_SAMPLE_MS  - the drag-release "fling" looks back at the last ~90ms of
+//     pointer motion to seed the initial pan velocity, so a quick scrub throws a
+//     visible coast while a slow deliberate drag stops nearly in place.
+export const ZOOM_DAMPING_FACTOR = 0.35;
+export const PAN_DAMPING_FACTOR = 0.35;
+export const PAN_FLING_SAMPLE_MS = 90;
+
 // The coarsest zoom level that is ever rendered. z0 (the whole ~22km map as one
 // single tile) is never selected or built - its texture was a blurry whole-map
 // downscale and its only special handling (a stitched z1 composite) is long gone.

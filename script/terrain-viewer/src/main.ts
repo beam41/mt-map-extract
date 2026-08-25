@@ -83,7 +83,7 @@ async function main(): Promise<void> {
   controls.update();
   refreshVisibleTiles();
 
-  setupGroundPan(renderer, camera, controls, tileManager.tileGroup);
+  const panPhys = setupGroundPan(renderer, camera, controls, tileManager.tileGroup);
 
   // Debug controls - see ZOOM_DEBUG_COLORS' doc comment. Independent toggles: zoom
   // color replaces the real texture entirely; wireframe applies on top of whichever
@@ -121,10 +121,16 @@ async function main(): Promise<void> {
   });
 
   let lastTileUpdate = 0;
+  let lastFrameTime = 0;
 
   function animate(now: number): void {
     requestAnimationFrame(animate);
-    updateCameraRig();
+    // dt in seconds for the inertia integration (zoom/pan physics); the first frame
+    // (now=0) has no previous timestamp, so treat it as a single frame step.
+    const dt = lastFrameTime === 0 ? 1 / 60 : Math.min((now - lastFrameTime) / 1000, 0.1);
+    lastFrameTime = now;
+    updateCameraRig(dt);
+    panPhys.update(dt);
 
     if (now - lastTileUpdate > TILE_UPDATE_INTERVAL_MS) {
       lastTileUpdate = now;

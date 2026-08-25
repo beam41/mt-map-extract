@@ -180,11 +180,36 @@ Each visible tile is its own small `BufferGeometry` at that zoom's per-tile vert
 resolution (32, uniform at every zoom - derived from the fetched height `.bin`'s own
 size, so a tile's mesh uses every stored inner sample as exactly one vertex, nothing
 unused) plus its own `MeshStandardMaterial` textured with that tile's color `.avif`.
-`heightCache` (keyed by
-`z_x_y`) avoids re-fetching a height tile's raw bytes if the camera revisits it; loaded
-tile meshes are tracked in `activeTiles` and disposed (geometry, material, texture) the
-moment they leave the desired leaf set, so tile churn doesn't leak GPU memory over a long
-session.
+
+### Persistent tile cache + scene cover (state-preserving LOD swap)
+
+The load/replace lifecycle is split into a background cache and a scene cover, so
+zooming/panning never flashes a tile out that's still being replaced:
+
+- **`cache`** (in `tileManager.ts`) - every tile EVER built lives here permanently.
+  `heightCache` (keyed by `z_x_y`) additionally avoids re-fetching a tile's height
+  bytes, and the mesh/texture built for a tile is kept for reuse. The quadtree can
+  only reach 1364 distinct `(z, x, y)` positions, so holding all of them is a small,
+  bounded set and is what makes "keep state" work: returning the camera to a visited
+  area re-mounts its cached mesh with zero refetch.
+- **`activeTiles`** - the subset of the cache currently mounted in the scene. It is
+  recomputed each `TILE_UPDATE_INTERVAL_MS` tick from what's *now ready* in the cache,
+  **not** what `selectLeafTiles()` wants (a tile whose fetch/decode is still running
+  is never mounted, and therefore never leaves a visible gap).
+
+The tiler (`selectLeafTiles()` in lod.ts) still runs every tick and decides the
+desired leaf set, but its output only drives *what to load into the cache*: every
+desired leaf plus every coarser ancestor down to `MIN_RENDER_ZOOM` is sent to the
+background loader (`loadTile`), which fetches height + decodes color and stores the
+finished mesh in `cache` - never touching the scene. Mounting is decided separately by
+`chooseCover()`, which walks the quadtree from the desired set and picks the finest
+**already-cached** covering tiles: an exact desired leaf mounts if it's cached,
+otherwise the region falls back to its coarsest cached ancestor, so a 2x2 finer block
+swaps in only once all four are fully loaded. A tile that remains desired simply stays
+mounted (its state is kept), and the fallback rule guarantees the cover never has a
+hole. Since the cache never shrinks (except a coarse tile can be dropped as redundant
+the instant all four of its children are mounted), nothing is refetched or rebuilt on a
+revisit.
 
 Bottom-right stat reads `N tiles, M tris` - `M` is `renderer.info.render.triangles`,
 read fresh every frame right after `renderer.render()` (Three.js resets and
@@ -194,7 +219,7 @@ everything drawn that frame (every tile's main grid + skirt walls, plus the ocea
 quad), so it stays correct without having to keep it in sync by hand as tiles load,
 unload, or the ocean quad toggles.
 
-### Load/unload ordering: fixing a flash, then a "dark patch" the first fix caused
+### Load/unload ordering history: flash, dark patch, and the cache redesign
 
 Reported after real browser use as "flashing problem when tile change zoom level". Root
 cause: `updateVisibleTiles()`'s first version unloaded a stale (no-longer-desired) tile
@@ -216,11 +241,17 @@ correctly diagnosed as a load-ordering bug, not a rendering bug: "while the zoom
 data is loaded, texture is not loaded yet... it should be fully loaded then the swap
 is performed". Fixed by making `loadColorTexture()` return a `Promise` that only
 resolves in the loader's `onLoad` callback (once the image has actually decoded), and
-awaiting it in `Promise.all(...)` alongside the height fetch in `loadTile()` - the mesh
-is now either fully built with a fully-decoded texture, or not added to the scene at
-all, never rendered partway through loading. (An earlier attempt at this fix used a
-zoom-biased `polygonOffset` to paper over the symptom via depth-test priority instead
-of fixing the actual load-ordering bug; removed once the real cause was identified.)
+awaiting it in `Promise.all(...)` alongside the height fetch in `loadTile()`.
+
+The all-in-one `loadTile -> activeTiles` flow those two fixes were patching was then
+redesigned into the persistent-cache + scene-cover model described above ("Persistent
+tile cache + scene cover"): `loadTile()` no longer touches the scene at all (it only
+fills `cache`, and a tile is only ever *mounted* once it is fully built), and
+`chooseCover()` derives the scene cover from whatever is ready in the cache rather
+than gating an unload on a set-wide "every desired tile is active" test. That removes
+both the geometry gap (the cover always falls back to a cached coarser ancestor) and
+the dark patch (a tile is never mounted until its texture is decoded) as structural
+properties of the reconciler instead of per-fix gates.
 
 ### Frustum culling
 
@@ -432,18 +463,29 @@ external change - confirmed by reading the actual `update()` body in
 `node_modules/three/examples/jsm/controls/OrbitControls.js`, not assumed from the public
 API surface.
 
-## Zoom: linear velocity, custom range
+## Zoom: inertial velocity over a custom range
 
-`controls.minDistance = 30` / `maxDistance = 55000` (world units = meters). Wheel zoom is
+`controls.minDistance = 30` / `maxDistance = 25000` (world units = meters). Wheel zoom is
 fully custom, not `OrbitControls`' default: its built-in dolly is *multiplicative*
 (`radius *= scale` per tick), which feels fast when already far out and barely
-perceptible when close in. Replaced with a `wheel` listener that changes distance by a
-**constant** step per unit of `event.deltaY` (`ZOOM_UNITS_PER_WHEEL_DELTA = 5`),
-independent of current distance, then clamps to `[minDistance, maxDistance]`. `scene.fog`
-was widened to `(25000, 100000)` to match the larger `maxDistance` - the original
-`(9000, 35000)` range fully washed the whole map out to near-solid sky color well before
-reaching the old `maxDistance` (40000), which was the actual "why does zooming out this
-far look broken" complaint, not the distance limit itself.
+perceptible when close in. Replaced with a `wheel` listener that converts `event.deltaY`
+into a **velocity** (world-units per second) at `ZOOM_UNITS_PER_WHEEL_DELTA = 5` per unit,
+**not** an instant distance step. `update(dt)` then integrates that velocity each frame
+and exponentially damps it (`ZOOM_DAMPING_FACTOR`, same per-frame exponential form as
+`OrbitControls.dampingFactor`), clamping to `[minDistance, maxDistance]` once per frame.
+So a spin of the wheel keeps gliding after the finger stops - the same inertia-based
+physics as the orbit, instead of a hard snap-to-distance per tick.
+
+## Pan: ground-anchored drag with release fling
+
+`setupGroundPan` returns a `{ update(dt) }` the animate loop calls. During a left-drag it
+shifts `camera.position`/`controls.target` by the exact ground-anchored delta (so the
+grabbed point stays under the cursor), and records each move's world displacement in a
+short rolling history. On release, the motion within the last `PAN_FLING_SAMPLE_MS` is
+converted into an initial pan velocity, which `update(dt)` then integrates and damps with
+`PAN_DAMPING_FACTOR` - so a quick scrub throws a visible coast and a slow deliberate drag
+stops almost in place, matching the orbit glide rather than a dead stop the instant the
+pointer lifts. A new grab cancels any leftover fling.
 
 ## Orbit speed scales with zoom
 
