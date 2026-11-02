@@ -174,7 +174,8 @@ public sealed class GlbExporter(AssetSource assets, ILogger<GlbExporter> log, in
 
     /// <summary>CUE4Parse's known diffuse names first (every group, then its fallback), then any
     /// parameter named like base color (<c>PM_Diffuse</c> on Synty parent materials such as
-    /// Mat_PolygonShops_01_A), then the first texture that isn't obviously a non-color map.</summary>
+    /// Mat_PolygonShops_01_A, <c>BaseTexture</c> on <c>M_GenericBase</c>), then the first texture
+    /// that isn't obviously a non-color map.</summary>
     private static UTexture? DiffuseTexture(CMaterialParams2 parameters)
     {
         foreach (var names in CMaterialParams2.Diffuse)
@@ -187,7 +188,7 @@ public sealed class GlbExporter(AssetSource assets, ILogger<GlbExporter> log, in
             hints.Any(h => name.Contains(h, StringComparison.OrdinalIgnoreCase));
 
         var textures = parameters.Textures.Where(t => t.Value is UTexture).ToList();
-        var byName = textures.FirstOrDefault(t => Has(t.Key, "diffuse", "basecolor", "base_color", "albedo"));
+        var byName = textures.FirstOrDefault(t => Has(t.Key, "diffuse", "basecolor", "base_color", "basetexture", "albedo"));
         if (byName.Value is UTexture named) return named;
         return textures.FirstOrDefault(t => !Has(t.Key, NonColorHints) && !Has(t.Value.Name, NonColorHints)).Value as UTexture;
     }

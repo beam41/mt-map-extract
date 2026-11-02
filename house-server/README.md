@@ -53,7 +53,9 @@ ChildActorTemplate, is set on its single mesh component (`_Deprecated_BaseDoor` 
 `LeftDoor.SetStaticMesh(DoorMesh)`).
 
 Materials: base color texture × tint. The texture comes from `CMaterialParams2.Diffuse` groups,
-then any `*Diffuse*`/`*BaseColor*` texture parameter (`PM_Diffuse` on Synty parents), then the first
-non-normal/mask texture. The tint comes from `DiffuseColors`, then `*BaseColor*` colors (`BaseColor_Tint`
+then any `*Diffuse*`/`*BaseColor*`/`*BaseTexture*` texture parameter (`PM_Diffuse` on Synty parents,
+`BaseTexture` on `M_GenericBase` — the palette atlas most Synty props sample), then the first
+non-normal/mask texture (often an engine default — a prop that renders flat grey usually means a
+missing name here). The tint comes from `DiffuseColors`, then `*BaseColor*` colors (`BaseColor_Tint`
 on the `MI_Matte*` family, white texture × tint). No normal/ORM maps; point lights are ignored;
 `buildingStep` > 0 rows are exported but untested.
