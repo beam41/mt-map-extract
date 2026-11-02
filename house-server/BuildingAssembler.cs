@@ -33,6 +33,17 @@ public sealed class BuildingAssembler(AssetSource assets)
 
     public string? RowType(string buildingKey) => (string?)Row(buildingKey)?["BuildingRowType"];
 
+    /// <summary>Every Buildings row: key, row type (<c>House</c>/<c>Furniture</c>, prefix
+    /// stripped) and how many construction steps it has.</summary>
+    public IEnumerable<(string Key, string? RowType, int Steps)> Rows()
+    {
+        Row("");
+        return _rows!.Properties().Select(p => (
+            p.Name,
+            ((string?)p.Value["BuildingRowType"])?.Replace("EMTBuildingRowType::", ""),
+            (p.Value["Steps"] as JArray)?.Count ?? 0));
+    }
+
     public List<MeshPart>? Assemble(string buildingKey, int step)
     {
         var steps = Row(buildingKey)?["Steps"] as JArray;

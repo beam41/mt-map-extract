@@ -42,7 +42,11 @@ var app = builder.Build();
 app.UseCors();
 
 // Mount the pak and read the plots before the first request instead of on it.
-app.Services.GetRequiredService<HouseStore>();
+var houseStore = app.Services.GetRequiredService<HouseStore>();
+
+// `--Export <dir>`: write every building model + a manifest as static files, then exit.
+if (config["Export"] is { Length: > 0 } exportDir)
+    return BundleExporter.Run(houseStore, exportDir, app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Export"));
 
 app.MapGet("/api/houses/{housingKey}", async (string housingKey, HouseStore store, WorldCache world, CancellationToken ct) =>
 {
@@ -112,3 +116,4 @@ app.MapGet("/api/ground/{kind}.png", (string kind, HouseStore store, HttpRespons
 });
 
 app.Run();
+return 0;

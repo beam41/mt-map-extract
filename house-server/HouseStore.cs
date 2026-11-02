@@ -69,6 +69,11 @@ public sealed class HouseStore
         lock (_pak) return _assembler.Row(buildingKey) is not null;
     }
 
+    public IReadOnlyList<(string Key, string? RowType, int Steps)> BuildingRows()
+    {
+        lock (_pak) return _assembler.Rows().ToList();
+    }
+
     /// <summary>The building's GLB, or null for an unknown key / a step with nothing to draw.</summary>
     public byte[]? Glb(string buildingKey, int step)
     {

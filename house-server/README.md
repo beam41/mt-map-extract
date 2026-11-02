@@ -34,6 +34,19 @@ Settings are ASP.NET configuration, so any can be passed as `--Name value` (or e
   `HouseStore.ExporterVersion` when the output changes — it renames the disk cache dir and the
   `?v=` on every `modelUrl`.
 
+## Static export
+
+```bash
+dotnet run -c Release --project house-server -- --Export out/house-server/export-v6
+```
+
+Writes every `Buildings` row × step without starting the server, then exits (non-zero if any
+model failed): `models/{buildingKey}_{step}.glb` (the same bytes `/api/buildings/{key}/{step}.glb`
+serves), `ground/{color,normal}.png`, and `manifest.json` — per row its `rowType` and each step's
+`file`/`bytes` (`file: null` for a step that draws nothing, plus `error` if export threw).
+Placement is unchanged: a world-dump building goes at its `location`/`rotation` with model
+`models/{buildingKey}_{buildingStep}.glb`. Reuses and fills the `glb-v{N}` disk cache.
+
 ## How a building becomes a GLB
 
 `Buildings` DataTable row → `Steps[step].ActorClass` blueprint. `BuildingAssembler` walks the
