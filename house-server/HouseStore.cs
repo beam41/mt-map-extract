@@ -14,7 +14,7 @@ public sealed class HouseStore
 {
     /// <summary>Bump when the GLB output changes: stale disk caches are ignored and model URLs
     /// change, so browsers holding a cached copy refetch.</summary>
-    public const int ExporterVersion = 4;
+    public const int ExporterVersion = 5;
 
     private readonly Lock _pak = new();
     private readonly BuildingAssembler _assembler;

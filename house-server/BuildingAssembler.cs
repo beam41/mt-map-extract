@@ -51,7 +51,7 @@ public sealed class BuildingAssembler(AssetSource assets)
         var childActor = AssetPackage((string?)stepRow["ChildActorClass"]?["AssetPathName"]);
 
         var parts = new List<MeshPart>();
-        CollectActor(actorClass.Value.Package, actorClass.Value.ClassName, Matrix4x4.Identity, parts, 0,
+        CollectActor(actorClass.Value.Package, actorClass.Value.ClassName, Xform.Identity, parts, 0,
             new RowOverrides(meshOverrides, meshScale, rowMaterial, childActor));
         return parts;
     }
@@ -69,7 +69,7 @@ public sealed class BuildingAssembler(AssetSource assets)
         public string? Parent;
     }
 
-    private void CollectActor(string package, string className, Matrix4x4 actorWorld, List<MeshPart> parts,
+    private void CollectActor(string package, string className, Xform actorWorld, List<MeshPart> parts,
         int depth, RowOverrides? row, JObject? childActorTemplate = null)
     {
         if (depth > MaxChildActorDepth) return;
@@ -92,18 +92,18 @@ public sealed class BuildingAssembler(AssetSource assets)
             }
         }
 
-        var worlds = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase);
-        Matrix4x4 World(Component c, int guard)
+        var worlds = new Dictionary<string, Xform>(StringComparer.OrdinalIgnoreCase);
+        Xform World(Component c, int guard)
         {
             if (worlds.TryGetValue(c.Name, out var cached)) return cached;
             // The root component's relative transform is replaced by the actor's spawn transform.
             var local = string.Equals(c.Name, root, StringComparison.OrdinalIgnoreCase)
-                ? Matrix4x4.Identity
+                ? Xform.Identity
                 : Relative(c.Props);
             var parent = c.Parent is not null && guard < 64 && components.TryGetValue(c.Parent, out var p)
                 ? World(p, guard + 1)
                 : actorWorld;
-            return worlds[c.Name] = local * parent;
+            return worlds[c.Name] = local.Under(parent);
         }
 
         foreach (var c in components.Values)
@@ -115,7 +115,7 @@ public sealed class BuildingAssembler(AssetSource assets)
                 var overridden = row is not null && row.Meshes.TryGetValue(c.Name, out _);
                 var mesh = overridden ? row!.Meshes[c.Name] : ObjectPackageRef(c.Props["StaticMesh"]);
                 if (mesh is null) continue;
-                var world = World(c, 0);
+                var world = World(c, 0).ToMatrix();
 
                 var materials = (c.Props["OverrideMaterials"] as JArray ?? [])
                     .Select(m => ObjectPackageRef(m)).ToList();
@@ -278,14 +278,35 @@ public sealed class BuildingAssembler(AssetSource assets)
 
     // ------------------------------------------------------------------ transforms
 
-    private static Matrix4x4 Relative(JObject props)
+    private static Xform Relative(JObject props)
     {
-        var location = Vec(props["RelativeLocation"], Vector3.Zero);
-        var scale = Vec(props["RelativeScale3D"], Vector3.One);
         var rotation = props["RelativeRotation"];
-        return Matrix4x4.CreateScale(scale)
-               * Rotator((float?)rotation?["Pitch"] ?? 0, (float?)rotation?["Yaw"] ?? 0, (float?)rotation?["Roll"] ?? 0)
-               * Matrix4x4.CreateTranslation(location);
+        return new Xform(
+            Vec(props["RelativeScale3D"], Vector3.One),
+            Quaternion.CreateFromRotationMatrix(
+                Rotator((float?)rotation?["Pitch"] ?? 0, (float?)rotation?["Yaw"] ?? 0, (float?)rotation?["Roll"] ?? 0)),
+            Vec(props["RelativeLocation"], Vector3.Zero));
+    }
+
+    /// <summary>
+    /// UE's <c>FTransform</c>: scale, rotation, translation kept apart. Attaching composes them
+    /// component-wise — scale multiplies per local axis — not as matrices, so a non-uniformly
+    /// scaled parent stretches a rotated child along the child's own axes (Depot_02's apron road
+    /// tiles: yaw 90 under a 0.75-scaled parent). Matrix composition put that scale on the
+    /// other axis and pushed the tiles past the curb.
+    /// </summary>
+    private readonly record struct Xform(Vector3 Scale, Quaternion Rotation, Vector3 Translation)
+    {
+        public static readonly Xform Identity = new(Vector3.One, Quaternion.Identity, Vector3.Zero);
+
+        /// <summary><c>FTransform::Multiply(this, parent)</c>: this relative to <paramref name="parent"/>.</summary>
+        public Xform Under(Xform parent) => new(
+            Scale * parent.Scale,
+            Quaternion.Concatenate(Rotation, parent.Rotation),
+            Vector3.Transform(parent.Scale * Translation, parent.Rotation) + parent.Translation);
+
+        public Matrix4x4 ToMatrix() =>
+            Matrix4x4.CreateScale(Scale) * Matrix4x4.CreateFromQuaternion(Rotation) * Matrix4x4.CreateTranslation(Translation);
     }
 
     /// <summary>UE's <c>FRotationMatrix</c>, row-vector form, degrees in.</summary>

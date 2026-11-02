@@ -39,7 +39,9 @@ Settings are ASP.NET configuration, so any can be passed as `--Name value` (or e
 `Buildings` DataTable row → `Steps[step].ActorClass` blueprint. `BuildingAssembler` walks the
 blueprint chain (parents first): CDO native subobjects, `InheritableComponentHandler` overrides,
 `SimpleConstructionScript` nodes, `ChildActorComponent`s recursively — composing each component's
-relative transform up its attach chain. The row then overrides the generic actor:
+relative transform up its attach chain the way UE's `FTransform` does (scale multiplied per local
+axis, not as matrices: they differ when a non-uniformly scaled parent holds a rotated child, e.g.
+Depot_02's apron road tiles). The row then overrides the generic actor:
 `StaticMeshes` (component name → mesh, used by `_Common_Prop` furniture) and `ChildActorClass`
 (used by `_Common_ChildActor` furniture, e.g. lights, benches). `GlbExporter` converts each static
 mesh's LOD0 with CUE4Parse-Conversion and embeds the material's diffuse texture as PNG.
