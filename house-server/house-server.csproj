@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>house-server</AssemblyName>
+    <RootNamespace>HouseServer</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+    <!-- The Web SDK runs from the project dir; keep paths repo-root relative like every other project. -->
+    <RunWorkingDirectory>$(MSBuildStartupDirectory)</RunWorkingDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../common/common.csproj" />
+    <PackageReference Include="CUE4Parse" Version="1.2.2.202607" />
+    <!-- MeshConverter/TextureDecoder; brings SharpGLTF (GLB writer) and SkiaSharp (png encode). -->
+    <PackageReference Include="CUE4Parse-Conversion" Version="1.2.2.202607" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="2.88.9" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+</Project>
